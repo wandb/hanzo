@@ -18,7 +18,7 @@ final class AppState {
 
     var menuBarIconName: String {
         switch dictationState {
-        case .idle: return "waveform.slash"
+        case .idle: return "waveform"
         case .listening: return "waveform"
         case .forging: return "hammer.fill"
         case .error: return "exclamationmark.triangle"

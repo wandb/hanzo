@@ -79,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             systemSymbolName: appState.menuBarIconName,
             accessibilityDescription: "Hanzo"
         )
+        statusItem?.button?.alphaValue = appState.dictationState == .idle ? 0.35 : 1.0
     }
 
     @objc private func statusItemClicked() {
