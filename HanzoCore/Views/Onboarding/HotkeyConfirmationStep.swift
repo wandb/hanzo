@@ -9,7 +9,7 @@ struct HotkeyConfirmationStep: View {
                 .font(.system(size: 48))
                 .foregroundStyle(Color.accentColor)
 
-            Text("Your Dictation Hotkey")
+            Text("Your dictation hotkey")
                 .font(.title2.bold())
 
             HStack(spacing: 4) {

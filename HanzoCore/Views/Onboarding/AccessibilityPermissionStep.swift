@@ -10,10 +10,10 @@ struct AccessibilityPermissionStep: View {
                 .font(.system(size: 48))
                 .foregroundStyle(Color.accentColor)
 
-            Text("Accessibility Access")
+            Text("Accessibility access")
                 .font(.title2.bold())
 
-            Text("Hanzo needs Accessibility access to insert transcribed text into other apps.")
+            Text("Hanzo needs accessibility access to insert transcribed text into other apps.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

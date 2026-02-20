@@ -23,11 +23,11 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Server") {
-                TextField("ASR Server Endpoint", text: $serverEndpoint)
+                TextField("ASR server endpoint", text: $serverEndpoint)
                     .textFieldStyle(.roundedBorder)
                     .focused($focusedField, equals: .endpoint)
                     .onChange(of: serverEndpoint) { saveServer() }
-                TextField("API Key", text: $apiKey)
+                TextField("API key", text: $apiKey)
                     .textFieldStyle(.roundedBorder)
                     .focused($focusedField, equals: .apiKey)
                     .onChange(of: apiKey) { saveServer() }
@@ -35,7 +35,7 @@ struct SettingsView: View {
 
             Section("Hotkey") {
                 HStack {
-                    Text("Global Hotkey:")
+                    Text("Global hotkey:")
                     if isRecordingHotkey {
                         Text("Press a key combo...")
                             .foregroundStyle(.secondary)

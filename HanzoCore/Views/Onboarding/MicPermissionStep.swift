@@ -10,7 +10,7 @@ struct MicPermissionStep: View {
                 .font(.system(size: 48))
                 .foregroundStyle(Color.accentColor)
 
-            Text("Microphone Access")
+            Text("Microphone access")
                 .font(.title2.bold())
 
             Text("Hanzo needs microphone access to capture your speech for transcription.")
@@ -28,7 +28,7 @@ struct MicPermissionStep: View {
                 }
                 .buttonStyle(.borderedProminent)
             } else {
-                Button("Enable Microphone") {
+                Button("Enable microphone") {
                     Task {
                         let granted = await PermissionService.shared.requestMicrophonePermission()
                         await MainActor.run {

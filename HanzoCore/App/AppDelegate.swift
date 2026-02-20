@@ -162,7 +162,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let hostingController = NSHostingController(rootView: settingsView)
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "Hanzo Settings"
+        window.title = "Hanzo settings"
         window.styleMask = [.titled, .closable]
         window.setContentSize(NSSize(width: 420, height: 300))
         window.center()
