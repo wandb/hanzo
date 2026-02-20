@@ -3,11 +3,25 @@
 build/
 DerivedData/
 
-# Xcode
-*.xcodeproj/project.xcworkspace/xcuserdata/
-*.xcodeproj/xcuserdata/
+# Xcode - generated project (using XcodeGen)
+*.xcodeproj
+
+# Xcode user data
 *.xcworkspace/xcuserdata/
 xcuserdata/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+
+# Xcode misc
+*.moved-aside
+*.hmap
+
+# Archives & debug symbols
+*.ipa
+*.dSYM
+*.dSYM.zip
 
 # SPM
 .swiftpm/
