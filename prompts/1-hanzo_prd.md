@@ -2,41 +2,40 @@
 
 ## Overview
 
-Hanzo is a privacy-first, system-wide dictation tool for macOS.
+Hanzo is a system-wide dictation tool for macOS.
 
-It runs entirely on-device using a local speech-to-text model.
+It captures speech and sends audio to a dedicated Qwen3-ASR service for transcription.
 
-You press.  
-You speak.  
+You press.
+You speak.
 Hanzo forges clean text into whatever app you’re using.
 
-No cloud.  
-No external APIs.  
-No data leaving the machine.
+Transcription is handled by a hosted ASR service operated by us. See the Privacy section below for details on data handling.
 
 ---
 
 ## Target Environment
 
-- Apple Silicon (M-series)
-- macOS Tahoe+
-- Single power-user (developer / designer)
+* Apple Silicon (M-series)
+* macOS Tahoe+
+* Single power-user (developer / designer)
 
 Primary use cases:
-- Writing emails
-- Documents
-- Notes
-- Forms
-- Light coding comments
+
+* Writing emails
+* Documents
+* Notes
+* Forms
+* Light coding comments
 
 ---
 
 ## Problem
 
-Built-in macOS dictation lacks transparency and control.  
-Most high-quality transcription tools require sending audio to the cloud.
+Built-in macOS dictation lacks transparency and control.
+Most high-quality transcription tools are either opaque or tightly coupled to specific platforms.
 
-We want a fast, private, reliable dictation system that works anywhere text can be entered.
+We want a fast, reliable dictation system that works anywhere text can be entered, with a clearly defined and controllable transcription backend.
 
 ---
 
@@ -45,7 +44,7 @@ We want a fast, private, reliable dictation system that works anywhere text can 
 Hanzo should:
 
 1. Enable fast, reliable dictation anywhere on macOS via a global hotkey.
-2. Deliver fully local, privacy-preserving speech-to-text.
+2. Deliver secure, reliable speech-to-text via a dedicated hosted ASR service.
 3. Provide a focused, interruption-free writing experience.
 4. Insert finalized transcription directly into the user’s active context.
 5. Feel lightweight, responsive, and trustworthy on Apple Silicon.
@@ -54,11 +53,11 @@ Hanzo should:
 
 ## Non-Goals
 
-- Live streaming transcription committed into apps while speaking.
-- Multi-speaker diarization.
-- Cloud sync or multi-device features.
-- Meeting transcription workflows.
-- Translation (v1 is speech-to-text only).
+* Live streaming transcription committed into apps while speaking.
+* Multi-speaker diarization.
+* Cloud sync or multi-device features.
+* Meeting transcription workflows.
+* Translation (v1 is speech-to-text English only).
 
 ---
 
@@ -66,91 +65,112 @@ Hanzo should:
 
 ### Interaction Model
 
+Hanzo runs exclusively as a **menu bar application**, surfaced via a global hotkey and without any Dock presence or windowed mode.
+
 Hanzo uses a global toggle hotkey.
 
 1. User presses the configured hotkey.
 2. Recording begins immediately from the default microphone.
-3. A centered HUD appears showing state: **Listening**.
-4. A live preview displays the in-progress transcript in near real time.
+3. The menu bar icon updates to indicate state: Listening.
+4. A lightweight popover can display the in-progress transcript in near real time.
 5. User presses the hotkey again.
 6. Recording stops instantly.
-7. State changes to **Forging** (final transcription pass).
+7. State changes to Forging (final transcription pass).
 8. Once transcription completes, Hanzo inserts the finalized transcript into the previously focused app at the cursor position.
-9. HUD disappears.
+9. Any open popover closes.
 
 No incremental typing occurs during preview. Only a single insertion happens per session.
 
 ---
 
-## Live Preview HUD
+## Live Preview UI
 
-- Centered floating overlay.
-- Always-on-top while active.
-- Blocks interaction with underlying apps while recording or forging.
-- Displays current state: Listening / Forging / Error.
-- Streams partial transcript during recording.
-- Escape key cancels recording and discards transcript.
-- Switching apps during recording cancels and discards transcript.
-- No transcript history is stored.
+Hanzo does not use a full-screen or centered HUD.
 
-The HUD exists to provide clarity and trust — not decoration.
+* Primary state indicator lives in the menu bar icon.
+* Icon states: Idle / Listening / Forging / Error.
+* A popover anchored to the menu bar icon automatically opens when recording begins to display the live transcript preview.
+* The popover blocks interaction with other apps while recording or forging.
+* Escape key cancels recording and discards transcript.
+* Switching away from Hanzo (changing active application) immediately cancels the session and discards the transcript.
+* No transcript history is stored.
+
+The popover automatically opens when recording starts and closes automatically after commit or cancellation.
+
+The UI should remain minimal and unobtrusive.
 
 ---
 
 ## Recording & Commit Rules
 
-- Recording continues until the hotkey is pressed again or canceled.
-- There is no silence-based auto-stop.
-- On stop:
-  - A full transcription pass completes.
-  - The entire finalized transcript is inserted as a single operation.
-- If no valid text field is focused at commit time:
-  - Transcript is copied to clipboard instead.
-- No formatting normalization or cleanup is applied in v1.
-- Model output is trusted as-is.
+* Recording continues until the hotkey is pressed again or canceled.
+* There is no silence-based auto-stop.
+* On stop:
+
+  * A full transcription pass completes.
+  * The entire finalized transcript is inserted as a single operation.
+* If no valid text field is focused at commit time:
+
+  * Transcript is copied to clipboard instead.
+* No formatting normalization or cleanup is applied in v1.
+* Model output is trusted as-is.
 
 ---
 
 ## Text Insertion
 
-- Insert at current cursor location.
-- Preserve punctuation and whitespace.
-- If transcript is empty, insert nothing.
-- Commit uses paste-based insertion for near-instant output.
-- Clipboard should be restored after insertion.
-- Exactly one insertion per recording session.
+* Insert at current cursor location.
+* Preserve punctuation and whitespace.
+* If transcript is empty, insert nothing.
+* Commit uses paste-based insertion for near-instant output.
+* Clipboard should be restored after insertion.
+* Exactly one insertion per recording session.
 
 ---
 
 ## Model & Engine
 
-Hanzo uses a local Whisper-based speech-to-text engine optimized for Apple Silicon. v1 supports English transcription only.
+Hanzo uses a hosted ASR service built on **Qwen3-ASR** with a vLLM-backed runtime for low-latency transcription and streaming preview.
 
-Implementation details:
+* Model: `Qwen/Qwen3-ASR-1.7B`
+* Server framework: FastAPI
+* Runtime: Qwen3ASRModel `LLM(...)` (vLLM-backed)
 
-- Engine: `whisper.cpp` (Metal-accelerated for Apple Silicon)
-- Repository: https://github.com/ggml-org/whisper.cpp
-- Default model: `small.en`
-- Optional higher-accuracy model: `medium.en`
+### Streaming API (used for HUD preview)
 
-Rationale:
+Hanzo’s HUD preview is powered by the server’s streaming session endpoints:
 
-- High transcription accuracy for general dictation
-- Strong performance on M-series Macs
-- Fully offline operation
-- Mature open-source ecosystem
+* `POST /v1/stream/start` → returns `{ session_id }`
+* `POST /v1/stream/chunk?session_id=...` → returns partial `{ text, language }`
 
-Model execution is entirely local. No audio or transcripts leave the device.
+  * Chunk payload: raw **float32 PCM mono** (little-endian)
+* `POST /v1/stream/finish?session_id=...` → returns final `{ text, language }`
+
+### Batch API (optional)
+
+* `POST /v1/transcribe` for one-shot transcription of an uploaded audio file
+
+### Language
+
+v1 is **English-only** for the product experience.
+
+* No language UI.
+* The client requests/assumes English.
+
+### Why this approach
+
+* High transcription quality
+* Supports real-time preview via streaming sessions
+* Centralized hosted inference for simplified deployment and updates
 
 ---
 
 ## Privacy
 
-- All processing is local.
-- No network calls during dictation.
-- Temporary audio files stored locally (e.g., `/tmp`).
-- Temporary files automatically deleted after use.
-- Local logs are stored for observability and troubleshooting.
+* Audio is transmitted to the configured ASR service over HTTPS (TLS).
+* The ASR service is operated by us; no third-party APIs are used.
+* Audio is processed for transcription and is not stored after processing.
+* Hanzo does not persist audio locally after a session completes.
 
 ---
 
@@ -158,55 +178,84 @@ Model execution is entirely local. No audio or transcripts leave the device.
 
 User-configurable:
 
-- Hotkey (default: `Ctrl + Option + H`)
-- Whisper model selection (`tiny.en`, `base.en`, `small.en` [default], `medium.en`) — English-only models
+* Hotkey (default: `Ctrl + Option + H`)
+* ASR server endpoint (default: `https://grunt.zain.aaronbatilo.dev`)
+* API key for ASR service (required)
 
+API Key Handling:
 
-
+* Users paste their API key into Hanzo settings.
+* The API key is stored securely using macOS Keychain.
+* The API key is never hardcoded in source code or committed to configuration files.
 
 ---
 
 ## First-Run Experience
 
-If dependencies or models are missing:
+On first launch, Hanzo presents a short, guided onboarding flow:
 
-- Guide user to install required components.
-- Guide user to download local model.
-- Provide clear instructions for enabling:
-  - Microphone permission
-  - Accessibility permission
+### Step 1 — Microphone Permission
 
-The setup experience should be direct and transparent.
+* Screen explains why microphone access is required.
+* User taps **Enable Microphone**.
+* Hanzo triggers the macOS system permission prompt.
+* Once granted, the flow automatically advances.
+
+### Step 2 — Accessibility Permission
+
+* Screen explains that Accessibility access is required to insert text into other apps.
+* User taps **Open System Settings**.
+* Hanzo directs the user to the correct macOS panel.
+* UI confirms when Accessibility permission is enabled.
+
+### Step 3 — Hotkey Confirmation
+
+* Screen displays the default hotkey (e.g., `Ctrl + Option + H`).
+* Brief explanation of toggle behavior.
+* User taps **Done** to complete onboarding.
+
+No model downloads or local setup steps are required.
+
+The onboarding should be minimal, clear, and complete in under 30 seconds.
 
 ---
 
 ## Performance Requirements
 
-- Optimized for short-form dictation (3–20 seconds typical).
-- Responsive on Apple Silicon.
-- UI must remain fluid during transcription.
-- Clear error handling for:
-  - Missing permissions
-  - Missing model
-  - Microphone unavailable
-  - Transcription failure
+* Optimized for short-form dictation (3–20 seconds typical).
+* Responsive on Apple Silicon.
+* UI must remain fluid during transcription.
+
+Latency Targets (under typical network conditions):
+
+* Streaming preview update cadence: ≤ 700ms between partial updates.
+* Final commit latency (hotkey press to text insertion): ≤ 1.5s for typical 5–10 second dictation.
+
+Clear error handling for:
+
+* Missing permissions
+* Server unavailable
+* Authentication failure
+* Transcription failure
 
 ---
 
 ## Observability
 
-Hanzo maintains local logs for troubleshooting and reliability.
+Hanzo maintains client-side logs for troubleshooting and reliability.
 
-Logs include:
+Client logs include:
 
-- Timestamped state changes
-- Errors
-- Recording duration
-- Transcription duration
+* Timestamped state changes (Listening, Forging, Insert)
+* Errors
+* Recording duration
+* Transcription latency (round-trip time)
 
-Logs are always written locally (e.g., `~/Library/Logs/hanzo.log`).
+Logs are written locally (e.g., `~/Library/Logs/hanzo.log`).
 
-No audio data is retained in logs.
+The ASR server is assumed to maintain its own operational logs separately.
+
+No audio data is retained in client logs.
 
 ---
 
@@ -214,21 +263,21 @@ No audio data is retained in logs.
 
 Hanzo should:
 
-- Work in Notes, Slack, Chrome text inputs, and VS Code.
-- Successfully insert text in at least 9/10 normal dictation attempts.
-- Require no internet connection after setup.
-- Display a responsive live preview HUD.
-- Perform exactly one insertion into the focused app per session.
+* Work in Notes, Slack, Chrome text inputs, and VS Code.
+* Successfully insert text in at least 9/10 normal dictation attempts.
+* Operate reliably when network connectivity to the ASR service is available.
+* Display a responsive live preview HUD.
+* Perform exactly one insertion into the focused app per session.
 
 ---
 
 ## Future Enhancements (v2)
 
-- Voice formatting commands ("new paragraph", "comma", etc.).
-- Optional cleanup pass for capitalization and punctuation.
-- Menu bar model switching.
-- Local transcript history panel.
-- Toggle vs hold mode preference.
+* Voice formatting commands ("new paragraph", "comma", etc.).
+* Optional cleanup pass for capitalization and punctuation.
+* Menu bar model switching.
+* Local transcript history panel.
+* Toggle vs hold mode preference.
 
 ---
 
@@ -236,14 +285,9 @@ Hanzo should:
 
 Hanzo should feel:
 
-- Minimal
-- Precise
-- Quietly powerful
-- Invisible when not in use
-
-No gimmicks.  
-No flash.  
-Just steel.
+* Minimal
+* Precise
+* Quietly powerful
 
 ---
 
@@ -251,10 +295,9 @@ Just steel.
 
 A working macOS application that satisfies the above requirements, with a clear README covering:
 
-- Installation
-- Configuration
-- Permissions setup
-- Troubleshooting
+* Installation
+* Configuration
+* Permissions setup
+* Troubleshooting
 
 Hanzo should feel intentional, restrained, and built for one purpose.
-
