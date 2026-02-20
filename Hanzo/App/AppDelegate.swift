@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Setup popover
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 320, height: 120)
+        popover.contentSize = NSSize(width: 320, height: 60)
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(
             rootView: TranscriptPopover(appState: appState)

@@ -15,16 +15,10 @@ struct TranscriptPopover: View {
             }
 
             if !appState.partialTranscript.isEmpty {
-                ScrollView {
-                    Text(appState.partialTranscript)
-                        .font(.body)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
-                }
-            } else if appState.dictationState == .listening {
-                Text("Listening...")
+                Text(appState.partialTranscript)
                     .font(.body)
-                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
             } else if appState.dictationState == .forging {
                 HStack(spacing: 6) {
                     ProgressView()
@@ -42,7 +36,9 @@ struct TranscriptPopover: View {
             }
         }
         .padding()
-        .frame(width: 320, height: 160)
+        .frame(width: 320)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxHeight: 400)
     }
 
     private var stateLabel: String {
