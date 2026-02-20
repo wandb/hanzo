@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var onboardingWindow: NSWindow?
+    private var settingsWindow: NSWindow?
     private var stateObservationTask: Task<Void, Never>?
 
     let appState = AppState()
@@ -145,12 +146,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openSettings() {
-        if #available(macOS 14.0, *) {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-        } else {
-            NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+        if let window = settingsWindow {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
         }
+
+        let settingsView = SettingsView(onSave: { [weak self] in
+            self?.orchestrator.reloadSettings()
+        })
+        let hostingController = NSHostingController(rootView: settingsView)
+        let window = NSWindow(contentViewController: hostingController)
+        window.title = "Hanzo Settings"
+        window.styleMask = [.titled, .closable]
+        window.setContentSize(NSSize(width: 420, height: 280))
+        window.center()
+        window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        self.settingsWindow = window
     }
 
     // MARK: - App Monitoring

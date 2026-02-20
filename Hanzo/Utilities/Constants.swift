@@ -2,7 +2,7 @@ import Foundation
 
 enum Constants {
     static let defaultServerEndpoint = "https://grunt.zain.aaronbatilo.dev"
-    static let defaultAPIKey = "aaronissocool"
+    static let defaultAPIKey = ""
     static let serverEndpointKey = "serverEndpoint"
     static let apiKeyKey = "apiKey"
     static let onboardingCompleteKey = "onboardingComplete"
