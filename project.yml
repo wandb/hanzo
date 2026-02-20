@@ -1,0 +1,37 @@
+name: Hanzo
+options:
+  bundleIdPrefix: com.hanzo
+  deploymentTarget:
+    macOS: "15.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+
+packages:
+  HotKey:
+    url: https://github.com/soffes/HotKey
+    from: "0.2.1"
+  KeychainAccess:
+    url: https://github.com/kishikawakatsumi/KeychainAccess
+    from: "4.2.2"
+
+targets:
+  Hanzo:
+    type: application
+    platform: macOS
+    sources:
+      - path: Hanzo
+    settings:
+      base:
+        INFOPLIST_FILE: Hanzo/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Hanzo/Hanzo.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.hanzo.app
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: 1
+        SWIFT_VERSION: "6.0"
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_IDENTITY: "-"
+        COMBINE_HIDPI_IMAGES: YES
+        SWIFT_STRICT_CONCURRENCY: minimal
+    dependencies:
+      - package: HotKey
+      - package: KeychainAccess

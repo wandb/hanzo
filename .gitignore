@@ -1,0 +1,19 @@
+# Build
+.build/
+build/
+DerivedData/
+
+# Xcode
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+
+# SPM
+.swiftpm/
+
+# macOS
+.DS_Store
+
+# Context
+.context/
