@@ -6,6 +6,10 @@ enum Constants {
     static let serverEndpointKey = "serverEndpoint"
     static let apiKeyKey = "apiKey"
     static let onboardingCompleteKey = "onboardingComplete"
+    static let hotkeyCodeKey = "hotkeyCode"
+    static let hotkeyModifiersKey = "hotkeyModifiers"
+    static let defaultHotkeyCode: UInt32 = 4     // H (Carbon virtual key code)
+    static let defaultHotkeyModifiers: UInt32 = 4096 | 2048  // Control + Option (Carbon flags)
     static let logFileName = "hanzo.log"
     static let maxLogFileSizeMB = 10
     static let audioSampleRate: Double = 16000

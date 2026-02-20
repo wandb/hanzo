@@ -152,14 +152,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let settingsView = SettingsView(onSave: { [weak self] in
-            self?.orchestrator.reloadSettings()
-        })
+        let settingsView = SettingsView(
+            onSave: { [weak self] in
+                self?.orchestrator.reloadSettings()
+            },
+            onHotkeyChanged: { [weak self] in
+                self?.hotkeyService.reregister()
+            }
+        )
         let hostingController = NSHostingController(rootView: settingsView)
         let window = NSWindow(contentViewController: hostingController)
         window.title = "Hanzo Settings"
         window.styleMask = [.titled, .closable]
-        window.setContentSize(NSSize(width: 420, height: 280))
+        window.setContentSize(NSSize(width: 420, height: 300))
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
