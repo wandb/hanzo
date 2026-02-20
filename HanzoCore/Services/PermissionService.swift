@@ -2,7 +2,7 @@ import AVFoundation
 import ApplicationServices
 import AppKit
 
-final class PermissionService {
+final class PermissionService: PermissionServiceProtocol {
     static let shared = PermissionService()
 
     private init() {}

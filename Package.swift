@@ -10,12 +10,12 @@ let package = Package(
         .package(url: "https://github.com/soffes/HotKey", from: "0.2.1"),
     ],
     targets: [
-        .executableTarget(
-            name: "Hanzo",
+        .target(
+            name: "HanzoCore",
             dependencies: [
                 "HotKey",
             ],
-            path: "Hanzo",
+            path: "HanzoCore",
             exclude: [
                 "Info.plist",
                 "Hanzo.entitlements",
@@ -23,6 +23,26 @@ let package = Package(
             resources: [
                 .process("Assets.xcassets"),
             ],
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+            ]
+        ),
+        .executableTarget(
+            name: "HanzoApp",
+            dependencies: [
+                "HanzoCore",
+            ],
+            path: "HanzoApp",
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+            ]
+        ),
+        .testTarget(
+            name: "HanzoTests",
+            dependencies: [
+                "HanzoCore",
+            ],
+            path: "Tests/HanzoTests",
             swiftSettings: [
                 .swiftLanguageMode(.v5),
             ]
