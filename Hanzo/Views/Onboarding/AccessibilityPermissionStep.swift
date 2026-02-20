@@ -2,8 +2,8 @@ import SwiftUI
 
 struct AccessibilityPermissionStep: View {
     var onNext: () -> Void
-    @State private var permissionGranted = false
-    @State private var timer: Timer?
+    @State private var permissionGranted = PermissionService.shared.hasAccessibilityPermission
+
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "hand.raised.fill")
@@ -39,27 +39,16 @@ struct AccessibilityPermissionStep: View {
             }
         }
         .padding()
-        .onAppear {
-            checkPermission()
-            startPolling()
-        }
-        .onDisappear {
-            timer?.invalidate()
-        }
-    }
-
-    private func checkPermission() {
-        let granted = AXIsProcessTrusted()
-        permissionGranted = granted
-        if granted {
-            timer?.invalidate()
-            onNext()
-        }
-    }
-
-    private func startPolling() {
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            checkPermission()
+        .task {
+            guard !permissionGranted else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if AXIsProcessTrusted() {
+                    permissionGranted = true
+                    onNext()
+                    break
+                }
+            }
         }
     }
 }

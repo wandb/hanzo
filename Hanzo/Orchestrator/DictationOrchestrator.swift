@@ -19,7 +19,7 @@ final class DictationOrchestrator {
         self.appState = appState
         let baseURL = UserDefaults.standard.string(forKey: Constants.serverEndpointKey)
             ?? Constants.defaultServerEndpoint
-        let apiKey = KeychainService.shared.loadAPIKey() ?? Constants.defaultAPIKey
+        let apiKey = UserDefaults.standard.string(forKey: Constants.apiKeyKey) ?? Constants.defaultAPIKey
         self.asrClient = ASRClient(baseURL: baseURL, apiKey: apiKey)
 
         audioService.onAudioChunk = { [weak self] data in
@@ -30,7 +30,7 @@ final class DictationOrchestrator {
     func reloadSettings() {
         let baseURL = UserDefaults.standard.string(forKey: Constants.serverEndpointKey)
             ?? Constants.defaultServerEndpoint
-        let apiKey = KeychainService.shared.loadAPIKey() ?? Constants.defaultAPIKey
+        let apiKey = UserDefaults.standard.string(forKey: Constants.apiKeyKey) ?? Constants.defaultAPIKey
         asrClient = ASRClient(baseURL: baseURL, apiKey: apiKey)
     }
 
@@ -125,23 +125,40 @@ final class DictationOrchestrator {
 
                 logger.info("Final transcription (\(finalText.count) chars): \(finalText.prefix(100))")
 
-                // Re-activate the previous app and insert text
+                // PHASE 1: Dismiss UI now that we have the final transcript
+                // Must happen BEFORE activating the target app, otherwise
+                // the transient popover auto-closes on focus loss and the
+                // 100ms timer in AppDelegate re-shows it, stealing focus back.
                 await MainActor.run {
-                    if !finalText.isEmpty {
-                        previousApp?.activate()
-                    }
+                    appState.isPopoverPresented = false
+                    appState.partialTranscript = ""
+                    appState.dictationState = .idle
                 }
 
-                // Small delay for app activation to complete
-                try? await Task.sleep(nanoseconds: 150_000_000) // 150ms
+                // Let popover fully dismiss
+                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
 
-                await MainActor.run {
-                    if !finalText.isEmpty {
+                // PHASE 2: Activate target app and paste
+                if !finalText.isEmpty, let targetApp = previousApp {
+                    await MainActor.run {
+                        _ = targetApp.activate()
+                    }
+                    try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
+
+                    // Verify target app is frontmost; retry once if not
+                    let frontmost = NSWorkspace.shared.frontmostApplication
+                    if frontmost?.processIdentifier != targetApp.processIdentifier {
+                        logger.warn("Target app not frontmost after activation, retrying")
+                        await MainActor.run {
+                            _ = targetApp.activate()
+                        }
+                        try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
+                    }
+
+                    // PHASE 3: Paste
+                    await MainActor.run {
                         textInsertion.insertText(finalText)
                     }
-                    appState.dictationState = .idle
-                    appState.partialTranscript = ""
-                    appState.isPopoverPresented = false
                 }
             } catch {
                 logger.error("Transcription failed: \(error)")

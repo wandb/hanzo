@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @State private var serverEndpoint: String = UserDefaults.standard.string(forKey: Constants.serverEndpointKey) ?? Constants.defaultServerEndpoint
-    @State private var apiKey: String = KeychainService.shared.loadAPIKey() ?? ""
+    @State private var apiKey: String = UserDefaults.standard.string(forKey: Constants.apiKeyKey) ?? ""
     @State private var showSaved = false
 
     var body: some View {
@@ -50,7 +50,7 @@ struct SettingsView: View {
 
     private func save() {
         UserDefaults.standard.set(serverEndpoint, forKey: Constants.serverEndpointKey)
-        try? KeychainService.shared.saveAPIKey(apiKey)
+        UserDefaults.standard.set(apiKey, forKey: Constants.apiKeyKey)
 
         withAnimation {
             showSaved = true

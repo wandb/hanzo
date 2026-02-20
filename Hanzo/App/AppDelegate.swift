@@ -13,9 +13,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let logger = LoggingService.shared
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Ensure default API key in keychain
-        KeychainService.shared.ensureDefaultAPIKey()
-
         // Create status bar item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         updateMenuBarIcon()
@@ -198,6 +195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Welcome to Hanzo"
         window.styleMask = [.titled, .closable]
         window.setContentSize(NSSize(width: 480, height: 360))
+        window.level = .floating
         window.center()
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
