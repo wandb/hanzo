@@ -16,10 +16,7 @@ struct HotkeyConfirmationStep: View {
                 KeyCapView(label: "Ctrl")
                 Text("+")
                     .foregroundStyle(.secondary)
-                KeyCapView(label: "Option")
-                Text("+")
-                    .foregroundStyle(.secondary)
-                KeyCapView(label: "H")
+                KeyCapView(label: "Space")
             }
             .padding(.vertical, 8)
 
