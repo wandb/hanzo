@@ -58,8 +58,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Observe state changes for icon and popover updates
         startStateObservation()
 
-        // Show onboarding if needed
-        if !appState.isOnboardingComplete {
+        // Show onboarding if not completed, or if permissions were revoked
+        let permissions = PermissionService.shared
+        let permissionsRevoked = !permissions.hasMicrophonePermission || !permissions.hasAccessibilityPermission
+        if !appState.isOnboardingComplete || permissionsRevoked {
             showOnboarding()
         }
 
