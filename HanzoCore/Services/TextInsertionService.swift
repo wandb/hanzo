@@ -1,7 +1,7 @@
 import AppKit
 import CoreGraphics
 
-final class TextInsertionService {
+final class TextInsertionService: TextInsertionProtocol {
     private let logger = LoggingService.shared
 
     func insertText(_ text: String) {

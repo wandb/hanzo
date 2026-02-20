@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     private var onboardingWindow: NSWindow?
@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hotkeyService = HotkeyService()
     private let logger = LoggingService.shared
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    public func applicationDidFinishLaunching(_ notification: Notification) {
         // Create status bar item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         updateMenuBarIcon()
@@ -69,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         logger.info("Hanzo launched")
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
+    public func applicationWillTerminate(_ notification: Notification) {
         stateObservationTask?.cancel()
         hotkeyService.unregister()
         logger.info("Hanzo terminated")

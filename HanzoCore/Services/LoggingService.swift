@@ -1,6 +1,6 @@
 import Foundation
 
-final class LoggingService: @unchecked Sendable {
+final class LoggingService: LoggingServiceProtocol, @unchecked Sendable {
     static let shared = LoggingService()
 
     private let queue = DispatchQueue(label: "com.hanzo.logging")

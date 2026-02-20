@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 
-final class AudioCaptureService {
+final class AudioCaptureService: AudioCaptureProtocol {
     private let engine = AVAudioEngine()
     private var converter: AVAudioConverter?
     private var isCapturing = false

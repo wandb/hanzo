@@ -37,14 +37,15 @@ enum ASRError: Error, LocalizedError {
     }
 }
 
-final class ASRClient {
-    private let session = URLSession.shared
+final class ASRClient: ASRClientProtocol {
+    private let session: URLSession
     var baseURL: String
     var apiKey: String
 
-    init(baseURL: String, apiKey: String) {
+    init(baseURL: String, apiKey: String, session: URLSession = .shared) {
         self.baseURL = baseURL
         self.apiKey = apiKey
+        self.session = session
     }
 
     func startStream() async throws -> String {

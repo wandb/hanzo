@@ -4,30 +4,51 @@ import AppKit
 @Observable
 final class DictationOrchestrator {
     private let appState: AppState
-    private let audioService = AudioCaptureService()
-    private let textInsertion = TextInsertionService()
-    private let logger = LoggingService.shared
+    private var audioService: AudioCaptureProtocol
+    private let textInsertion: TextInsertionProtocol
+    private let permissionService: PermissionServiceProtocol
+    private let logger: LoggingServiceProtocol
 
-    private var asrClient: ASRClient
+    private var asrClient: ASRClientProtocol
+    private let isASRClientInjected: Bool
     private var sessionId: String?
     private var audioBuffer = Data()
     private let bufferQueue = DispatchQueue(label: "com.hanzo.audiobuffer")
     private var chunkSendTask: Task<Void, Never>?
     private var previousApp: NSRunningApplication?
 
-    init(appState: AppState) {
+    init(
+        appState: AppState,
+        asrClient: ASRClientProtocol? = nil,
+        audioService: AudioCaptureProtocol = AudioCaptureService(),
+        textInsertion: TextInsertionProtocol = TextInsertionService(),
+        permissionService: PermissionServiceProtocol = PermissionService.shared,
+        logger: LoggingServiceProtocol = LoggingService.shared
+    ) {
         self.appState = appState
-        let baseURL = UserDefaults.standard.string(forKey: Constants.serverEndpointKey)
-            ?? Constants.defaultServerEndpoint
-        let apiKey = UserDefaults.standard.string(forKey: Constants.apiKeyKey) ?? Constants.defaultAPIKey
-        self.asrClient = ASRClient(baseURL: baseURL, apiKey: apiKey)
+        self.audioService = audioService
+        self.textInsertion = textInsertion
+        self.permissionService = permissionService
+        self.logger = logger
 
-        audioService.onAudioChunk = { [weak self] data in
+        if let asrClient = asrClient {
+            self.asrClient = asrClient
+            self.isASRClientInjected = true
+        } else {
+            let baseURL = UserDefaults.standard.string(forKey: Constants.serverEndpointKey)
+                ?? Constants.defaultServerEndpoint
+            let apiKey = UserDefaults.standard.string(forKey: Constants.apiKeyKey) ?? Constants.defaultAPIKey
+            self.asrClient = ASRClient(baseURL: baseURL, apiKey: apiKey)
+            self.isASRClientInjected = false
+        }
+
+        self.audioService.onAudioChunk = { [weak self] data in
             self?.handleAudioChunk(data)
         }
     }
 
     func reloadSettings() {
+        guard !isASRClientInjected else { return }
         let baseURL = UserDefaults.standard.string(forKey: Constants.serverEndpointKey)
             ?? Constants.defaultServerEndpoint
         let apiKey = UserDefaults.standard.string(forKey: Constants.apiKeyKey) ?? Constants.defaultAPIKey
@@ -65,7 +86,7 @@ final class DictationOrchestrator {
     // MARK: - Private
 
     private func startRecording() {
-        guard PermissionService.shared.hasMicrophonePermission else {
+        guard permissionService.hasMicrophonePermission else {
             logger.error("Microphone permission not granted")
             appState.dictationState = .error
             appState.errorMessage = "Microphone permission required. Check System Settings."

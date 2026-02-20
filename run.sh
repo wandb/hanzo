@@ -10,14 +10,14 @@ mkdir -p "$APP_DIR/MacOS"
 mkdir -p "$APP_DIR/Resources"
 
 # Copy executable
-cp .build/debug/Hanzo "$APP_DIR/MacOS/Hanzo"
+cp .build/debug/HanzoApp "$APP_DIR/MacOS/Hanzo"
 
 # Copy Info.plist
-cp Hanzo/Info.plist "$APP_DIR/Info.plist"
+cp HanzoCore/Info.plist "$APP_DIR/Info.plist"
 
 # Copy resources bundle if it exists
-if [ -d ".build/debug/Hanzo_Hanzo.bundle" ]; then
-    cp -R ".build/debug/Hanzo_Hanzo.bundle" "$APP_DIR/Resources/"
+if [ -d ".build/debug/HanzoCore_HanzoCore.bundle" ]; then
+    cp -R ".build/debug/HanzoCore_HanzoCore.bundle" "$APP_DIR/Resources/"
 fi
 
 echo "App bundle created at .build/Hanzo.app"
