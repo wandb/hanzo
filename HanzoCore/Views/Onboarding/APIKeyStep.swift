@@ -10,7 +10,7 @@ struct APIKeyStep: View {
                 .font(.system(size: 48))
                 .foregroundStyle(Color.accentColor)
 
-            Text("API Key")
+            Text("API key")
                 .font(.title2.bold())
 
             Text("Enter your ASR server API key. You can change this later in Settings.")
@@ -19,7 +19,7 @@ struct APIKeyStep: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 340)
 
-            TextField("API Key", text: $apiKey)
+            TextField("API key", text: $apiKey)
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 300)
 
