@@ -16,15 +16,20 @@ struct SettingsView: View {
         return val != 0 ? UInt32(val) : Constants.defaultHotkeyModifiers
     }()
     @State private var isRecordingHotkey = false
+    @FocusState private var focusedField: Field?
+
+    private enum Field { case endpoint, apiKey }
 
     var body: some View {
         Form {
             Section("Server") {
                 TextField("ASR Server Endpoint", text: $serverEndpoint)
                     .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .endpoint)
                     .onChange(of: serverEndpoint) { saveServer() }
-                SecureField("API Key", text: $apiKey)
+                TextField("API Key", text: $apiKey)
                     .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .apiKey)
                     .onChange(of: apiKey) { saveServer() }
             }
 

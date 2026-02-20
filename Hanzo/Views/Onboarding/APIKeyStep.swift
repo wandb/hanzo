@@ -19,7 +19,7 @@ struct APIKeyStep: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 340)
 
-            SecureField("API Key", text: $apiKey)
+            TextField("API Key", text: $apiKey)
                 .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 300)
 
