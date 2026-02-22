@@ -20,10 +20,6 @@ struct AccessibilityPermissionStep: View {
                 .frame(maxWidth: 340)
 
             if permissionGranted {
-                Label("Accessibility access granted", systemImage: "checkmark.circle.fill")
-                    .font(.system(.body, design: .rounded))
-                    .foregroundStyle(.green)
-
                 Button("Continue") {
                     onNext()
                 }
