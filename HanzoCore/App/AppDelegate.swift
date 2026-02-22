@@ -71,6 +71,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         logger.info("Hanzo launched")
     }
 
+    public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
     public func applicationWillTerminate(_ notification: Notification) {
         stateObservationTask?.cancel()
         hotkeyService.unregister()
@@ -179,13 +183,25 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onHotkeyChanged: { [weak self] in
                 self?.hotkeyService.reregister()
+            },
+            onClose: { [weak self] in
+                self?.settingsWindow?.close()
+                self?.settingsWindow = nil
             }
         )
         let hostingController = NSHostingController(rootView: settingsView)
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "Hanzo settings"
-        window.styleMask = [.titled, .closable]
-        window.setContentSize(NSSize(width: 420, height: 300))
+        window.styleMask = [.titled, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = true
+        window.isMovableByWindowBackground = true
+        window.setContentSize(NSSize(width: 420, height: 310))
         window.center()
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(nil)
@@ -236,9 +252,17 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let hostingController = NSHostingController(rootView: onboardingView)
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "Welcome to Hanzo"
-        window.styleMask = [.titled, .closable]
-        window.setContentSize(NSSize(width: 480, height: 360))
+        window.styleMask = [.titled, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = true
+        window.isMovableByWindowBackground = true
+        window.setContentSize(NSSize(width: 480, height: 380))
         window.level = .floating
         window.center()
         window.makeKeyAndOrderFront(nil)

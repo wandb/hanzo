@@ -19,11 +19,11 @@ struct OnboardingContainerView: View {
             HStack(spacing: 8) {
                 ForEach(0..<Self.totalSteps, id: \.self) { step in
                     Circle()
-                        .fill(step <= currentStep ? Color.accentColor : Color.secondary.opacity(0.3))
-                        .frame(width: 8, height: 8)
+                        .fill(step <= currentStep ? Color.white : Color.white.opacity(0.25))
+                        .frame(width: 6, height: 6)
                 }
             }
-            .padding(.top, 20)
+            .padding(.top, 24)
 
             Spacer()
 
@@ -51,6 +51,8 @@ struct OnboardingContainerView: View {
 
             Spacer()
         }
-        .frame(width: 480, height: 340)
+        .padding(.horizontal, 24)
+        .frame(width: 480, height: 380)
+        .hudBackground()
     }
 }

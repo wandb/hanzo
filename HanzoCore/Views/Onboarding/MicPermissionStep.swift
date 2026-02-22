@@ -8,25 +8,26 @@ struct MicPermissionStep: View {
         VStack(spacing: 16) {
             Image(systemName: "mic.fill")
                 .font(.system(size: 48))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(.white)
 
             Text("Microphone access")
-                .font(.title2.bold())
+                .font(.system(.title2, design: .rounded, weight: .bold))
 
             Text("Hanzo needs microphone access to capture your speech for transcription.")
-                .font(.body)
+                .font(.system(.body, design: .rounded))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 340)
 
             if permissionGranted {
                 Label("Microphone access granted", systemImage: "checkmark.circle.fill")
+                    .font(.system(.body, design: .rounded))
                     .foregroundStyle(.green)
 
                 Button("Continue") {
                     onNext()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(HUDButtonStyle())
             } else {
                 Button("Enable microphone") {
                     Task {
@@ -37,9 +38,8 @@ struct MicPermissionStep: View {
                         }
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(HUDButtonStyle())
             }
         }
-        .padding()
     }
 }

@@ -8,37 +8,37 @@ struct AccessibilityPermissionStep: View {
         VStack(spacing: 16) {
             Image(systemName: "hand.raised.fill")
                 .font(.system(size: 48))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(.white)
 
             Text("Accessibility access")
-                .font(.title2.bold())
+                .font(.system(.title2, design: .rounded, weight: .bold))
 
             Text("Hanzo needs accessibility access to insert transcribed text into other apps.")
-                .font(.body)
+                .font(.system(.body, design: .rounded))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 340)
 
             if permissionGranted {
                 Label("Accessibility access granted", systemImage: "checkmark.circle.fill")
+                    .font(.system(.body, design: .rounded))
                     .foregroundStyle(.green)
 
                 Button("Continue") {
                     onNext()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(HUDButtonStyle())
             } else {
                 Button("Open System Settings") {
                     PermissionService.shared.openAccessibilitySettings()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(HUDButtonStyle())
 
                 Text("Grant access in System Settings, then return here.")
-                    .font(.caption)
+                    .font(.system(.caption, design: .rounded))
                     .foregroundStyle(.secondary)
             }
         }
-        .padding()
         .task {
             guard !permissionGranted else { return }
             while !Task.isCancelled {

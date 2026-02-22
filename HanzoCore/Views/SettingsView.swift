@@ -4,6 +4,7 @@ import Carbon
 struct SettingsView: View {
     var onSave: (() -> Void)?
     var onHotkeyChanged: (() -> Void)?
+    var onClose: (() -> Void)?
 
     @State private var serverEndpoint: String = UserDefaults.standard.string(forKey: Constants.serverEndpointKey) ?? Constants.defaultServerEndpoint
     @State private var apiKey: String = UserDefaults.standard.string(forKey: Constants.apiKeyKey) ?? ""
@@ -21,48 +22,88 @@ struct SettingsView: View {
     private enum Field { case endpoint, apiKey }
 
     var body: some View {
-        Form {
-            Section("Server") {
+        VStack(alignment: .leading, spacing: 0) {
+            // Close button
+            HStack {
+                Spacer()
+                Button(action: { onClose?() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.white.opacity(0.3))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.bottom, 8)
+
+            // Server section
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Server")
+                    .font(.system(.subheadline, design: .rounded, weight: .medium))
+                    .foregroundStyle(.secondary)
+
                 TextField("ASR server endpoint", text: $serverEndpoint)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .font(.system(.body, design: .rounded))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.white.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                     .focused($focusedField, equals: .endpoint)
                     .onChange(of: serverEndpoint) { saveServer() }
+
                 TextField("API key", text: $apiKey)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
+                    .font(.system(.body, design: .rounded))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.white.opacity(0.08))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
                     .focused($focusedField, equals: .apiKey)
                     .onChange(of: apiKey) { saveServer() }
             }
 
-            Section("Hotkey") {
+            Divider()
+                .padding(.vertical, 16)
+
+            // Hotkey section
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Hotkey")
+                    .font(.system(.subheadline, design: .rounded, weight: .medium))
+                    .foregroundStyle(.secondary)
+
                 HStack {
-                    Text("Global hotkey:")
                     if isRecordingHotkey {
                         Text("Press a key combo...")
+                            .font(.system(.body, design: .rounded))
                             .foregroundStyle(.secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.blue.opacity(0.15))
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(.blue.opacity(0.2))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                     } else {
                         Text(HotkeyService.displayString(keyCode: hotkeyCode, modifiers: hotkeyModifiers))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(.quaternary)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .font(.system(.body, design: .rounded, weight: .medium))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(.white.opacity(0.08))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     Spacer()
                     Button(isRecordingHotkey ? "Cancel" : "Change") {
                         isRecordingHotkey.toggle()
                     }
+                    .font(.system(.body, design: .rounded))
                     .buttonStyle(.borderless)
                 }
+
                 Text("Press this combination anywhere to start/stop dictation.")
-                    .font(.caption)
+                    .font(.system(.caption, design: .rounded))
                     .foregroundStyle(.secondary)
             }
         }
-        .formStyle(.grouped)
-        .frame(width: 420, height: 300)
+        .padding(24)
+        .frame(width: 420, height: 310)
+        .hudBackground()
         .background(isRecordingHotkey ? HotkeyRecorderView(onKeyCombo: { keyCode, modifiers in
             hotkeyCode = keyCode
             hotkeyModifiers = modifiers
