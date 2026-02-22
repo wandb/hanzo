@@ -3,7 +3,7 @@ import SwiftUI
 
 public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    private var popover: NSPopover!
+    private var transcriptPanel: NSPanel?
     private var onboardingWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private var stateObservationTask: Task<Void, Never>?
@@ -23,13 +23,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             button.target = self
         }
 
-        // Setup popover
-        popover = NSPopover()
-        popover.contentSize = NSSize(width: 320, height: 60)
-        popover.behavior = .transient
-        popover.contentViewController = NSHostingController(
-            rootView: TranscriptPopover(appState: appState)
-        )
+        // Setup transcript panel
+        transcriptPanel = makeTranscriptPanel()
 
         // Register hotkey
         hotkeyService.onToggle = { [weak self] in
@@ -45,7 +40,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
-        // Monitor escape key
+        // Monitor escape key (local for when app is active, global for non-activating panel)
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == 53 { // Escape
                 if self?.appState.dictationState == .listening {
@@ -54,6 +49,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             return event
+        }
+        NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 {
+                if self?.appState.dictationState == .listening {
+                    self?.orchestrator.cancel()
+                }
+            }
         }
 
         // Observe state changes for icon and popover updates
@@ -87,33 +89,52 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func statusItemClicked() {
         if appState.dictationState == .listening || appState.dictationState == .forging {
-            togglePopover()
+            togglePanel()
         } else {
             showMenu()
         }
     }
 
-    // MARK: - Popover
+    // MARK: - Transcript Panel
 
-    private func togglePopover() {
-        if popover.isShown {
-            popover.performClose(nil)
-        } else if let button = statusItem.button {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            // Make sure the popover's window becomes key so we receive key events
-            popover.contentViewController?.view.window?.makeKey()
+    private func makeTranscriptPanel() -> TranscriptPanel {
+        let panel = TranscriptPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 60),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: true
+        )
+        panel.level = .floating
+        panel.isMovableByWindowBackground = true
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        let hostingController = NSHostingController(
+            rootView: TranscriptPopover(appState: appState)
+        )
+        panel.contentViewController = hostingController
+        return panel
+    }
+
+    private func togglePanel() {
+        guard let panel = transcriptPanel else { return }
+        if panel.isVisible {
+            hidePanel()
+        } else {
+            showPanel()
         }
     }
 
-    private func showPopover() {
-        guard !popover.isShown, let button = statusItem.button else { return }
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    private func showPanel() {
+        guard let panel = transcriptPanel, !panel.isVisible else { return }
+        panel.setContentSize(NSSize(width: 480, height: 60))
+        panel.center()
+        panel.orderFrontRegardless()
     }
 
-    private func hidePopover() {
-        if popover.isShown {
-            popover.performClose(nil)
-        }
+    private func hidePanel() {
+        transcriptPanel?.orderOut(nil)
     }
 
     // MARK: - Menu
@@ -188,16 +209,17 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - State Observation
 
     private func startStateObservation() {
-        // Poll state changes to update icon and popover
+        // Poll state changes to update icon and panel visibility
         // Using a timer since @Observable observation from NSObject is complex
         Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.updateMenuBarIcon()
 
-            if self.appState.isPopoverPresented && !self.popover.isShown {
-                self.showPopover()
-            } else if !self.appState.isPopoverPresented && self.popover.isShown {
-                self.hidePopover()
+            let panelVisible = self.transcriptPanel?.isVisible ?? false
+            if self.appState.isPopoverPresented && !panelVisible {
+                self.showPanel()
+            } else if !self.appState.isPopoverPresented && panelVisible {
+                self.hidePanel()
             }
         }
     }
@@ -222,5 +244,36 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         self.onboardingWindow = window
+    }
+}
+
+// MARK: - Transcript Panel
+
+/// Floating panel that pins its top edge when height changes (grows downward).
+class TranscriptPanel: NSPanel {
+    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        let pinned = pinTop(for: frameRect)
+        super.setFrame(pinned, display: flag)
+    }
+
+    override func setFrame(_ frameRect: NSRect, display displayFlag: Bool, animate animateFlag: Bool) {
+        let pinned = pinTop(for: frameRect)
+        super.setFrame(pinned, display: displayFlag, animate: animateFlag)
+    }
+
+    override func setContentSize(_ size: NSSize) {
+        let pinned = pinTop(for: NSRect(origin: frame.origin, size: size))
+        super.setFrame(pinned, display: true)
+    }
+
+    private func pinTop(for newRect: NSRect) -> NSRect {
+        guard isVisible else { return newRect }
+        let currentTop = frame.origin.y + frame.size.height
+        return NSRect(
+            x: newRect.origin.x,
+            y: currentTop - newRect.size.height,
+            width: newRect.size.width,
+            height: newRect.size.height
+        )
     }
 }

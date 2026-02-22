@@ -3,11 +3,11 @@ import SwiftUI
 struct AudioWaveformView: View {
     let appState: AppState
 
-    private let totalBars = 28
-    private let innerRadius: CGFloat = 8
-    private let minBarLength: CGFloat = 1.0
-    private let maxBarExtension: CGFloat = 2.3
-    private let volumeBoost: CGFloat = 1.5
+    private let totalBars = 72
+    private let innerRadius: CGFloat = 12
+    private let minBarLength: CGFloat = 1.5
+    private let maxBarExtension: CGFloat = 3.45
+    private let volumeBoost: CGFloat = 2.25
     private let barWidth: CGFloat = 1.5
     private let baseOpacity = 0.3
     private let radiusGrow: CGFloat = 0.25
@@ -18,7 +18,7 @@ struct AudioWaveformView: View {
     private let glowExpand: CGFloat = 0.35
     private let glowPow: CGFloat = 0.6
     private let normalizeThreshold: Float = 0.08
-    private let size: CGFloat = 44
+    private let size: CGFloat = 66
 
     private let harmonics: [(freq: Double, speed: Double, amp: Double)] = [
         (2, 0.8, 0.35),
