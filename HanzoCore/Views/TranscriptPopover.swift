@@ -18,7 +18,9 @@ struct TranscriptPopover: View {
                     .textSelection(.enabled)
             }
         }
-        .padding()
+        .padding(.top, 16)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 24)
         .frame(width: 480)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxHeight: 400)
