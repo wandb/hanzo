@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import SwiftUI
 
 @Observable
 final class DictationOrchestrator {
@@ -45,6 +46,14 @@ final class DictationOrchestrator {
         self.audioService.onAudioChunk = { [weak self] data in
             self?.handleAudioChunk(data)
         }
+
+        self.audioService.onAudioLevels = { [weak self] levels in
+            Task { @MainActor in
+                withAnimation(.easeOut(duration: 0.15)) {
+                    self?.appState.audioLevels = levels
+                }
+            }
+        }
     }
 
     func reloadSettings() {
@@ -79,6 +88,7 @@ final class DictationOrchestrator {
         Task { @MainActor in
             appState.dictationState = .idle
             appState.partialTranscript = ""
+            appState.audioLevels = []
             appState.isPopoverPresented = false
         }
     }
@@ -119,6 +129,7 @@ final class DictationOrchestrator {
     private func stopRecording() {
         logger.info("Stopping recording")
         audioService.stopCapture()
+        appState.audioLevels = []
         appState.dictationState = .forging
 
         let remainingBuffer: Data = bufferQueue.sync {
@@ -225,6 +236,7 @@ final class DictationOrchestrator {
         appState.dictationState = .idle
         appState.errorMessage = nil
         appState.partialTranscript = ""
+        appState.audioLevels = []
         appState.isPopoverPresented = false
     }
 }

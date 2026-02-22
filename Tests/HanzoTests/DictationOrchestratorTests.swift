@@ -315,4 +315,33 @@ struct DictationOrchestratorTests {
 
         #expect(sut.appState.dictationState == .error)
     }
+
+    // MARK: - Audio Levels
+
+    @Test("Audio levels callback updates appState.audioLevels")
+    @MainActor func audioLevelsUpdatesAppState() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        sut.mockAudio.simulateLevels([0.05, 0.1, 0.08, 0.12, 0.06, 0.09, 0.07])
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(!sut.appState.audioLevels.isEmpty)
+    }
+
+    @Test("audioLevels resets to empty after cancel")
+    @MainActor func audioLevelsResetsOnCancel() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        sut.mockAudio.simulateLevels([0.05, 0.1, 0.08, 0.12, 0.06, 0.09, 0.07])
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        sut.orchestrator.cancel()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(sut.appState.audioLevels.isEmpty)
+    }
 }

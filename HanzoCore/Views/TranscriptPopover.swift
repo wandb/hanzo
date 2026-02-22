@@ -5,13 +5,17 @@ struct TranscriptPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: appState.menuBarIconName)
-                    .foregroundStyle(appState.stateColor)
-                Text(stateLabel)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
+            if appState.dictationState == .listening || appState.dictationState == .forging {
+                AudioWaveformView(appState: appState)
+            } else {
+                HStack {
+                    Image(systemName: appState.menuBarIconName)
+                        .foregroundStyle(appState.stateColor)
+                    Text(stateLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
             }
 
             if !appState.partialTranscript.isEmpty {
@@ -19,14 +23,6 @@ struct TranscriptPopover: View {
                     .font(.body)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
-            } else if appState.dictationState == .forging {
-                HStack(spacing: 6) {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Forging transcript...")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                }
             }
 
             if let error = appState.errorMessage, appState.dictationState == .error {

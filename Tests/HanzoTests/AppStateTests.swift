@@ -60,4 +60,10 @@ struct AppStateTests {
         state.dictationState = .error
         #expect(state.stateColor == .red)
     }
+
+    @Test("audioLevels defaults to empty")
+    func audioLevelsDefault() {
+        let state = AppState()
+        #expect(state.audioLevels.isEmpty)
+    }
 }

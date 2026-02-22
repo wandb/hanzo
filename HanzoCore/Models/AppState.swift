@@ -13,6 +13,7 @@ final class AppState {
     var dictationState: DictationState = .idle
     var partialTranscript: String = ""
     var errorMessage: String?
+    var audioLevels: [Float] = []
     var isOnboardingComplete: Bool = UserDefaults.standard.bool(forKey: Constants.onboardingCompleteKey)
     var isPopoverPresented: Bool = false
 

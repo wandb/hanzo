@@ -3,6 +3,7 @@ import Foundation
 
 final class MockAudioCaptureService: AudioCaptureProtocol {
     var onAudioChunk: ((Data) -> Void)?
+    var onAudioLevels: (([Float]) -> Void)?
     var startCaptureCalled = false
     var stopCaptureCalled = false
     var throwOnStart: Error?
@@ -18,5 +19,9 @@ final class MockAudioCaptureService: AudioCaptureProtocol {
 
     func simulateChunk(_ data: Data) {
         onAudioChunk?(data)
+    }
+
+    func simulateLevels(_ levels: [Float]) {
+        onAudioLevels?(levels)
     }
 }
