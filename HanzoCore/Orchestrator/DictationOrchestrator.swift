@@ -18,6 +18,12 @@ final class DictationOrchestrator {
     private var chunkSendTask: Task<Void, Never>?
     private var previousApp: NSRunningApplication?
 
+    // Silence auto-close
+    var silenceTimeout: Double
+    private var silenceStartTime: Date?
+    private var hasSpeechBeenDetected: Bool = false
+    private var peakSpeechLevel: Float = 0
+
     init(
         appState: AppState,
         asrClient: ASRClientProtocol? = nil,
@@ -31,6 +37,11 @@ final class DictationOrchestrator {
         self.textInsertion = textInsertion
         self.permissionService = permissionService
         self.logger = logger
+
+        let storedTimeout = UserDefaults.standard.object(forKey: Constants.silenceTimeoutKey)
+        self.silenceTimeout = storedTimeout != nil
+            ? UserDefaults.standard.double(forKey: Constants.silenceTimeoutKey)
+            : Constants.defaultSilenceTimeout
 
         if let asrClient = asrClient {
             self.asrClient = asrClient
@@ -52,11 +63,17 @@ final class DictationOrchestrator {
                 withAnimation(.easeOut(duration: 0.15)) {
                     self?.appState.audioLevels = levels
                 }
+                self?.evaluateSilence(levels: levels)
             }
         }
     }
 
     func reloadSettings() {
+        let storedTimeout = UserDefaults.standard.object(forKey: Constants.silenceTimeoutKey)
+        silenceTimeout = storedTimeout != nil
+            ? UserDefaults.standard.double(forKey: Constants.silenceTimeoutKey)
+            : Constants.defaultSilenceTimeout
+
         guard !isASRClientInjected else { return }
         let baseURL = UserDefaults.standard.string(forKey: Constants.serverEndpointKey)
             ?? Constants.defaultServerEndpoint
@@ -84,6 +101,9 @@ final class DictationOrchestrator {
         bufferQueue.sync { audioBuffer.removeAll() }
         sessionId = nil
         previousApp = nil
+        silenceStartTime = nil
+        hasSpeechBeenDetected = false
+        peakSpeechLevel = 0
 
         Task { @MainActor in
             appState.dictationState = .idle
@@ -109,6 +129,9 @@ final class DictationOrchestrator {
         appState.partialTranscript = ""
         appState.isPopoverPresented = true
         bufferQueue.sync { audioBuffer.removeAll() }
+        silenceStartTime = nil
+        hasSpeechBeenDetected = false
+        peakSpeechLevel = 0
 
         Task {
             do {
@@ -238,5 +261,48 @@ final class DictationOrchestrator {
         appState.partialTranscript = ""
         appState.audioLevels = []
         appState.isPopoverPresented = false
+        silenceStartTime = nil
+        hasSpeechBeenDetected = false
+        peakSpeechLevel = 0
+    }
+
+    // MARK: - Silence Detection
+
+    private func evaluateSilence(levels: [Float]) {
+        guard silenceTimeout > 0 else { return }
+        guard appState.dictationState == .listening else {
+            silenceStartTime = nil
+            return
+        }
+
+        let averageLevel = levels.isEmpty ? 0 : levels.reduce(0, +) / Float(levels.count)
+        let threshold = max(
+            peakSpeechLevel * Constants.silenceRelativeThreshold,
+            Constants.silenceAbsoluteFloor
+        )
+
+        if averageLevel >= threshold {
+            // Speech detected — update peak and reset silence timer
+            if averageLevel > peakSpeechLevel {
+                peakSpeechLevel = averageLevel
+            }
+            hasSpeechBeenDetected = true
+            silenceStartTime = nil
+            return
+        }
+
+        // Audio is below threshold — only care if speech was previously detected
+        guard hasSpeechBeenDetected else { return }
+
+        if silenceStartTime == nil {
+            silenceStartTime = Date()
+        }
+
+        if let start = silenceStartTime,
+           Date().timeIntervalSince(start) >= silenceTimeout {
+            logger.info("Silence auto-close after \(silenceTimeout)s")
+            silenceStartTime = nil
+            stopRecording()
+        }
     }
 }

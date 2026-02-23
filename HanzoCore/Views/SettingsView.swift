@@ -17,6 +17,9 @@ struct SettingsView: View {
         return val != 0 ? UInt32(val) : Constants.defaultHotkeyModifiers
     }()
     @State private var isRecordingHotkey = false
+    @State private var silenceTimeout: Double = UserDefaults.standard.object(forKey: Constants.silenceTimeoutKey) != nil
+        ? UserDefaults.standard.double(forKey: Constants.silenceTimeoutKey)
+        : Constants.defaultSilenceTimeout
     @FocusState private var focusedField: Field?
 
     private enum Field { case endpoint, apiKey }
@@ -100,9 +103,33 @@ struct SettingsView: View {
                     .font(.system(.caption, design: .rounded))
                     .foregroundStyle(.secondary)
             }
+
+            Divider()
+                .padding(.vertical, 16)
+
+            // Silence auto-close section
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Silence Auto-Close")
+                    .font(.system(.subheadline, design: .rounded, weight: .medium))
+                    .foregroundStyle(.secondary)
+
+                Picker("", selection: $silenceTimeout) {
+                    Text("Off").tag(0.0)
+                    Text("1s").tag(1.0)
+                    Text("2s").tag(2.0)
+                    Text("3s").tag(3.0)
+                    Text("5s").tag(5.0)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: silenceTimeout) { saveSilenceTimeout() }
+
+                Text("Auto-stop recording after a pause in speech.")
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(24)
-        .frame(width: 420, height: 310)
+        .frame(width: 420, height: 400)
         .hudBackground()
         .background(isRecordingHotkey ? HotkeyRecorderView(onKeyCombo: { keyCode, modifiers in
             hotkeyCode = keyCode
@@ -122,6 +149,11 @@ struct SettingsView: View {
         UserDefaults.standard.set(Int(hotkeyCode), forKey: Constants.hotkeyCodeKey)
         UserDefaults.standard.set(Int(hotkeyModifiers), forKey: Constants.hotkeyModifiersKey)
         onHotkeyChanged?()
+    }
+
+    private func saveSilenceTimeout() {
+        UserDefaults.standard.set(silenceTimeout, forKey: Constants.silenceTimeoutKey)
+        onSave?()
     }
 }
 

@@ -16,4 +16,10 @@ enum Constants {
     static let audioChannels: UInt32 = 1
     // ~250ms of float32 mono audio at 16kHz
     static let chunkAccumulationBytes = 16000
+
+    // Silence auto-close
+    static let silenceTimeoutKey = "silenceTimeout"
+    static let defaultSilenceTimeout: Double = 2.0  // seconds; 0 = disabled
+    static let silenceRelativeThreshold: Float = 0.15  // fraction of peak speech level
+    static let silenceAbsoluteFloor: Float = 0.005  // minimum silence threshold
 }

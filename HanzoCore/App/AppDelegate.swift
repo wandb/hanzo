@@ -201,7 +201,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         window.isOpaque = false
         window.hasShadow = true
         window.isMovableByWindowBackground = true
-        window.setContentSize(NSSize(width: 420, height: 310))
+        window.setContentSize(NSSize(width: 420, height: 400))
         window.center()
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(nil)
