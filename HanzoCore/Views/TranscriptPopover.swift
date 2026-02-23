@@ -87,6 +87,7 @@ private struct StatusFooterView: View {
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
+            .pillTooltip("Silence timer")
 
             Text(" · ")
                 .font(.system(.caption2, design: .rounded))
@@ -102,6 +103,7 @@ private struct StatusFooterView: View {
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
+            .pillTooltip("Auto submit")
         }
     }
 
@@ -133,6 +135,50 @@ private struct StatusFooterView: View {
         appState.autoSubmit = newValue
         UserDefaults.standard.set(newValue, forKey: Constants.autoSubmitKey)
         onSettingsChanged?()
+    }
+}
+
+// MARK: - Pill Tooltip
+
+private struct PillTooltipModifier: ViewModifier {
+    let text: String
+    @State private var isHovering = false
+    @State private var showTooltip = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                isHovering = hovering
+                if hovering {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        if isHovering { showTooltip = true }
+                    }
+                } else {
+                    showTooltip = false
+                }
+            }
+            .overlay(alignment: .top) {
+                if showTooltip {
+                    Text(text)
+                        .font(.system(.caption2, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .fixedSize()
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.white.opacity(0.1))
+                        .clipShape(Capsule())
+                        .allowsHitTesting(false)
+                        .offset(y: -22)
+                        .transition(.opacity)
+                        .animation(.easeInOut(duration: 0.15), value: showTooltip)
+                }
+            }
+    }
+}
+
+private extension View {
+    func pillTooltip(_ text: String) -> some View {
+        modifier(PillTooltipModifier(text: text))
     }
 }
 
