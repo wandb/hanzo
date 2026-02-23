@@ -95,11 +95,11 @@ private struct StatusFooterView: View {
 
             // Auto-submit control
             Button {
-                toggleAutoSubmit()
+                cycleAutoSubmit()
             } label: {
                 Text(autoSubmitLabel)
                     .font(.system(.caption2, design: .rounded))
-                    .foregroundStyle(.white.opacity(appState.autoSubmit ? 0.5 : 0.25))
+                    .foregroundStyle(.white.opacity(appState.autoSubmitMode != .off ? 0.5 : 0.25))
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
@@ -118,7 +118,11 @@ private struct StatusFooterView: View {
     }
 
     private var autoSubmitLabel: String {
-        appState.autoSubmit ? "↩ on" : "↩ off"
+        switch appState.autoSubmitMode {
+        case .enter: return "↩ enter"
+        case .cmdEnter: return "↩ ⌘enter"
+        case .off: return "↩ off"
+        }
     }
 
     private func cycleSilenceTimeout() {
@@ -130,10 +134,13 @@ private struct StatusFooterView: View {
         onSettingsChanged?()
     }
 
-    private func toggleAutoSubmit() {
-        let newValue = !appState.autoSubmit
-        appState.autoSubmit = newValue
-        UserDefaults.standard.set(newValue, forKey: Constants.autoSubmitKey)
+    private func cycleAutoSubmit() {
+        let modes: [AutoSubmitMode] = [.off, .enter, .cmdEnter]
+        let currentIndex = modes.firstIndex(of: appState.autoSubmitMode) ?? 0
+        let nextIndex = (currentIndex + 1) % modes.count
+        let newMode = modes[nextIndex]
+        appState.autoSubmitMode = newMode
+        UserDefaults.standard.set(newMode.rawValue, forKey: Constants.autoSubmitKey)
         onSettingsChanged?()
     }
 }

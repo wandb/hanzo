@@ -1,5 +1,11 @@
 import Foundation
 
+enum AutoSubmitMode: String {
+    case enter
+    case cmdEnter
+    case off
+}
+
 enum Constants {
     static let defaultServerEndpoint = "https://grunt.zain.aaronbatilo.dev"
     static let defaultAPIKey = ""
@@ -17,9 +23,9 @@ enum Constants {
     // ~250ms of float32 mono audio at 16kHz
     static let chunkAccumulationBytes = 16000
 
-    // Auto-submit (press Return after paste)
-    static let autoSubmitKey = "autoSubmit"
-    static let defaultAutoSubmit = false
+    // Auto-submit (press Return/Shift+Return after paste)
+    static let autoSubmitKey = "autoSubmitMode"
+    static let defaultAutoSubmitMode: AutoSubmitMode = .off
 
     // Launch at login
     static let launchAtLoginRegisteredKey = "launchAtLoginRegistered"

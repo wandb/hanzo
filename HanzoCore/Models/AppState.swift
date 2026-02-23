@@ -19,9 +19,12 @@ final class AppState {
     var silenceTimeout: Double = UserDefaults.standard.object(forKey: Constants.silenceTimeoutKey) != nil
         ? UserDefaults.standard.double(forKey: Constants.silenceTimeoutKey)
         : Constants.defaultSilenceTimeout
-    var autoSubmit: Bool = UserDefaults.standard.object(forKey: Constants.autoSubmitKey) != nil
-        ? UserDefaults.standard.bool(forKey: Constants.autoSubmitKey)
-        : Constants.defaultAutoSubmit
+    var autoSubmitMode: AutoSubmitMode = {
+        if let raw = UserDefaults.standard.string(forKey: Constants.autoSubmitKey) {
+            return AutoSubmitMode(rawValue: raw) ?? Constants.defaultAutoSubmitMode
+        }
+        return Constants.defaultAutoSubmitMode
+    }()
 
     var menuBarIconName: String {
         switch dictationState {

@@ -19,7 +19,7 @@ final class DictationOrchestrator {
     private var previousApp: NSRunningApplication?
 
     // Auto-submit
-    var autoSubmit: Bool
+    var autoSubmitMode: AutoSubmitMode
 
     // Silence auto-close
     var silenceTimeout: Double
@@ -41,9 +41,11 @@ final class DictationOrchestrator {
         self.permissionService = permissionService
         self.logger = logger
 
-        self.autoSubmit = UserDefaults.standard.object(forKey: Constants.autoSubmitKey) != nil
-            ? UserDefaults.standard.bool(forKey: Constants.autoSubmitKey)
-            : Constants.defaultAutoSubmit
+        if let raw = UserDefaults.standard.string(forKey: Constants.autoSubmitKey) {
+            self.autoSubmitMode = AutoSubmitMode(rawValue: raw) ?? Constants.defaultAutoSubmitMode
+        } else {
+            self.autoSubmitMode = Constants.defaultAutoSubmitMode
+        }
 
         let storedTimeout = UserDefaults.standard.object(forKey: Constants.silenceTimeoutKey)
         self.silenceTimeout = storedTimeout != nil
@@ -61,7 +63,7 @@ final class DictationOrchestrator {
             self.isASRClientInjected = false
         }
 
-        appState.autoSubmit = self.autoSubmit
+        appState.autoSubmitMode = self.autoSubmitMode
         appState.silenceTimeout = self.silenceTimeout
 
         self.audioService.onAudioChunk = { [weak self] data in
@@ -79,16 +81,18 @@ final class DictationOrchestrator {
     }
 
     func reloadSettings() {
-        autoSubmit = UserDefaults.standard.object(forKey: Constants.autoSubmitKey) != nil
-            ? UserDefaults.standard.bool(forKey: Constants.autoSubmitKey)
-            : Constants.defaultAutoSubmit
+        if let raw = UserDefaults.standard.string(forKey: Constants.autoSubmitKey) {
+            autoSubmitMode = AutoSubmitMode(rawValue: raw) ?? Constants.defaultAutoSubmitMode
+        } else {
+            autoSubmitMode = Constants.defaultAutoSubmitMode
+        }
 
         let storedTimeout = UserDefaults.standard.object(forKey: Constants.silenceTimeoutKey)
         silenceTimeout = storedTimeout != nil
             ? UserDefaults.standard.double(forKey: Constants.silenceTimeoutKey)
             : Constants.defaultSilenceTimeout
 
-        appState.autoSubmit = autoSubmit
+        appState.autoSubmitMode = autoSubmitMode
         appState.silenceTimeout = silenceTimeout
 
         guard !isASRClientInjected else { return }
@@ -232,12 +236,20 @@ final class DictationOrchestrator {
                         textInsertion.insertText(finalText)
                     }
 
-                    // PHASE 4: Auto-submit (press Return)
-                    if autoSubmit {
+                    // PHASE 4: Auto-submit
+                    switch autoSubmitMode {
+                    case .enter:
                         try? await Task.sleep(nanoseconds: 100_000_000) // 100ms for paste to complete
                         await MainActor.run {
                             textInsertion.simulateReturn()
                         }
+                    case .cmdEnter:
+                        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms for paste to complete
+                        await MainActor.run {
+                            textInsertion.simulateCmdReturn()
+                        }
+                    case .off:
+                        break
                     }
                 }
             } catch {
