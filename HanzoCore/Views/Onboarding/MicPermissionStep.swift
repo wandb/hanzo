@@ -8,7 +8,7 @@ struct MicPermissionStep: View {
         VStack(spacing: 16) {
             Image(systemName: "mic.fill")
                 .font(.system(size: 48))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
 
             Text("Microphone access")
                 .font(.system(.title2, design: .rounded, weight: .bold))

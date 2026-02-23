@@ -24,14 +24,14 @@ struct VisualEffectView: NSViewRepresentable {
 // MARK: - HUD Background Modifier
 
 extension View {
-    func hudBackground() -> some View {
+    func hudBackground(colorScheme: ColorScheme? = nil) -> some View {
         self
             .background(
                 VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
                     .clipShape(RoundedRectangle(cornerRadius: 22))
             )
             .clipShape(RoundedRectangle(cornerRadius: 22))
-            .preferredColorScheme(.dark)
+            .preferredColorScheme(colorScheme)
     }
 }
 
@@ -45,7 +45,7 @@ struct HUDButtonStyle: ButtonStyle {
             .font(.system(.body, design: .rounded, weight: .medium))
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
-            .background(.white.opacity(configuration.isPressed ? 0.2 : 0.12))
+            .background(.primary.opacity(configuration.isPressed ? 0.2 : 0.12))
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .opacity(isEnabled ? 1.0 : 0.4)
     }
