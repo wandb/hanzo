@@ -1,5 +1,11 @@
 import Foundation
 
+enum AutoSubmitMode: String {
+    case enter
+    case cmdEnter
+    case off
+}
+
 enum Constants {
     static let defaultServerEndpoint = "https://grunt.zain.aaronbatilo.dev"
     static let defaultAPIKey = ""
@@ -16,4 +22,17 @@ enum Constants {
     static let audioChannels: UInt32 = 1
     // ~250ms of float32 mono audio at 16kHz
     static let chunkAccumulationBytes = 16000
+
+    // Auto-submit (press Return/Cmd+Return after paste)
+    static let autoSubmitKey = "autoSubmitMode"
+    static let defaultAutoSubmitMode: AutoSubmitMode = .off
+
+    // Launch at login
+    static let launchAtLoginRegisteredKey = "launchAtLoginRegistered"
+
+    // Silence auto-close
+    static let silenceTimeoutKey = "silenceTimeout"
+    static let defaultSilenceTimeout: Double = 2.0  // seconds; 0 = disabled
+    static let silenceRelativeThreshold: Float = 0.15  // fraction of peak speech level
+    static let silenceAbsoluteFloor: Float = 0.005  // minimum silence threshold
 }

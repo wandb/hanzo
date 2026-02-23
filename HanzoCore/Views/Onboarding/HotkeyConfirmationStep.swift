@@ -7,21 +7,22 @@ struct HotkeyConfirmationStep: View {
         VStack(spacing: 16) {
             Image(systemName: "keyboard.fill")
                 .font(.system(size: 48))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(.white)
 
             Text("Your dictation hotkey")
-                .font(.title2.bold())
+                .font(.system(.title2, design: .rounded, weight: .bold))
 
             HStack(spacing: 4) {
                 KeyCapView(label: "Ctrl")
                 Text("+")
+                    .font(.system(.body, design: .rounded))
                     .foregroundStyle(.secondary)
                 KeyCapView(label: "Space")
             }
             .padding(.vertical, 8)
 
             Text("Press this combination anywhere to start dictation.\nPress again to stop and insert the transcript.")
-                .font(.body)
+                .font(.system(.body, design: .rounded))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 340)
@@ -29,9 +30,8 @@ struct HotkeyConfirmationStep: View {
             Button("Done") {
                 onDone()
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(HUDButtonStyle())
         }
-        .padding()
     }
 }
 
@@ -43,7 +43,7 @@ private struct KeyCapView: View {
             .font(.system(.body, design: .rounded, weight: .medium))
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(.quaternary)
+            .background(.white.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }

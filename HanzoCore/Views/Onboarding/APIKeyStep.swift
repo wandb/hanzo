@@ -8,19 +8,24 @@ struct APIKeyStep: View {
         VStack(spacing: 16) {
             Image(systemName: "key.fill")
                 .font(.system(size: 48))
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(.white)
 
             Text("API key")
-                .font(.title2.bold())
+                .font(.system(.title2, design: .rounded, weight: .bold))
 
             Text("Enter your ASR server API key. You can change this later in Settings.")
-                .font(.body)
+                .font(.system(.body, design: .rounded))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 340)
 
             TextField("API key", text: $apiKey)
-                .textFieldStyle(.roundedBorder)
+                .textFieldStyle(.plain)
+                .font(.system(.body, design: .rounded))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.white.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
                 .frame(maxWidth: 300)
 
             Button("Continue") {
@@ -30,9 +35,8 @@ struct APIKeyStep: View {
                 }
                 onNext()
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(HUDButtonStyle())
             .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        .padding()
     }
 }

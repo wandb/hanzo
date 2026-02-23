@@ -34,6 +34,39 @@ final class TextInsertionService: TextInsertionProtocol {
         logger.info("Text copied to clipboard (\(text.count) chars)")
     }
 
+    func simulateReturn() {
+        let source = CGEventSource(stateID: .combinedSessionState)
+
+        // Key code 36 = Return key
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false) else {
+            logger.error("Failed to create CGEvent for Return key")
+            return
+        }
+
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
+        logger.info("Simulated Return key press")
+    }
+
+    func simulateCmdReturn() {
+        let source = CGEventSource(stateID: .combinedSessionState)
+
+        // Key code 36 = Return key
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false) else {
+            logger.error("Failed to create CGEvent for Cmd+Return")
+            return
+        }
+
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
+        logger.info("Simulated Cmd+Return key press")
+    }
+
     // MARK: - Private
 
     private func simulatePaste() {

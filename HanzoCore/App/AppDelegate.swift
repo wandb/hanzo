@@ -1,12 +1,16 @@
 import AppKit
 import SwiftUI
+import ServiceManagement
 
 public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    private var popover: NSPopover!
+    private var transcriptPanel: NSPanel?
     private var onboardingWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private var stateObservationTask: Task<Void, Never>?
+    private var stateObservationTimer: Timer?
+    private var localEventMonitor: Any?
+    private var globalEventMonitor: Any?
 
     let appState = AppState()
     private lazy var orchestrator = DictationOrchestrator(appState: appState)
@@ -23,13 +27,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             button.target = self
         }
 
-        // Setup popover
-        popover = NSPopover()
-        popover.contentSize = NSSize(width: 320, height: 60)
-        popover.behavior = .transient
-        popover.contentViewController = NSHostingController(
-            rootView: TranscriptPopover(appState: appState)
-        )
+        // Setup transcript panel
+        transcriptPanel = makeTranscriptPanel()
 
         // Register hotkey
         hotkeyService.onToggle = { [weak self] in
@@ -45,8 +44,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
-        // Monitor escape key
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        // Monitor escape key (local for when app is active, global for non-activating panel)
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == 53 { // Escape
                 if self?.appState.dictationState == .listening {
                     self?.orchestrator.cancel()
@@ -54,6 +53,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             return event
+        }
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 {
+                if self?.appState.dictationState == .listening {
+                    self?.orchestrator.cancel()
+                }
+            }
         }
 
         // Observe state changes for icon and popover updates
@@ -64,13 +70,22 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         let permissionsRevoked = !permissions.hasMicrophonePermission || !permissions.hasAccessibilityPermission
         if !appState.isOnboardingComplete || permissionsRevoked {
             showOnboarding()
+        } else {
+            registerLaunchAtLoginIfNeeded()
         }
 
         logger.info("Hanzo launched")
     }
 
+    public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
     public func applicationWillTerminate(_ notification: Notification) {
         stateObservationTask?.cancel()
+        stateObservationTimer?.invalidate()
+        if let localEventMonitor { NSEvent.removeMonitor(localEventMonitor) }
+        if let globalEventMonitor { NSEvent.removeMonitor(globalEventMonitor) }
         hotkeyService.unregister()
         logger.info("Hanzo terminated")
     }
@@ -78,42 +93,68 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Status Item
 
     func updateMenuBarIcon() {
-        statusItem?.button?.image = NSImage(
-            systemSymbolName: appState.menuBarIconName,
-            accessibilityDescription: "Hanzo"
-        )
+        statusItem?.button?.image = MenuBarIcon.radialWaveform()
         statusItem?.button?.alphaValue = appState.dictationState == .idle ? 0.35 : 1.0
     }
 
     @objc private func statusItemClicked() {
         if appState.dictationState == .listening || appState.dictationState == .forging {
-            togglePopover()
+            togglePanel()
         } else {
             showMenu()
         }
     }
 
-    // MARK: - Popover
+    // MARK: - Transcript Panel
 
-    private func togglePopover() {
-        if popover.isShown {
-            popover.performClose(nil)
-        } else if let button = statusItem.button {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            // Make sure the popover's window becomes key so we receive key events
-            popover.contentViewController?.view.window?.makeKey()
+    private func makeTranscriptPanel() -> TranscriptPanel {
+        let panel = TranscriptPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 60),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: true
+        )
+        panel.level = .floating
+        panel.isMovableByWindowBackground = true
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        let hostingController = NSHostingController(
+            rootView: TranscriptPopover(
+                appState: appState,
+                onSettingsChanged: { [weak self] in
+                    self?.orchestrator.reloadSettings()
+                }
+            )
+        )
+        panel.contentViewController = hostingController
+        return panel
+    }
+
+    private func togglePanel() {
+        guard let panel = transcriptPanel else { return }
+        if panel.isVisible {
+            hidePanel()
+        } else {
+            showPanel()
         }
     }
 
-    private func showPopover() {
-        guard !popover.isShown, let button = statusItem.button else { return }
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    private func showPanel() {
+        guard let panel = transcriptPanel, !panel.isVisible else { return }
+        guard let screen = NSScreen.main else { return }
+        panel.setContentSize(NSSize(width: 480, height: 60))
+        // Position horizontally centered, ~5% from the bottom of the screen
+        let screenFrame = screen.visibleFrame
+        let x = screenFrame.midX - 240
+        let y = screenFrame.origin.y + screenFrame.height * 0.05
+        panel.setFrameOrigin(NSPoint(x: x, y: y))
+        panel.orderFrontRegardless()
     }
 
-    private func hidePopover() {
-        if popover.isShown {
-            popover.performClose(nil)
-        }
+    private func hidePanel() {
+        transcriptPanel?.orderOut(nil)
     }
 
     // MARK: - Menu
@@ -158,13 +199,25 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onHotkeyChanged: { [weak self] in
                 self?.hotkeyService.reregister()
+            },
+            onClose: { [weak self] in
+                self?.settingsWindow?.close()
+                self?.settingsWindow = nil
             }
         )
         let hostingController = NSHostingController(rootView: settingsView)
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "Hanzo settings"
-        window.styleMask = [.titled, .closable]
-        window.setContentSize(NSSize(width: 420, height: 300))
+        window.styleMask = [.titled, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = true
+        window.isMovableByWindowBackground = true
+        window.setContentSize(NSSize(width: 420, height: 380))
         window.center()
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(nil)
@@ -188,18 +241,27 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - State Observation
 
     private func startStateObservation() {
-        // Poll state changes to update icon and popover
+        // Poll state changes to update icon and panel visibility
         // Using a timer since @Observable observation from NSObject is complex
-        Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        stateObservationTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.updateMenuBarIcon()
 
-            if self.appState.isPopoverPresented && !self.popover.isShown {
-                self.showPopover()
-            } else if !self.appState.isPopoverPresented && self.popover.isShown {
-                self.hidePopover()
+            let panelVisible = self.transcriptPanel?.isVisible ?? false
+            if self.appState.isPopoverPresented && !panelVisible {
+                self.showPanel()
+            } else if !self.appState.isPopoverPresented && panelVisible {
+                self.hidePanel()
             }
         }
+    }
+
+    // MARK: - Launch at Login
+
+    private func registerLaunchAtLoginIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: Constants.launchAtLoginRegisteredKey) else { return }
+        try? SMAppService.mainApp.register()
+        UserDefaults.standard.set(true, forKey: Constants.launchAtLoginRegisteredKey)
     }
 
     // MARK: - Onboarding
@@ -210,13 +272,22 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.onboardingWindow?.close()
                 self?.onboardingWindow = nil
                 self?.appState.isOnboardingComplete = true
+                self?.registerLaunchAtLoginIfNeeded()
             }
         )
         let hostingController = NSHostingController(rootView: onboardingView)
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "Welcome to Hanzo"
-        window.styleMask = [.titled, .closable]
-        window.setContentSize(NSSize(width: 480, height: 360))
+        window.styleMask = [.titled, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = true
+        window.isMovableByWindowBackground = true
+        window.setContentSize(NSSize(width: 480, height: 380))
         window.level = .floating
         window.center()
         window.makeKeyAndOrderFront(nil)

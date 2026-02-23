@@ -315,4 +315,123 @@ struct DictationOrchestratorTests {
 
         #expect(sut.appState.dictationState == .error)
     }
+
+    // MARK: - Audio Levels
+
+    @Test("Audio levels callback updates appState.audioLevels")
+    @MainActor func audioLevelsUpdatesAppState() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        sut.mockAudio.simulateLevels([0.05, 0.1, 0.08, 0.12, 0.06, 0.09, 0.07])
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(!sut.appState.audioLevels.isEmpty)
+    }
+
+    @Test("audioLevels resets to empty after cancel")
+    @MainActor func audioLevelsResetsOnCancel() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        sut.mockAudio.simulateLevels([0.05, 0.1, 0.08, 0.12, 0.06, 0.09, 0.07])
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        sut.orchestrator.cancel()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(sut.appState.audioLevels.isEmpty)
+    }
+
+    // MARK: - Silence Auto-Close
+
+    @Test("Silence auto-close triggers after timeout")
+    @MainActor func silenceAutoCloseTriggersStop() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.silenceTimeout = 0.2
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        // Simulate speech (above absolute floor)
+        sut.mockAudio.simulateLevels([0.1, 0.15, 0.12, 0.08, 0.1, 0.09, 0.11])
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        // Simulate silence repeatedly — well past the 200ms timeout
+        let silentLevels: [Float] = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]
+        for _ in 0..<10 {
+            sut.mockAudio.simulateLevels(silentLevels)
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+
+        // Should have triggered stopRecording (forging or idle)
+        #expect(sut.appState.dictationState != .listening)
+        #expect(sut.mockAudio.stopCaptureCalled == true)
+    }
+
+    @Test("Silence auto-close does not trigger before speech")
+    @MainActor func silenceAutoCloseWaitsForSpeech() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.silenceTimeout = 0.2
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // Only silence — no speech first
+        let silentLevels: [Float] = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]
+        for _ in 0..<8 {
+            sut.mockAudio.simulateLevels(silentLevels)
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        // Should still be listening
+        #expect(sut.appState.dictationState == .listening)
+    }
+
+    @Test("Silence timer resets when speech resumes")
+    @MainActor func silenceAutoCloseResetsOnSpeech() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.silenceTimeout = 0.3
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // Speech
+        sut.mockAudio.simulateLevels([0.1, 0.15, 0.12, 0.08, 0.1, 0.09, 0.11])
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // Brief silence (less than timeout)
+        let silentLevels: [Float] = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]
+        for _ in 0..<3 {
+            sut.mockAudio.simulateLevels(silentLevels)
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        // Speech resumes — resets timer
+        sut.mockAudio.simulateLevels([0.1, 0.15, 0.12, 0.08, 0.1, 0.09, 0.11])
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // Should still be listening
+        #expect(sut.appState.dictationState == .listening)
+    }
+
+    @Test("Silence auto-close disabled when timeout is 0")
+    @MainActor func silenceAutoCloseDisabledWhenZero() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.silenceTimeout = 0.0
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // Speech then silence
+        sut.mockAudio.simulateLevels([0.1, 0.15, 0.12, 0.08, 0.1, 0.09, 0.11])
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let silentLevels: [Float] = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]
+        for _ in 0..<10 {
+            sut.mockAudio.simulateLevels(silentLevels)
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        // Should still be listening — feature disabled
+        #expect(sut.appState.dictationState == .listening)
+    }
 }
