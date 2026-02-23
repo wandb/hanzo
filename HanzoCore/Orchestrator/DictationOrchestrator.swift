@@ -18,6 +18,9 @@ final class DictationOrchestrator {
     private var chunkSendTask: Task<Void, Never>?
     private var previousApp: NSRunningApplication?
 
+    // Auto-submit
+    var autoSubmit: Bool
+
     // Silence auto-close
     var silenceTimeout: Double
     private var silenceStartTime: Date?
@@ -37,6 +40,10 @@ final class DictationOrchestrator {
         self.textInsertion = textInsertion
         self.permissionService = permissionService
         self.logger = logger
+
+        self.autoSubmit = UserDefaults.standard.object(forKey: Constants.autoSubmitKey) != nil
+            ? UserDefaults.standard.bool(forKey: Constants.autoSubmitKey)
+            : Constants.defaultAutoSubmit
 
         let storedTimeout = UserDefaults.standard.object(forKey: Constants.silenceTimeoutKey)
         self.silenceTimeout = storedTimeout != nil
@@ -69,6 +76,10 @@ final class DictationOrchestrator {
     }
 
     func reloadSettings() {
+        autoSubmit = UserDefaults.standard.object(forKey: Constants.autoSubmitKey) != nil
+            ? UserDefaults.standard.bool(forKey: Constants.autoSubmitKey)
+            : Constants.defaultAutoSubmit
+
         let storedTimeout = UserDefaults.standard.object(forKey: Constants.silenceTimeoutKey)
         silenceTimeout = storedTimeout != nil
             ? UserDefaults.standard.double(forKey: Constants.silenceTimeoutKey)
@@ -213,6 +224,14 @@ final class DictationOrchestrator {
                     // PHASE 3: Paste
                     await MainActor.run {
                         textInsertion.insertText(finalText)
+                    }
+
+                    // PHASE 4: Auto-submit (press Return)
+                    if autoSubmit {
+                        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms for paste to complete
+                        await MainActor.run {
+                            textInsertion.simulateReturn()
+                        }
                     }
                 }
             } catch {

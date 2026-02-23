@@ -17,6 +17,10 @@ enum Constants {
     // ~250ms of float32 mono audio at 16kHz
     static let chunkAccumulationBytes = 16000
 
+    // Auto-submit (press Return after paste)
+    static let autoSubmitKey = "autoSubmit"
+    static let defaultAutoSubmit = false
+
     // Silence auto-close
     static let silenceTimeoutKey = "silenceTimeout"
     static let defaultSilenceTimeout: Double = 2.0  // seconds; 0 = disabled
