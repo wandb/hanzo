@@ -34,6 +34,7 @@ struct SettingsView: View {
                         .foregroundStyle(.white.opacity(0.3))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Close settings")
             }
             .padding(.bottom, 8)
 
@@ -54,6 +55,7 @@ struct SettingsView: View {
                                 try SMAppService.mainApp.unregister()
                             }
                         } catch {
+                            LoggingService.shared.warn("Launch-at-login failed: \(error)")
                             launchAtLogin = SMAppService.mainApp.status == .enabled
                         }
                     }

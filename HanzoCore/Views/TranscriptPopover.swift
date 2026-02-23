@@ -88,6 +88,7 @@ private struct StatusFooterView: View {
             .buttonStyle(.plain)
             .contentShape(Rectangle())
             .pillTooltip("Silence timer")
+            .accessibilityLabel("Silence timer")
 
             Text(" · ")
                 .font(.system(.caption2, design: .rounded))
@@ -104,6 +105,7 @@ private struct StatusFooterView: View {
             .buttonStyle(.plain)
             .contentShape(Rectangle())
             .pillTooltip("Auto submit")
+            .accessibilityLabel("Auto submit")
         }
     }
 

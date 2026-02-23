@@ -23,7 +23,7 @@ enum Constants {
     // ~250ms of float32 mono audio at 16kHz
     static let chunkAccumulationBytes = 16000
 
-    // Auto-submit (press Return/Shift+Return after paste)
+    // Auto-submit (press Return/Cmd+Return after paste)
     static let autoSubmitKey = "autoSubmitMode"
     static let defaultAutoSubmitMode: AutoSubmitMode = .off
 

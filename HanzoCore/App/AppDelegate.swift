@@ -8,6 +8,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private var stateObservationTask: Task<Void, Never>?
+    private var stateObservationTimer: Timer?
+    private var localEventMonitor: Any?
+    private var globalEventMonitor: Any?
 
     let appState = AppState()
     private lazy var orchestrator = DictationOrchestrator(appState: appState)
@@ -42,7 +45,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         // Monitor escape key (local for when app is active, global for non-activating panel)
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == 53 { // Escape
                 if self?.appState.dictationState == .listening {
                     self?.orchestrator.cancel()
@@ -51,7 +54,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return event
         }
-        NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == 53 {
                 if self?.appState.dictationState == .listening {
                     self?.orchestrator.cancel()
@@ -80,6 +83,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationWillTerminate(_ notification: Notification) {
         stateObservationTask?.cancel()
+        stateObservationTimer?.invalidate()
+        if let localEventMonitor { NSEvent.removeMonitor(localEventMonitor) }
+        if let globalEventMonitor { NSEvent.removeMonitor(globalEventMonitor) }
         hotkeyService.unregister()
         logger.info("Hanzo terminated")
     }
@@ -237,7 +243,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startStateObservation() {
         // Poll state changes to update icon and panel visibility
         // Using a timer since @Observable observation from NSObject is complex
-        Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        stateObservationTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.updateMenuBarIcon()
 

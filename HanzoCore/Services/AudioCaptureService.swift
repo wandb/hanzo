@@ -19,6 +19,12 @@ final class AudioCaptureService: AudioCaptureProtocol {
     private var fftWindow = [Float](repeating: 0, count: 1024)
     private var fftWindowReady = false
 
+    deinit {
+        fftRealp.deallocate()
+        fftImagp.deallocate()
+        vDSP_destroy_fftsetup(fftSetup)
+    }
+
     private let targetFormat = AVAudioFormat(
         commonFormat: .pcmFormatFloat32,
         sampleRate: Constants.audioSampleRate,
