@@ -6,29 +6,25 @@ struct TranscriptPopover: View {
     var onSettingsChanged: (() -> Void)?
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Main content
-            VStack(alignment: .leading, spacing: 8) {
-                if !appState.partialTranscript.isEmpty {
-                    AnimatedTranscriptView(text: appState.partialTranscript)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+        VStack(alignment: .leading, spacing: 8) {
+            if !appState.partialTranscript.isEmpty {
+                AnimatedTranscriptView(text: appState.partialTranscript)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
-                if appState.dictationState == .listening || appState.dictationState == .forging {
+            if appState.dictationState == .listening || appState.dictationState == .forging {
+                ZStack {
                     AudioWaveformView(appState: appState)
                         .frame(maxWidth: .infinity, alignment: .center)
+
+                    StatusFooterView(appState: appState, onSettingsChanged: onSettingsChanged)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
-            .padding(.top, appState.partialTranscript.isEmpty ? 16 : 24)
-            .padding(.horizontal, 24)
-            .padding(.bottom, 12)
-
-            // Status footer
-            if appState.dictationState == .listening || appState.dictationState == .forging {
-                StatusFooterView(appState: appState, onSettingsChanged: onSettingsChanged)
-                    .padding(.bottom, 10)
-            }
         }
+        .padding(.top, appState.partialTranscript.isEmpty ? 16 : 24)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 16)
         .frame(width: 480)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxHeight: 400)
@@ -81,8 +77,6 @@ private struct StatusFooterView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Spacer()
-
             // Silence timeout control
             Button {
                 cycleSilenceTimeout()
@@ -108,8 +102,6 @@ private struct StatusFooterView: View {
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
-
-            Spacer()
         }
     }
 
