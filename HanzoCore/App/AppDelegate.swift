@@ -260,9 +260,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Launch at Login
 
     private func registerLaunchAtLoginIfNeeded() {
-        guard !UserDefaults.standard.bool(forKey: Constants.launchAtLoginRegisteredKey) else { return }
-        try? SMAppService.mainApp.register()
-        UserDefaults.standard.set(true, forKey: Constants.launchAtLoginRegisteredKey)
+        guard !UserDefaults.standard.bool(forKey: Constants.launchAtLoginDisabledByUserKey) else { return }
+        if SMAppService.mainApp.status != .enabled {
+            try? SMAppService.mainApp.register()
+        }
     }
 
     // MARK: - Onboarding
