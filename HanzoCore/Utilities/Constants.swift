@@ -21,6 +21,9 @@ enum Constants {
     static let autoSubmitKey = "autoSubmit"
     static let defaultAutoSubmit = false
 
+    // Launch at login
+    static let launchAtLoginRegisteredKey = "launchAtLoginRegistered"
+
     // Silence auto-close
     static let silenceTimeoutKey = "silenceTimeout"
     static let defaultSilenceTimeout: Double = 2.0  // seconds; 0 = disabled

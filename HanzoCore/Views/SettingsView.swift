@@ -1,5 +1,6 @@
 import SwiftUI
 import Carbon
+import ServiceManagement
 
 struct SettingsView: View {
     var onSave: (() -> Void)?
@@ -16,6 +17,7 @@ struct SettingsView: View {
         let val = UserDefaults.standard.integer(forKey: Constants.hotkeyModifiersKey)
         return val != 0 ? UInt32(val) : Constants.defaultHotkeyModifiers
     }()
+    @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
     @State private var isRecordingHotkey = false
     @FocusState private var focusedField: Field?
 
@@ -34,6 +36,31 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
             }
             .padding(.bottom, 8)
+
+            // General section
+            VStack(alignment: .leading, spacing: 12) {
+                Text("General")
+                    .font(.system(.subheadline, design: .rounded, weight: .medium))
+                    .foregroundStyle(.secondary)
+
+                Toggle("Open at startup", isOn: $launchAtLogin)
+                    .font(.system(.body, design: .rounded))
+                    .toggleStyle(.switch)
+                    .onChange(of: launchAtLogin) {
+                        do {
+                            if launchAtLogin {
+                                try SMAppService.mainApp.register()
+                            } else {
+                                try SMAppService.mainApp.unregister()
+                            }
+                        } catch {
+                            launchAtLogin = SMAppService.mainApp.status == .enabled
+                        }
+                    }
+            }
+
+            Divider()
+                .padding(.vertical, 16)
 
             // Server section
             VStack(alignment: .leading, spacing: 12) {
@@ -103,7 +130,7 @@ struct SettingsView: View {
 
         }
         .padding(24)
-        .frame(width: 420, height: 300)
+        .frame(width: 420, height: 380)
         .hudBackground()
         .background(isRecordingHotkey ? HotkeyRecorderView(onKeyCombo: { keyCode, modifiers in
             hotkeyCode = keyCode

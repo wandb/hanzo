@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import ServiceManagement
 
 public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
@@ -66,6 +67,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         let permissionsRevoked = !permissions.hasMicrophonePermission || !permissions.hasAccessibilityPermission
         if !appState.isOnboardingComplete || permissionsRevoked {
             showOnboarding()
+        } else {
+            registerLaunchAtLoginIfNeeded()
         }
 
         logger.info("Hanzo launched")
@@ -211,7 +214,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         window.isOpaque = false
         window.hasShadow = true
         window.isMovableByWindowBackground = true
-        window.setContentSize(NSSize(width: 420, height: 300))
+        window.setContentSize(NSSize(width: 420, height: 380))
         window.center()
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(nil)
@@ -250,6 +253,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - Launch at Login
+
+    private func registerLaunchAtLoginIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: Constants.launchAtLoginRegisteredKey) else { return }
+        try? SMAppService.mainApp.register()
+        UserDefaults.standard.set(true, forKey: Constants.launchAtLoginRegisteredKey)
+    }
+
     // MARK: - Onboarding
 
     private func showOnboarding() {
@@ -258,6 +269,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.onboardingWindow?.close()
                 self?.onboardingWindow = nil
                 self?.appState.isOnboardingComplete = true
+                self?.registerLaunchAtLoginIfNeeded()
             }
         )
         let hostingController = NSHostingController(rootView: onboardingView)
