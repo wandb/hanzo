@@ -61,6 +61,9 @@ final class DictationOrchestrator {
             self.isASRClientInjected = false
         }
 
+        appState.autoSubmit = self.autoSubmit
+        appState.silenceTimeout = self.silenceTimeout
+
         self.audioService.onAudioChunk = { [weak self] data in
             self?.handleAudioChunk(data)
         }
@@ -84,6 +87,9 @@ final class DictationOrchestrator {
         silenceTimeout = storedTimeout != nil
             ? UserDefaults.standard.double(forKey: Constants.silenceTimeoutKey)
             : Constants.defaultSilenceTimeout
+
+        appState.autoSubmit = autoSubmit
+        appState.silenceTimeout = silenceTimeout
 
         guard !isASRClientInjected else { return }
         let baseURL = UserDefaults.standard.string(forKey: Constants.serverEndpointKey)

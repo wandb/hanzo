@@ -3,22 +3,32 @@ import SwiftUI
 
 struct TranscriptPopover: View {
     let appState: AppState
+    var onSettingsChanged: (() -> Void)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if !appState.partialTranscript.isEmpty {
-                AnimatedTranscriptView(text: appState.partialTranscript)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+        VStack(spacing: 0) {
+            // Main content
+            VStack(alignment: .leading, spacing: 8) {
+                if !appState.partialTranscript.isEmpty {
+                    AnimatedTranscriptView(text: appState.partialTranscript)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
 
+                if appState.dictationState == .listening || appState.dictationState == .forging {
+                    AudioWaveformView(appState: appState)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
+            }
+            .padding(.top, appState.partialTranscript.isEmpty ? 16 : 24)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 12)
+
+            // Status footer
             if appState.dictationState == .listening || appState.dictationState == .forging {
-                AudioWaveformView(appState: appState)
-                    .frame(maxWidth: .infinity, alignment: .center)
+                StatusFooterView(appState: appState, onSettingsChanged: onSettingsChanged)
+                    .padding(.bottom, 10)
             }
         }
-        .padding(.top, appState.partialTranscript.isEmpty ? 16 : 24)
-        .padding(.horizontal, 24)
-        .padding(.bottom, 16)
         .frame(width: 480)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxHeight: 400)
@@ -58,6 +68,79 @@ private struct AnimatedTranscriptView: View {
         .onAppear {
             revealedCount = words.count
         }
+    }
+}
+
+// MARK: - Status Footer
+
+private struct StatusFooterView: View {
+    let appState: AppState
+    var onSettingsChanged: (() -> Void)?
+
+    private let silenceSteps: [Double] = [0, 1, 2, 3, 5]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Spacer()
+
+            // Silence timeout control
+            Button {
+                cycleSilenceTimeout()
+            } label: {
+                Text(silenceLabel)
+                    .font(.system(.caption2, design: .rounded))
+                    .foregroundStyle(.white.opacity(appState.silenceTimeout > 0 ? 0.5 : 0.25))
+            }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+
+            Text(" · ")
+                .font(.system(.caption2, design: .rounded))
+                .foregroundStyle(.white.opacity(0.2))
+
+            // Auto-submit control
+            Button {
+                toggleAutoSubmit()
+            } label: {
+                Text(autoSubmitLabel)
+                    .font(.system(.caption2, design: .rounded))
+                    .foregroundStyle(.white.opacity(appState.autoSubmit ? 0.5 : 0.25))
+            }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+
+            Spacer()
+        }
+    }
+
+    private var silenceLabel: String {
+        if appState.silenceTimeout > 0 {
+            let s = appState.silenceTimeout.truncatingRemainder(dividingBy: 1) == 0
+                ? "\(Int(appState.silenceTimeout))s"
+                : "\(appState.silenceTimeout)s"
+            return "⏱ \(s)"
+        }
+        return "⏱ off"
+    }
+
+    private var autoSubmitLabel: String {
+        appState.autoSubmit ? "↩ on" : "↩ off"
+    }
+
+    private func cycleSilenceTimeout() {
+        let currentIndex = silenceSteps.firstIndex(of: appState.silenceTimeout) ?? 0
+        let nextIndex = (currentIndex + 1) % silenceSteps.count
+        let newValue = silenceSteps[nextIndex]
+        appState.silenceTimeout = newValue
+        UserDefaults.standard.set(newValue, forKey: Constants.silenceTimeoutKey)
+        onSettingsChanged?()
+    }
+
+    private func toggleAutoSubmit() {
+        let newValue = !appState.autoSubmit
+        appState.autoSubmit = newValue
+        UserDefaults.standard.set(newValue, forKey: Constants.autoSubmitKey)
+        onSettingsChanged?()
     }
 }
 

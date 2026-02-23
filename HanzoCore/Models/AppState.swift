@@ -16,6 +16,12 @@ final class AppState {
     var audioLevels: [Float] = []
     var isOnboardingComplete: Bool = UserDefaults.standard.bool(forKey: Constants.onboardingCompleteKey)
     var isPopoverPresented: Bool = false
+    var silenceTimeout: Double = UserDefaults.standard.object(forKey: Constants.silenceTimeoutKey) != nil
+        ? UserDefaults.standard.double(forKey: Constants.silenceTimeoutKey)
+        : Constants.defaultSilenceTimeout
+    var autoSubmit: Bool = UserDefaults.standard.object(forKey: Constants.autoSubmitKey) != nil
+        ? UserDefaults.standard.bool(forKey: Constants.autoSubmitKey)
+        : Constants.defaultAutoSubmit
 
     var menuBarIconName: String {
         switch dictationState {

@@ -115,7 +115,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.hasShadow = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         let hostingController = NSHostingController(
-            rootView: TranscriptPopover(appState: appState)
+            rootView: TranscriptPopover(
+                appState: appState,
+                onSettingsChanged: { [weak self] in
+                    self?.orchestrator.reloadSettings()
+                }
+            )
         )
         panel.contentViewController = hostingController
         return panel
@@ -206,7 +211,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         window.isOpaque = false
         window.hasShadow = true
         window.isMovableByWindowBackground = true
-        window.setContentSize(NSSize(width: 420, height: 400))
+        window.setContentSize(NSSize(width: 420, height: 300))
         window.center()
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(nil)

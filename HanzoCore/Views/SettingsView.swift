@@ -17,12 +17,6 @@ struct SettingsView: View {
         return val != 0 ? UInt32(val) : Constants.defaultHotkeyModifiers
     }()
     @State private var isRecordingHotkey = false
-    @State private var silenceTimeout: Double = UserDefaults.standard.object(forKey: Constants.silenceTimeoutKey) != nil
-        ? UserDefaults.standard.double(forKey: Constants.silenceTimeoutKey)
-        : Constants.defaultSilenceTimeout
-    @State private var autoSubmit: Bool = UserDefaults.standard.object(forKey: Constants.autoSubmitKey) != nil
-        ? UserDefaults.standard.bool(forKey: Constants.autoSubmitKey)
-        : Constants.defaultAutoSubmit
     @FocusState private var focusedField: Field?
 
     private enum Field { case endpoint, apiKey }
@@ -107,53 +101,9 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Divider()
-                .padding(.vertical, 16)
-
-            // Silence auto-close section
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Silence Auto-Close")
-                    .font(.system(.subheadline, design: .rounded, weight: .medium))
-                    .foregroundStyle(.secondary)
-
-                Picker("", selection: $silenceTimeout) {
-                    Text("Off").tag(0.0)
-                    Text("1s").tag(1.0)
-                    Text("2s").tag(2.0)
-                    Text("3s").tag(3.0)
-                    Text("5s").tag(5.0)
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: silenceTimeout) { saveSilenceTimeout() }
-
-                Text("Auto-stop recording after a pause in speech.")
-                    .font(.system(.caption, design: .rounded))
-                    .foregroundStyle(.secondary)
-            }
-
-            Divider()
-                .padding(.vertical, 16)
-
-            // Auto-submit section
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Auto-Submit")
-                    .font(.system(.subheadline, design: .rounded, weight: .medium))
-                    .foregroundStyle(.secondary)
-
-                Toggle(isOn: $autoSubmit) {
-                    Text("Press Return after pasting")
-                        .font(.system(.body, design: .rounded))
-                }
-                .toggleStyle(.switch)
-                .onChange(of: autoSubmit) { saveAutoSubmit() }
-
-                Text("Automatically submit text in the active app after dictation.")
-                    .font(.system(.caption, design: .rounded))
-                    .foregroundStyle(.secondary)
-            }
         }
         .padding(24)
-        .frame(width: 420, height: 500)
+        .frame(width: 420, height: 300)
         .hudBackground()
         .background(isRecordingHotkey ? HotkeyRecorderView(onKeyCombo: { keyCode, modifiers in
             hotkeyCode = keyCode
@@ -175,15 +125,6 @@ struct SettingsView: View {
         onHotkeyChanged?()
     }
 
-    private func saveSilenceTimeout() {
-        UserDefaults.standard.set(silenceTimeout, forKey: Constants.silenceTimeoutKey)
-        onSave?()
-    }
-
-    private func saveAutoSubmit() {
-        UserDefaults.standard.set(autoSubmit, forKey: Constants.autoSubmitKey)
-        onSave?()
-    }
 }
 
 // MARK: - Hotkey Recorder
