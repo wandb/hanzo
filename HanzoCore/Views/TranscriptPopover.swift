@@ -33,6 +33,7 @@ struct TranscriptPopover: View {
                 .clipShape(RoundedRectangle(cornerRadius: 22))
         )
         .clipShape(RoundedRectangle(cornerRadius: 22))
+        .preferredColorScheme(appState.preferredColorScheme)
     }
 }
 
@@ -83,7 +84,7 @@ private struct StatusFooterView: View {
             } label: {
                 Text(silenceLabel)
                     .font(.system(.caption2, design: .rounded))
-                    .foregroundStyle(.white.opacity(appState.silenceTimeout > 0 ? 0.5 : 0.25))
+                    .foregroundStyle(.primary.opacity(appState.silenceTimeout > 0 ? 0.5 : 0.25))
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
@@ -92,7 +93,7 @@ private struct StatusFooterView: View {
 
             Text(" · ")
                 .font(.system(.caption2, design: .rounded))
-                .foregroundStyle(.white.opacity(0.2))
+                .foregroundStyle(.primary.opacity(0.2))
 
             // Auto-submit control
             Button {
@@ -100,7 +101,7 @@ private struct StatusFooterView: View {
             } label: {
                 Text(autoSubmitLabel)
                     .font(.system(.caption2, design: .rounded))
-                    .foregroundStyle(.white.opacity(appState.autoSubmitMode != .off ? 0.5 : 0.25))
+                    .foregroundStyle(.primary.opacity(appState.autoSubmitMode != .off ? 0.5 : 0.25))
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
@@ -170,11 +171,11 @@ private struct PillTooltipModifier: ViewModifier {
                 if showTooltip {
                     Text(text)
                         .font(.system(.caption2, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.7))
+                        .foregroundStyle(.primary.opacity(0.7))
                         .fixedSize()
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(.white.opacity(0.1))
+                        .background(.primary.opacity(0.1))
                         .clipShape(Capsule())
                         .allowsHitTesting(false)
                         .offset(y: -22)

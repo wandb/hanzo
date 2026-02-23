@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -25,6 +26,22 @@ final class AppState {
         }
         return Constants.defaultAutoSubmitMode
     }()
+    var appearanceMode: AppearanceMode = {
+        if let raw = UserDefaults.standard.string(forKey: Constants.appearanceModeKey) {
+            return AppearanceMode(rawValue: raw) ?? Constants.defaultAppearanceMode
+        }
+        return Constants.defaultAppearanceMode
+    }()
+
+    var preferredColorScheme: ColorScheme {
+        switch appearanceMode {
+        case .system:
+            let isDark = NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return isDark ? .dark : .light
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
 
     var stateColor: Color {
         switch dictationState {

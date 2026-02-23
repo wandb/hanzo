@@ -8,7 +8,7 @@ struct APIKeyStep: View {
         VStack(spacing: 16) {
             Image(systemName: "key.fill")
                 .font(.system(size: 48))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
 
             Text("API key")
                 .font(.system(.title2, design: .rounded, weight: .bold))
@@ -24,7 +24,7 @@ struct APIKeyStep: View {
                 .font(.system(.body, design: .rounded))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(.white.opacity(0.1))
+                .background(.primary.opacity(0.1))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .frame(maxWidth: 300)
 

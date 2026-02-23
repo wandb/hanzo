@@ -1,3 +1,4 @@
+import AppKit
 import Testing
 import SwiftUI
 @testable import HanzoCore
@@ -37,5 +38,34 @@ struct AppStateTests {
     func audioLevelsDefault() {
         let state = AppState()
         #expect(state.audioLevels.isEmpty)
+    }
+
+    // MARK: - Appearance Mode
+
+    @Test("preferredColorScheme resolves system appearance for system mode")
+    func colorSchemeSystem() {
+        let state = AppState()
+        state.appearanceMode = .system
+        // When NSApp is nil (unit tests), defaults to .light
+        guard let app = NSApp else {
+            #expect(state.preferredColorScheme == .light)
+            return
+        }
+        let isDark = app.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        #expect(state.preferredColorScheme == (isDark ? .dark : .light))
+    }
+
+    @Test("preferredColorScheme is .light for light mode")
+    func colorSchemeLight() {
+        let state = AppState()
+        state.appearanceMode = .light
+        #expect(state.preferredColorScheme == .light)
+    }
+
+    @Test("preferredColorScheme is .dark for dark mode")
+    func colorSchemeDark() {
+        let state = AppState()
+        state.appearanceMode = .dark
+        #expect(state.preferredColorScheme == .dark)
     }
 }

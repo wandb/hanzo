@@ -8,7 +8,7 @@ struct AccessibilityPermissionStep: View {
         VStack(spacing: 16) {
             Image(systemName: "hand.raised.fill")
                 .font(.system(size: 48))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
 
             Text("Accessibility access")
                 .font(.system(.title2, design: .rounded, weight: .bold))

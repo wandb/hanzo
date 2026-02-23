@@ -7,7 +7,7 @@ struct HotkeyConfirmationStep: View {
         VStack(spacing: 16) {
             Image(systemName: "keyboard.fill")
                 .font(.system(size: 48))
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
 
             Text("Your dictation hotkey")
                 .font(.system(.title2, design: .rounded, weight: .bold))
@@ -43,7 +43,7 @@ private struct KeyCapView: View {
             .font(.system(.body, design: .rounded, weight: .medium))
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(.white.opacity(0.12))
+            .background(.primary.opacity(0.12))
             .clipShape(RoundedRectangle(cornerRadius: 6))
     }
 }

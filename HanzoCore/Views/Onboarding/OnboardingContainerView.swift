@@ -19,7 +19,7 @@ struct OnboardingContainerView: View {
             HStack(spacing: 8) {
                 ForEach(0..<Self.totalSteps, id: \.self) { step in
                     Circle()
-                        .fill(step <= currentStep ? Color.white : Color.white.opacity(0.25))
+                        .fill(step <= currentStep ? Color.primary : Color.primary.opacity(0.25))
                         .frame(width: 6, height: 6)
                 }
             }

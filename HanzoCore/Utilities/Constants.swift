@@ -6,6 +6,12 @@ enum AutoSubmitMode: String {
     case off
 }
 
+enum AppearanceMode: String {
+    case system
+    case light
+    case dark
+}
+
 enum Constants {
     static let defaultServerEndpoint = "https://grunt.zain.aaronbatilo.dev"
     static let defaultAPIKey = ""
@@ -29,6 +35,10 @@ enum Constants {
 
     // Launch at login
     static let launchAtLoginRegisteredKey = "launchAtLoginRegistered"
+
+    // Appearance
+    static let appearanceModeKey = "appearanceMode"
+    static let defaultAppearanceMode: AppearanceMode = .system
 
     // Silence auto-close
     static let silenceTimeoutKey = "silenceTimeout"

@@ -3,6 +3,7 @@ import Carbon
 import ServiceManagement
 
 struct SettingsView: View {
+    var appState: AppState
     var onSave: (() -> Void)?
     var onHotkeyChanged: (() -> Void)?
     var onClose: (() -> Void)?
@@ -18,6 +19,12 @@ struct SettingsView: View {
         return val != 0 ? UInt32(val) : Constants.defaultHotkeyModifiers
     }()
     @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
+    @State private var appearanceMode: AppearanceMode = {
+        if let raw = UserDefaults.standard.string(forKey: Constants.appearanceModeKey) {
+            return AppearanceMode(rawValue: raw) ?? Constants.defaultAppearanceMode
+        }
+        return Constants.defaultAppearanceMode
+    }()
     @State private var isRecordingHotkey = false
     @FocusState private var focusedField: Field?
 
@@ -31,7 +38,7 @@ struct SettingsView: View {
                 Button(action: { onClose?() }) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 16))
-                        .foregroundStyle(.white.opacity(0.3))
+                        .foregroundStyle(.primary.opacity(0.3))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close settings")
@@ -59,6 +66,23 @@ struct SettingsView: View {
                             launchAtLogin = SMAppService.mainApp.status == .enabled
                         }
                     }
+
+                HStack {
+                    Text("Appearance")
+                        .font(.system(.body, design: .rounded))
+                    Spacer()
+                    Picker("", selection: $appearanceMode) {
+                        Text("System").tag(AppearanceMode.system)
+                        Text("Light").tag(AppearanceMode.light)
+                        Text("Dark").tag(AppearanceMode.dark)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 180)
+                }
+                .onChange(of: appearanceMode) {
+                    UserDefaults.standard.set(appearanceMode.rawValue, forKey: Constants.appearanceModeKey)
+                    appState.appearanceMode = appearanceMode
+                }
             }
 
             Divider()
@@ -75,7 +99,7 @@ struct SettingsView: View {
                     .font(.system(.body, design: .rounded))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(.white.opacity(0.08))
+                    .background(.primary.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .focused($focusedField, equals: .endpoint)
                     .onChange(of: serverEndpoint) { saveServer() }
@@ -85,7 +109,7 @@ struct SettingsView: View {
                     .font(.system(.body, design: .rounded))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(.white.opacity(0.08))
+                    .background(.primary.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .focused($focusedField, equals: .apiKey)
                     .onChange(of: apiKey) { saveServer() }
@@ -114,7 +138,7 @@ struct SettingsView: View {
                             .font(.system(.body, design: .rounded, weight: .medium))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
-                            .background(.white.opacity(0.08))
+                            .background(.primary.opacity(0.08))
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     Spacer()
@@ -132,8 +156,8 @@ struct SettingsView: View {
 
         }
         .padding(24)
-        .frame(width: 420, height: 380)
-        .hudBackground()
+        .frame(width: 420, height: 420)
+        .hudBackground(colorScheme: appState.preferredColorScheme)
         .background(isRecordingHotkey ? HotkeyRecorderView(onKeyCombo: { keyCode, modifiers in
             hotkeyCode = keyCode
             hotkeyModifiers = modifiers

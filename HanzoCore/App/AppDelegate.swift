@@ -194,6 +194,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let settingsView = SettingsView(
+            appState: appState,
             onSave: { [weak self] in
                 self?.orchestrator.reloadSettings()
             },
@@ -217,7 +218,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         window.isOpaque = false
         window.hasShadow = true
         window.isMovableByWindowBackground = true
-        window.setContentSize(NSSize(width: 420, height: 380))
+        window.setContentSize(NSSize(width: 420, height: 420))
         window.center()
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(nil)
