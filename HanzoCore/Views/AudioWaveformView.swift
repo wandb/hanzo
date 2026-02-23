@@ -4,7 +4,7 @@ struct AudioWaveformView: View {
     let appState: AppState
 
     private let totalBars = 72
-    private let innerRadius: CGFloat = 12
+    private let innerRadius: CGFloat = 10
     private let minBarLength: CGFloat = 1.5
     private let maxBarExtension: CGFloat = 3.45
     private let volumeBoost: CGFloat = 2.25

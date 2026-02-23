@@ -132,8 +132,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showPanel() {
         guard let panel = transcriptPanel, !panel.isVisible else { return }
+        guard let screen = NSScreen.main else { return }
         panel.setContentSize(NSSize(width: 480, height: 60))
-        panel.center()
+        // Position horizontally centered, ~5% from the bottom of the screen
+        let screenFrame = screen.visibleFrame
+        let x = screenFrame.midX - 240
+        let y = screenFrame.origin.y + screenFrame.height * 0.05
+        panel.setFrameOrigin(NSPoint(x: x, y: y))
         panel.orderFrontRegardless()
     }
 
@@ -273,29 +278,29 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
 // MARK: - Transcript Panel
 
-/// Floating panel that pins its top edge when height changes (grows downward).
+/// Floating panel that pins its bottom edge when height changes (grows upward).
 class TranscriptPanel: NSPanel {
     override func setFrame(_ frameRect: NSRect, display flag: Bool) {
-        let pinned = pinTop(for: frameRect)
+        let pinned = pinBottom(for: frameRect)
         super.setFrame(pinned, display: flag)
     }
 
     override func setFrame(_ frameRect: NSRect, display displayFlag: Bool, animate animateFlag: Bool) {
-        let pinned = pinTop(for: frameRect)
+        let pinned = pinBottom(for: frameRect)
         super.setFrame(pinned, display: displayFlag, animate: animateFlag)
     }
 
     override func setContentSize(_ size: NSSize) {
-        let pinned = pinTop(for: NSRect(origin: frame.origin, size: size))
+        let pinned = pinBottom(for: NSRect(origin: frame.origin, size: size))
         super.setFrame(pinned, display: true)
     }
 
-    private func pinTop(for newRect: NSRect) -> NSRect {
+    private func pinBottom(for newRect: NSRect) -> NSRect {
         guard isVisible else { return newRect }
-        let currentTop = frame.origin.y + frame.size.height
+        // Keep the bottom edge fixed — the panel grows upward
         return NSRect(
             x: newRect.origin.x,
-            y: currentTop - newRect.size.height,
+            y: frame.origin.y,
             width: newRect.size.width,
             height: newRect.size.height
         )

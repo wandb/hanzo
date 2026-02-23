@@ -6,18 +6,19 @@ struct TranscriptPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if appState.dictationState == .listening || appState.dictationState == .forging {
-                AudioWaveformView(appState: appState)
-            }
-
             if !appState.partialTranscript.isEmpty {
                 AnimatedTranscriptView(text: appState.partialTranscript)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            if appState.dictationState == .listening || appState.dictationState == .forging {
+                AudioWaveformView(appState: appState)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
         }
-        .padding(.top, 16)
+        .padding(.top, appState.partialTranscript.isEmpty ? 16 : 24)
         .padding(.horizontal, 24)
-        .padding(.bottom, appState.partialTranscript.isEmpty ? 16 : 24)
+        .padding(.bottom, 16)
         .frame(width: 480)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxHeight: 400)
