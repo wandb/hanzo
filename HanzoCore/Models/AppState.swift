@@ -26,15 +26,6 @@ final class AppState {
         return Constants.defaultAutoSubmitMode
     }()
 
-    var menuBarIconName: String {
-        switch dictationState {
-        case .idle: return "waveform"
-        case .listening: return "waveform"
-        case .forging: return "hammer.fill"
-        case .error: return "exclamationmark.triangle"
-        }
-    }
-
     var stateColor: Color {
         switch dictationState {
         case .idle: return .secondary

@@ -5,34 +5,6 @@ import SwiftUI
 @Suite("AppState")
 struct AppStateTests {
 
-    @Test("menuBarIconName returns waveform for idle")
-    func menuBarIconNameIdle() {
-        let state = AppState()
-        state.dictationState = .idle
-        #expect(state.menuBarIconName == "waveform")
-    }
-
-    @Test("menuBarIconName returns waveform for listening")
-    func menuBarIconNameListening() {
-        let state = AppState()
-        state.dictationState = .listening
-        #expect(state.menuBarIconName == "waveform")
-    }
-
-    @Test("menuBarIconName returns hammer.fill for forging")
-    func menuBarIconNameForging() {
-        let state = AppState()
-        state.dictationState = .forging
-        #expect(state.menuBarIconName == "hammer.fill")
-    }
-
-    @Test("menuBarIconName returns exclamationmark.triangle for error")
-    func menuBarIconNameError() {
-        let state = AppState()
-        state.dictationState = .error
-        #expect(state.menuBarIconName == "exclamationmark.triangle")
-    }
-
     @Test("stateColor is secondary for idle")
     func stateColorIdle() {
         let state = AppState()

@@ -87,10 +87,16 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Status Item
 
     func updateMenuBarIcon() {
-        statusItem?.button?.image = NSImage(
-            systemSymbolName: appState.menuBarIconName,
-            accessibilityDescription: "Hanzo"
-        )
+        let image: NSImage?
+        switch appState.dictationState {
+        case .idle, .listening:
+            image = MenuBarIcon.radialWaveform()
+        case .forging:
+            image = NSImage(systemSymbolName: "hammer.fill", accessibilityDescription: "Hanzo")
+        case .error:
+            image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: "Hanzo")
+        }
+        statusItem?.button?.image = image
         statusItem?.button?.alphaValue = appState.dictationState == .idle ? 0.35 : 1.0
     }
 
