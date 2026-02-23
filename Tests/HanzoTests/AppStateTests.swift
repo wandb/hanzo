@@ -46,7 +46,12 @@ struct AppStateTests {
     func colorSchemeSystem() {
         let state = AppState()
         state.appearanceMode = .system
-        let isDark = NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        // When NSApp is nil (unit tests), defaults to .light
+        guard let app = NSApp else {
+            #expect(state.preferredColorScheme == .light)
+            return
+        }
+        let isDark = app.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         #expect(state.preferredColorScheme == (isDark ? .dark : .light))
     }
 

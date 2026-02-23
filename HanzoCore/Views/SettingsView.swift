@@ -3,7 +3,7 @@ import Carbon
 import ServiceManagement
 
 struct SettingsView: View {
-    var appState: AppState?
+    var appState: AppState
     var onSave: (() -> Void)?
     var onHotkeyChanged: (() -> Void)?
     var onClose: (() -> Void)?
@@ -27,16 +27,6 @@ struct SettingsView: View {
     }()
     @State private var isRecordingHotkey = false
     @FocusState private var focusedField: Field?
-
-    private var colorSchemeForMode: ColorScheme {
-        switch appearanceMode {
-        case .system:
-            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            return isDark ? .dark : .light
-        case .light: return .light
-        case .dark: return .dark
-        }
-    }
 
     private enum Field { case endpoint, apiKey }
 
@@ -91,7 +81,7 @@ struct SettingsView: View {
                 }
                 .onChange(of: appearanceMode) {
                     UserDefaults.standard.set(appearanceMode.rawValue, forKey: Constants.appearanceModeKey)
-                    appState?.appearanceMode = appearanceMode
+                    appState.appearanceMode = appearanceMode
                 }
             }
 
@@ -167,7 +157,7 @@ struct SettingsView: View {
         }
         .padding(24)
         .frame(width: 420, height: 420)
-        .hudBackground(colorScheme: colorSchemeForMode)
+        .hudBackground(colorScheme: appState.preferredColorScheme)
         .background(isRecordingHotkey ? HotkeyRecorderView(onKeyCombo: { keyCode, modifiers in
             hotkeyCode = keyCode
             hotkeyModifiers = modifiers
