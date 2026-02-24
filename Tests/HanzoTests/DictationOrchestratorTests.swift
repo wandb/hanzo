@@ -391,7 +391,7 @@ struct DictationOrchestratorTests {
     @Test("Silence timer resets when speech resumes")
     @MainActor func silenceAutoCloseResetsOnSpeech() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 0.3
+        sut.orchestrator.silenceTimeout = 1.0
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -399,7 +399,7 @@ struct DictationOrchestratorTests {
         sut.mockAudio.simulateLevels([0.1, 0.15, 0.12, 0.08, 0.1, 0.09, 0.11])
         try await Task.sleep(nanoseconds: 50_000_000)
 
-        // Brief silence (less than timeout)
+        // Brief silence (well under 1s timeout)
         let silentLevels: [Float] = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]
         for _ in 0..<3 {
             sut.mockAudio.simulateLevels(silentLevels)

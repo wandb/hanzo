@@ -58,8 +58,10 @@ struct SettingsView: View {
                         do {
                             if launchAtLogin {
                                 try SMAppService.mainApp.register()
+                                UserDefaults.standard.set(false, forKey: Constants.launchAtLoginDisabledByUserKey)
                             } else {
                                 try SMAppService.mainApp.unregister()
+                                UserDefaults.standard.set(true, forKey: Constants.launchAtLoginDisabledByUserKey)
                             }
                         } catch {
                             LoggingService.shared.warn("Launch-at-login failed: \(error)")

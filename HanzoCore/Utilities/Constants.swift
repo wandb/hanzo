@@ -34,7 +34,7 @@ enum Constants {
     static let defaultAutoSubmitMode: AutoSubmitMode = .off
 
     // Launch at login
-    static let launchAtLoginRegisteredKey = "launchAtLoginRegistered"
+    static let launchAtLoginDisabledByUserKey = "launchAtLoginDisabledByUser"
 
     // Appearance
     static let appearanceModeKey = "appearanceMode"
