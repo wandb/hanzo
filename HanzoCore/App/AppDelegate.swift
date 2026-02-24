@@ -260,9 +260,22 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Launch at Login
 
     private func registerLaunchAtLoginIfNeeded() {
+        let status = SMAppService.mainApp.status
+
+        // If the user re-enabled in System Settings after opting out, clear the stale flag
+        if status == .enabled,
+           UserDefaults.standard.bool(forKey: Constants.launchAtLoginDisabledByUserKey) {
+            UserDefaults.standard.set(false, forKey: Constants.launchAtLoginDisabledByUserKey)
+        }
+
         guard !UserDefaults.standard.bool(forKey: Constants.launchAtLoginDisabledByUserKey) else { return }
-        if SMAppService.mainApp.status != .enabled {
-            try? SMAppService.mainApp.register()
+
+        if status != .enabled {
+            do {
+                try SMAppService.mainApp.register()
+            } catch {
+                logger.error("Failed to register launch at login: \(error)")
+            }
         }
     }
 
