@@ -200,9 +200,7 @@ final class DictationOrchestrator {
     private func stopRecording() {
         logger.info("Stopping recording")
         audioService.stopCapture()
-        appState.audioLevels = []
         appState.dictationState = .forging
-        appState.partialTranscript = ""
         bufferQueue.sync {
             isStoppingRecording = true
         }
@@ -243,12 +241,14 @@ final class DictationOrchestrator {
                 // 100ms timer in AppDelegate re-shows it, stealing focus back.
                 await MainActor.run {
                     appState.isPopoverPresented = false
-                    appState.partialTranscript = ""
-                    appState.dictationState = .idle
                 }
 
-                // Let popover fully dismiss
-                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                // Let popover fully dismiss before mutating visible HUD content/state.
+                try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
+
+                await MainActor.run {
+                    appState.dictationState = .idle
+                }
 
                 // PHASE 2: Activate target app and paste
                 if !finalText.isEmpty, let targetApp {
@@ -287,6 +287,11 @@ final class DictationOrchestrator {
                     case .off:
                         break
                     }
+                }
+
+                await MainActor.run {
+                    appState.partialTranscript = ""
+                    appState.audioLevels = []
                 }
             } catch {
                 logger.error("Transcription failed: \(error)")

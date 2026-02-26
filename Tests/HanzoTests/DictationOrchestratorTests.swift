@@ -27,6 +27,21 @@ private actor DelayedSessionASRClient: ASRClientProtocol {
     }
 }
 
+private actor SlowFinishingASRClient: ASRClientProtocol {
+    func startStream() async throws -> String {
+        "slow-finish-session"
+    }
+
+    func sendChunk(sessionId: String, pcmData: Data) async throws -> ASRChunkResponse {
+        ASRChunkResponse(text: "streaming transcript", language: "en")
+    }
+
+    func finishStream(sessionId: String) async throws -> ASRFinishResponse {
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        return ASRFinishResponse(text: "final transcript", language: "en")
+    }
+}
+
 @Suite("DictationOrchestrator")
 struct DictationOrchestratorTests {
 
@@ -175,6 +190,38 @@ struct DictationOrchestratorTests {
         try await Task.sleep(nanoseconds: 50_000_000)
         sut.orchestrator.toggle()
         #expect(sut.mockAudio.stopCaptureCalled == true)
+    }
+
+    @Test("Transcript remains visible while forging until HUD dismissal")
+    @MainActor func transcriptRemainsVisibleDuringForging() async throws {
+        let appState = AppState()
+        let asr = SlowFinishingASRClient()
+        let mockAudio = MockAudioCaptureService()
+        let mockText = MockTextInsertionService()
+        let mockPerms = MockPermissionService()
+        mockPerms.hasMicrophonePermission = true
+        let mockLogger = MockLogger()
+
+        let orchestrator = DictationOrchestrator(
+            appState: appState,
+            asrClient: asr,
+            audioService: mockAudio,
+            textInsertion: mockText,
+            permissionService: mockPerms,
+            logger: mockLogger
+        )
+
+        orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 60_000_000)
+
+        let chunk = Data(repeating: 0x01, count: Constants.chunkAccumulationBytes + 1)
+        mockAudio.simulateChunk(chunk)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        #expect(appState.partialTranscript == "streaming transcript")
+
+        orchestrator.toggle()
+        #expect(appState.dictationState == .forging)
+        #expect(appState.partialTranscript == "streaming transcript")
     }
 
     // MARK: - toggle() from forging (no-op)
