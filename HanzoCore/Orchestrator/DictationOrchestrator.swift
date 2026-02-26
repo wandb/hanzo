@@ -24,7 +24,6 @@ final class DictationOrchestrator {
     // Silence auto-close
     var silenceTimeout: Double
     private var silenceStartTime: Date?
-    private var hasSpeechBeenDetected: Bool = false
     private var peakSpeechLevel: Float = 0
 
     init(
@@ -123,7 +122,6 @@ final class DictationOrchestrator {
         sessionId = nil
         previousApp = nil
         silenceStartTime = nil
-        hasSpeechBeenDetected = false
         peakSpeechLevel = 0
 
         Task { @MainActor in
@@ -151,7 +149,6 @@ final class DictationOrchestrator {
         appState.isPopoverPresented = true
         bufferQueue.sync { audioBuffer.removeAll() }
         silenceStartTime = nil
-        hasSpeechBeenDetected = false
         peakSpeechLevel = 0
 
         Task {
@@ -299,7 +296,6 @@ final class DictationOrchestrator {
         appState.audioLevels = []
         appState.isPopoverPresented = false
         silenceStartTime = nil
-        hasSpeechBeenDetected = false
         peakSpeechLevel = 0
     }
 
@@ -323,13 +319,12 @@ final class DictationOrchestrator {
             if averageLevel > peakSpeechLevel {
                 peakSpeechLevel = averageLevel
             }
-            hasSpeechBeenDetected = true
             silenceStartTime = nil
             return
         }
 
-        // Audio is below threshold — only care if speech was previously detected
-        guard hasSpeechBeenDetected else { return }
+        // Audio is below threshold — only start timer after words have been transcribed
+        guard !appState.partialTranscript.isEmpty else { return }
 
         if silenceStartTime == nil {
             silenceStartTime = Date()
