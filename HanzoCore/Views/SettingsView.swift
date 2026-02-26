@@ -8,8 +8,21 @@ struct SettingsView: View {
     var onHotkeyChanged: (() -> Void)?
     var onClose: (() -> Void)?
 
+    @State private var asrProvider: ASRProvider = {
+        if let raw = UserDefaults.standard.string(forKey: Constants.asrProviderKey) {
+            return ASRProvider(rawValue: raw) ?? Constants.defaultASRProvider
+        }
+        return Constants.defaultASRProvider
+    }()
     @State private var serverEndpoint: String = UserDefaults.standard.string(forKey: Constants.serverEndpointKey) ?? Constants.defaultServerEndpoint
     @State private var apiKey: String = UserDefaults.standard.string(forKey: Constants.apiKeyKey) ?? ""
+    @State private var localServerEndpoint: String = UserDefaults.standard.string(forKey: Constants.localServerEndpointKey) ?? Constants.defaultLocalServerEndpoint
+    @State private var localASRModelPreset: LocalASRModelPreset = {
+        if let raw = UserDefaults.standard.string(forKey: Constants.localASRModelPresetKey) {
+            return LocalASRModelPreset(rawValue: raw) ?? Constants.defaultLocalASRModelPreset
+        }
+        return Constants.defaultLocalASRModelPreset
+    }()
     @State private var hotkeyCode: UInt32 = {
         let val = UserDefaults.standard.integer(forKey: Constants.hotkeyCodeKey)
         return val != 0 ? UInt32(val) : Constants.defaultHotkeyCode
@@ -28,7 +41,7 @@ struct SettingsView: View {
     @State private var isRecordingHotkey = false
     @FocusState private var focusedField: Field?
 
-    private enum Field { case endpoint, apiKey }
+    private enum Field { case endpoint, apiKey, localEndpoint }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -90,31 +103,74 @@ struct SettingsView: View {
             Divider()
                 .padding(.vertical, 16)
 
-            // Server section
+            // Transcription section
             VStack(alignment: .leading, spacing: 12) {
-                Text("Server")
+                Text("Transcription")
                     .font(.system(.subheadline, design: .rounded, weight: .medium))
                     .foregroundStyle(.secondary)
 
-                TextField("ASR server endpoint", text: $serverEndpoint)
-                    .textFieldStyle(.plain)
-                    .font(.system(.body, design: .rounded))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.primary.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .focused($focusedField, equals: .endpoint)
-                    .onChange(of: serverEndpoint) { saveServer() }
+                HStack {
+                    Text("Provider")
+                        .font(.system(.body, design: .rounded))
+                    Spacer()
+                    Picker("", selection: $asrProvider) {
+                        ForEach(ASRProvider.allCases, id: \.rawValue) { provider in
+                            Text(provider.displayName).tag(provider)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 180)
+                    .onChange(of: asrProvider) {
+                        appState.asrProvider = asrProvider
+                        saveTranscriptionSettings()
+                    }
+                }
 
-                TextField("API key", text: $apiKey)
-                    .textFieldStyle(.plain)
-                    .font(.system(.body, design: .rounded))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.primary.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .focused($focusedField, equals: .apiKey)
-                    .onChange(of: apiKey) { saveServer() }
+                if asrProvider == .server {
+                    TextField("ASR server endpoint", text: $serverEndpoint)
+                        .textFieldStyle(.plain)
+                        .font(.system(.body, design: .rounded))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.primary.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .focused($focusedField, equals: .endpoint)
+                        .onChange(of: serverEndpoint) { saveTranscriptionSettings() }
+
+                    TextField("API key", text: $apiKey)
+                        .textFieldStyle(.plain)
+                        .font(.system(.body, design: .rounded))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.primary.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .focused($focusedField, equals: .apiKey)
+                        .onChange(of: apiKey) { saveTranscriptionSettings() }
+                } else {
+                    TextField("Local ASR endpoint", text: $localServerEndpoint)
+                        .textFieldStyle(.plain)
+                        .font(.system(.body, design: .rounded))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.primary.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .focused($focusedField, equals: .localEndpoint)
+                        .onChange(of: localServerEndpoint) { saveTranscriptionSettings() }
+
+                    HStack {
+                        Text("Model")
+                            .font(.system(.body, design: .rounded))
+                        Spacer()
+                        Picker("", selection: $localASRModelPreset) {
+                            ForEach(LocalASRModelPreset.allCases, id: \.rawValue) { preset in
+                                Text(preset.displayName).tag(preset)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .onChange(of: localASRModelPreset) { saveTranscriptionSettings() }
+                    }
+                }
             }
 
             Divider()
@@ -158,7 +214,7 @@ struct SettingsView: View {
 
         }
         .padding(24)
-        .frame(width: 420, height: 420)
+        .frame(width: 420, height: 460)
         .hudBackground(colorScheme: appState.preferredColorScheme)
         .background(isRecordingHotkey ? HotkeyRecorderView(onKeyCombo: { keyCode, modifiers in
             hotkeyCode = keyCode
@@ -168,9 +224,13 @@ struct SettingsView: View {
         }) .frame(width: 0, height: 0) : nil)
     }
 
-    private func saveServer() {
+    private func saveTranscriptionSettings() {
+        UserDefaults.standard.set(asrProvider.rawValue, forKey: Constants.asrProviderKey)
         UserDefaults.standard.set(serverEndpoint, forKey: Constants.serverEndpointKey)
         UserDefaults.standard.set(apiKey, forKey: Constants.apiKeyKey)
+        UserDefaults.standard.set(localServerEndpoint, forKey: Constants.localServerEndpointKey)
+        UserDefaults.standard.set(localASRModelPreset.rawValue, forKey: Constants.localASRModelPresetKey)
+        appState.asrProvider = asrProvider
         onSave?()
     }
 

@@ -13,10 +13,25 @@ enum AppearanceMode: String {
 }
 
 enum Constants {
+    static let bundleIdentifier = "com.hanzo.app"
     static let defaultServerEndpoint = "https://grunt.zain.aaronbatilo.dev"
+    static let defaultLocalServerEndpoint = "http://127.0.0.1:8765"
+    static let localRuntimeHealthPath = "healthz"
+    static let localRuntimeHelperExecutableName = "HanzoLocalASR"
+    static let localRuntimeStartupTimeout: TimeInterval = 12
+    static let localRuntimeHealthPollNanoseconds: UInt64 = 250_000_000
+    static let localModelStatusPath = "/v1/model/status"
+    static let localModelDownloadPath = "/v1/model/download"
+    static let localModelPreparePath = "/v1/model/prepare"
+    static let localModelsFolderName = "models"
     static let defaultAPIKey = ""
     static let serverEndpointKey = "serverEndpoint"
+    static let localServerEndpointKey = "localServerEndpoint"
     static let apiKeyKey = "apiKey"
+    static let asrProviderKey = "asrProvider"
+    static let defaultASRProvider: ASRProvider = .local
+    static let localASRModelPresetKey = "localASRModelPreset"
+    static let defaultLocalASRModelPreset: LocalASRModelPreset = .balanced
     static let onboardingCompleteKey = "onboardingComplete"
     static let hotkeyCodeKey = "hotkeyCode"
     static let hotkeyModifiersKey = "hotkeyModifiers"

@@ -2,6 +2,31 @@ import Testing
 import Foundation
 @testable import HanzoCore
 
+private actor DelayedSessionASRClient: ASRClientProtocol {
+    private var startCounter = 0
+
+    func startStream() async throws -> String {
+        startCounter += 1
+        return startCounter == 1 ? "session-1" : "session-2"
+    }
+
+    func sendChunk(sessionId: String, pcmData: Data) async throws -> ASRChunkResponse {
+        if sessionId == "session-1" {
+            let deadline = Date().addingTimeInterval(0.25)
+            while Date() < deadline {
+                try? await Task.sleep(nanoseconds: 25_000_000)
+            }
+            return ASRChunkResponse(text: "stale from session one", language: "en")
+        }
+
+        return ASRChunkResponse(text: "fresh from session two", language: "en")
+    }
+
+    func finishStream(sessionId: String) async throws -> ASRFinishResponse {
+        ASRFinishResponse(text: "", language: "en")
+    }
+}
+
 @Suite("DictationOrchestrator")
 struct DictationOrchestratorTests {
 
@@ -274,6 +299,42 @@ struct DictationOrchestratorTests {
         try await Task.sleep(nanoseconds: 100_000_000)
 
         #expect(sut.appState.partialTranscript == "hello world")
+    }
+
+    @Test("Late chunk response from previous session is ignored")
+    @MainActor func lateChunkResponseFromPreviousSessionIgnored() async throws {
+        let appState = AppState()
+        let delayedASR = DelayedSessionASRClient()
+        let mockAudio = MockAudioCaptureService()
+        let mockText = MockTextInsertionService()
+        let mockPerms = MockPermissionService()
+        mockPerms.hasMicrophonePermission = true
+        let mockLogger = MockLogger()
+
+        let orchestrator = DictationOrchestrator(
+            appState: appState,
+            asrClient: delayedASR,
+            audioService: mockAudio,
+            textInsertion: mockText,
+            permissionService: mockPerms,
+            logger: mockLogger
+        )
+
+        let chunk = Data(repeating: 0x01, count: Constants.chunkAccumulationBytes + 1)
+
+        orchestrator.toggle() // Session 1
+        try await Task.sleep(nanoseconds: 60_000_000)
+        mockAudio.simulateChunk(chunk)
+
+        orchestrator.cancel()
+        try await Task.sleep(nanoseconds: 30_000_000)
+
+        orchestrator.toggle() // Session 2
+        try await Task.sleep(nanoseconds: 60_000_000)
+        mockAudio.simulateChunk(chunk)
+
+        try await Task.sleep(nanoseconds: 350_000_000)
+        #expect(appState.partialTranscript == "fresh from session two")
     }
 
     // MARK: - Full flow: stop → finishStream

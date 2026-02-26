@@ -20,6 +20,7 @@ enum ASRError: Error, LocalizedError {
     case sessionNotFound
     case networkError(underlying: Error)
     case invalidURL
+    case localRuntimeUnavailable(detail: String?)
 
     var errorDescription: String? {
         switch self {
@@ -33,18 +34,27 @@ enum ASRError: Error, LocalizedError {
             return "Network error: \(err.localizedDescription)"
         case .invalidURL:
             return "Invalid server URL"
+        case .localRuntimeUnavailable(let detail):
+            return detail ?? "Local ASR runtime is unavailable"
         }
     }
 }
 
 final class ASRClient: ASRClientProtocol {
     private let session: URLSession
+    private let requestTimeout: TimeInterval
     var baseURL: String
     var apiKey: String
 
-    init(baseURL: String, apiKey: String, session: URLSession = .shared) {
+    init(
+        baseURL: String,
+        apiKey: String,
+        requestTimeout: TimeInterval = 15,
+        session: URLSession = .shared
+    ) {
         self.baseURL = baseURL
         self.apiKey = apiKey
+        self.requestTimeout = requestTimeout
         self.session = session
     }
 
@@ -93,7 +103,7 @@ final class ASRClient: ASRClientProtocol {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue(apiKey, forHTTPHeaderField: "X-API-Key")
-        request.timeoutInterval = 15
+        request.timeoutInterval = requestTimeout
         return request
     }
 
