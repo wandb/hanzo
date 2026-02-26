@@ -64,9 +64,15 @@ struct SettingsView: View {
                     .font(.system(.subheadline, design: .rounded, weight: .medium))
                     .foregroundStyle(.secondary)
 
-                Toggle("Open at startup", isOn: $launchAtLogin)
-                    .font(.system(.body, design: .rounded))
-                    .toggleStyle(.switch)
+                HStack {
+                    Text("Open at startup")
+                        .font(.system(.body, design: .rounded))
+                    Spacer()
+                    Toggle("", isOn: $launchAtLogin)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .labelsHidden()
+                }
                     .onChange(of: launchAtLogin) {
                         do {
                             if launchAtLogin {
@@ -207,8 +213,11 @@ struct SettingsView: View {
             }
 
         }
-        .padding(24)
-        .frame(width: 420, height: 460)
+        .padding(.horizontal, 24)
+        .padding(.top, 16)
+        .padding(.bottom, 16)
+        .frame(width: 420)
+        .fixedSize(horizontal: false, vertical: true)
         .hudBackground(colorScheme: appState.preferredColorScheme)
         .background(isRecordingHotkey ? HotkeyRecorderView(onKeyCombo: { keyCode, modifiers in
             hotkeyCode = keyCode
