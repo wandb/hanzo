@@ -363,6 +363,7 @@ final class DictationOrchestrator {
             let response = try await asrClient.sendChunk(sessionId: sid, pcmData: pcmData)
             await MainActor.run {
                 guard self.sessionId == sid else { return }
+                guard appState.dictationState == .listening else { return }
                 appState.partialTranscript = PartialTranscriptMerger.merge(
                     previous: appState.partialTranscript,
                     incoming: response.text

@@ -33,4 +33,10 @@ struct PartialTranscriptMergerTests {
         let merged = PartialTranscriptMerger.merge(previous: "hello world", incoming: "bye")
         #expect(merged == "hello world")
     }
+
+    @Test("short starter fragment can be replaced by longer no-prefix update")
+    func shortStarterFragmentCanBeReplaced() {
+        let merged = PartialTranscriptMerger.merge(previous: "I.", incoming: "This is a complete sentence")
+        #expect(merged == "This is a complete sentence")
+    }
 }
