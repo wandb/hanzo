@@ -4,12 +4,11 @@ macOS menu bar dictation app. Captures speech via global hotkey, streams to host
 
 ## Build & Run
 
-- `./run.sh` — build and launch (wraps `swift build`, assembles .app bundle, opens it)
+- `./dev-run.sh` — build and launch (wraps `swift build`, assembles .app bundle, opens it)
+- `./dev-restart.sh` — kill, clear models, reset permissions, rebuild and launch
 - `swift build` — build only
 - `swift test` — run all tests
-- Kill: `pkill -x Hanzo`
-- Reset permissions: `tccutil reset Microphone com.hanzo.app && tccutil reset Accessibility com.hanzo.app`
-- XcodeGen (`project.yml`) exists for Xcode workflows but SPM via `run.sh` is primary
+- XcodeGen (`project.yml`) exists for Xcode workflows but SPM via `dev-run.sh` is primary
 
 ## Architecture
 
@@ -18,11 +17,11 @@ Package split into two targets: `HanzoCore` (library) and `HanzoApp` (executable
 - `HanzoApp/` — @main entry point only (HanzoApp.swift)
 - `HanzoCore/App/` — AppDelegate (menu bar icon, windows)
 - `HanzoCore/Orchestrator/` — DictationOrchestrator: coordinates record → transcribe → insert flow
-- `HanzoCore/Services/` — ASRClient, AudioCaptureService, HotkeyService, TextInsertionService, PermissionService, LoggingService
-- `HanzoCore/Protocols/` — Service protocols for DI (ASRClientProtocol, AudioCaptureProtocol, TextInsertionProtocol, PermissionServiceProtocol, LoggingServiceProtocol)
+- `HanzoCore/Services/` — ASRClient, AudioCaptureService, HotkeyService, TextInsertionService, PermissionService, LoggingService, LocalASRRuntimeManager
+- `HanzoCore/Protocols/` — Service protocols for DI (ASRClientProtocol, AudioCaptureProtocol, TextInsertionProtocol, PermissionServiceProtocol, LoggingServiceProtocol, LocalASRRuntimeManagerProtocol)
 - `HanzoCore/Models/` — AppState (@Observable with DictationState enum), TranscriptionSession
 - `HanzoCore/Views/` — SwiftUI views; onboarding wizard in Views/Onboarding/
-- `HanzoCore/Utilities/` — Constants (UserDefaults keys, audio params)
+- `HanzoCore/Utilities/` — Constants (UserDefaults keys, audio params), ASRProvider, PartialTranscriptMerger
 - `Tests/HanzoTests/` — Unit tests (Swift Testing framework)
 
 ## Code Style

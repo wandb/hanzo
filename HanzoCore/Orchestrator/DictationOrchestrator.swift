@@ -8,6 +8,7 @@ final class DictationOrchestrator {
     private var audioService: AudioCaptureProtocol
     private let textInsertion: TextInsertionProtocol
     private let permissionService: PermissionServiceProtocol
+    private let localRuntimeManager: LocalASRRuntimeManagerProtocol
     private let logger: LoggingServiceProtocol
 
     private var asrClient: ASRClientProtocol
@@ -16,7 +17,13 @@ final class DictationOrchestrator {
     private var audioBuffer = Data()
     private let bufferQueue = DispatchQueue(label: "com.hanzo.audiobuffer")
     private var chunkSendTask: Task<Void, Never>?
+    private var isChunkSendInFlight = false
+    private var isStoppingRecording = false
     private var previousApp: NSRunningApplication?
+    private var pendingRestartAfterForging = false
+    private var configuredASRProvider: ASRProvider
+    private var configuredLocalBaseURL: String
+    private var configuredLocalModelPreset: LocalASRModelPreset
 
     // Auto-submit
     var autoSubmitMode: AutoSubmitMode
@@ -32,12 +39,14 @@ final class DictationOrchestrator {
         audioService: AudioCaptureProtocol = AudioCaptureService(),
         textInsertion: TextInsertionProtocol = TextInsertionService(),
         permissionService: PermissionServiceProtocol = PermissionService.shared,
+        localRuntimeManager: LocalASRRuntimeManagerProtocol = LocalASRRuntimeManager(),
         logger: LoggingServiceProtocol = LoggingService.shared
     ) {
         self.appState = appState
         self.audioService = audioService
         self.textInsertion = textInsertion
         self.permissionService = permissionService
+        self.localRuntimeManager = localRuntimeManager
         self.logger = logger
 
         if let raw = UserDefaults.standard.string(forKey: Constants.autoSubmitKey) {
@@ -55,15 +64,17 @@ final class DictationOrchestrator {
             self.asrClient = asrClient
             self.isASRClientInjected = true
         } else {
-            let baseURL = UserDefaults.standard.string(forKey: Constants.serverEndpointKey)
-                ?? Constants.defaultServerEndpoint
-            let apiKey = UserDefaults.standard.string(forKey: Constants.apiKeyKey) ?? Constants.defaultAPIKey
-            self.asrClient = ASRClient(baseURL: baseURL, apiKey: apiKey)
+            self.asrClient = DictationOrchestrator.makeConfiguredASRClient()
             self.isASRClientInjected = false
         }
 
+        self.configuredASRProvider = DictationOrchestrator.currentASRProvider()
+        self.configuredLocalBaseURL = DictationOrchestrator.currentLocalBaseURL()
+        self.configuredLocalModelPreset = DictationOrchestrator.currentLocalASRModelPreset()
+
         appState.autoSubmitMode = self.autoSubmitMode
         appState.silenceTimeout = self.silenceTimeout
+        appState.asrProvider = self.configuredASRProvider
 
         self.audioService.onAudioChunk = { [weak self] data in
             self?.handleAudioChunk(data)
@@ -80,6 +91,10 @@ final class DictationOrchestrator {
     }
 
     func reloadSettings() {
+        let previousProvider = configuredASRProvider
+        let previousLocalBaseURL = configuredLocalBaseURL
+        let previousLocalModelPreset = configuredLocalModelPreset
+
         if let raw = UserDefaults.standard.string(forKey: Constants.autoSubmitKey) {
             autoSubmitMode = AutoSubmitMode(rawValue: raw) ?? Constants.defaultAutoSubmitMode
         } else {
@@ -93,12 +108,40 @@ final class DictationOrchestrator {
 
         appState.autoSubmitMode = autoSubmitMode
         appState.silenceTimeout = silenceTimeout
+        configuredASRProvider = DictationOrchestrator.currentASRProvider()
+        configuredLocalBaseURL = DictationOrchestrator.currentLocalBaseURL()
+        configuredLocalModelPreset = DictationOrchestrator.currentLocalASRModelPreset()
+        appState.asrProvider = configuredASRProvider
 
-        guard !isASRClientInjected else { return }
-        let baseURL = UserDefaults.standard.string(forKey: Constants.serverEndpointKey)
-            ?? Constants.defaultServerEndpoint
-        let apiKey = UserDefaults.standard.string(forKey: Constants.apiKeyKey) ?? Constants.defaultAPIKey
-        asrClient = ASRClient(baseURL: baseURL, apiKey: apiKey)
+        if !isASRClientInjected {
+            asrClient = DictationOrchestrator.makeConfiguredASRClient()
+        }
+
+        let localConfigChanged = previousLocalBaseURL != configuredLocalBaseURL
+            || previousLocalModelPreset != configuredLocalModelPreset
+        let shouldRestartLocalRuntime = previousProvider == .local
+            && (configuredASRProvider != .local || localConfigChanged)
+        let shouldWarmLocalRuntime = configuredASRProvider == .local
+            && (previousProvider != .local || localConfigChanged)
+
+        if shouldRestartLocalRuntime || shouldWarmLocalRuntime {
+            let baseURL = configuredLocalBaseURL
+            Task {
+                if shouldRestartLocalRuntime {
+                    await localRuntimeManager.stop()
+                }
+
+                guard shouldWarmLocalRuntime else { return }
+
+                do {
+                    try await localRuntimeManager.ensureRunning(baseURL: baseURL)
+                    try await localRuntimeManager.prepareModel(baseURL: baseURL)
+                    logger.info("Local ASR helper warmed after settings change")
+                } catch {
+                    logger.warn("Failed to warm local ASR helper after settings change: \(error)")
+                }
+            }
+        }
     }
 
     func toggle() {
@@ -108,7 +151,9 @@ final class DictationOrchestrator {
         case .listening:
             stopRecording()
         case .forging:
-            break // ignore toggle while forging
+            // Queue a restart so rapid double-taps don't get dropped.
+            pendingRestartAfterForging = true
+            logger.info("Toggle received during forging; queued restart")
         case .error:
             reset()
         }
@@ -118,9 +163,14 @@ final class DictationOrchestrator {
         logger.info("Recording cancelled")
         chunkSendTask?.cancel()
         audioService.stopCapture()
-        bufferQueue.sync { audioBuffer.removeAll() }
+        bufferQueue.sync {
+            audioBuffer.removeAll()
+            isChunkSendInFlight = false
+            isStoppingRecording = false
+        }
         sessionId = nil
         previousApp = nil
+        pendingRestartAfterForging = false
         silenceStartTime = nil
         peakSpeechLevel = 0
 
@@ -130,6 +180,10 @@ final class DictationOrchestrator {
             appState.audioLevels = []
             appState.isPopoverPresented = false
         }
+    }
+
+    func shutdown() {
+        Task { await localRuntimeManager.stop() }
     }
 
     // MARK: - Private
@@ -147,12 +201,22 @@ final class DictationOrchestrator {
         appState.dictationState = .listening
         appState.partialTranscript = ""
         appState.isPopoverPresented = true
-        bufferQueue.sync { audioBuffer.removeAll() }
+        bufferQueue.sync {
+            audioBuffer.removeAll()
+            isChunkSendInFlight = false
+            isStoppingRecording = false
+        }
         silenceStartTime = nil
         peakSpeechLevel = 0
 
         Task {
             do {
+                if !isASRClientInjected, DictationOrchestrator.currentASRProvider() == .local {
+                    let localBaseURL = UserDefaults.standard.string(forKey: Constants.localServerEndpointKey)
+                        ?? Constants.defaultLocalServerEndpoint
+                    try await localRuntimeManager.ensureRunning(baseURL: localBaseURL)
+                }
+
                 sessionId = try await asrClient.startStream()
                 logger.info("ASR session started: \(sessionId ?? "nil")")
                 try audioService.startCapture()
@@ -161,7 +225,8 @@ final class DictationOrchestrator {
                 await MainActor.run {
                     appState.dictationState = .error
                     appState.errorMessage = error.localizedDescription
-                    appState.isPopoverPresented = false
+                    // Keep HUD visible so the error state is discoverable.
+                    appState.isPopoverPresented = true
                 }
             }
         }
@@ -170,23 +235,27 @@ final class DictationOrchestrator {
     private func stopRecording() {
         logger.info("Stopping recording")
         audioService.stopCapture()
-        appState.audioLevels = []
         appState.dictationState = .forging
-
-        let remainingBuffer: Data = bufferQueue.sync {
-            let data = audioBuffer
-            audioBuffer.removeAll()
-            return data
+        bufferQueue.sync {
+            isStoppingRecording = true
         }
+        let inFlightChunkTask = chunkSendTask
 
         Task {
+            if let inFlightChunkTask {
+                await inFlightChunkTask.value
+            }
+
+            let remainingBuffer: Data = bufferQueue.sync {
+                let data = audioBuffer
+                audioBuffer.removeAll()
+                return data
+            }
+
             do {
                 // Send any remaining buffered audio
                 if !remainingBuffer.isEmpty, let sid = sessionId {
-                    let response = try await asrClient.sendChunk(sessionId: sid, pcmData: remainingBuffer)
-                    await MainActor.run {
-                        appState.partialTranscript = response.text
-                    }
+                    _ = try await asrClient.sendChunk(sessionId: sid, pcmData: remainingBuffer)
                 }
 
                 // Finish the stream
@@ -195,6 +264,9 @@ final class DictationOrchestrator {
                 }
                 let finalResponse = try await asrClient.finishStream(sessionId: sid)
                 let finalText = finalResponse.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let targetApp = previousApp
+                sessionId = nil
+                previousApp = nil
 
                 logger.info("Final transcription (\(finalText.count) chars): \(finalText.prefix(100))")
 
@@ -204,15 +276,17 @@ final class DictationOrchestrator {
                 // 100ms timer in AppDelegate re-shows it, stealing focus back.
                 await MainActor.run {
                     appState.isPopoverPresented = false
-                    appState.partialTranscript = ""
+                }
+
+                // Let popover fully dismiss before mutating visible HUD content/state.
+                try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
+
+                await MainActor.run {
                     appState.dictationState = .idle
                 }
 
-                // Let popover fully dismiss
-                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
-
                 // PHASE 2: Activate target app and paste
-                if !finalText.isEmpty, let targetApp = previousApp {
+                if !finalText.isEmpty, let targetApp {
                     await MainActor.run {
                         _ = targetApp.activate()
                     }
@@ -249,44 +323,43 @@ final class DictationOrchestrator {
                         break
                     }
                 }
+
+                await MainActor.run {
+                    appState.partialTranscript = ""
+                    appState.audioLevels = []
+                }
             } catch {
                 logger.error("Transcription failed: \(error)")
                 await MainActor.run {
                     appState.dictationState = .error
                     appState.errorMessage = error.localizedDescription
                 }
+                sessionId = nil
+                previousApp = nil
             }
 
-            sessionId = nil
-            previousApp = nil
+            bufferQueue.sync {
+                isChunkSendInFlight = false
+                isStoppingRecording = false
+            }
+
+            if pendingRestartAfterForging {
+                pendingRestartAfterForging = false
+                await MainActor.run {
+                    if appState.dictationState == .idle {
+                        startRecording()
+                    }
+                }
+            }
         }
     }
 
     private func handleAudioChunk(_ data: Data) {
-        var shouldSend = false
-        var chunkToSend = Data()
-
         bufferQueue.sync {
             audioBuffer.append(data)
-            if audioBuffer.count >= Constants.chunkAccumulationBytes {
-                chunkToSend = audioBuffer
-                audioBuffer.removeAll()
-                shouldSend = true
-            }
         }
 
-        guard shouldSend, let sid = sessionId else { return }
-
-        chunkSendTask = Task {
-            do {
-                let response = try await asrClient.sendChunk(sessionId: sid, pcmData: chunkToSend)
-                await MainActor.run {
-                    appState.partialTranscript = response.text
-                }
-            } catch {
-                logger.warn("Chunk send failed: \(error)")
-            }
-        }
+        maybeStartChunkSendIfNeeded()
     }
 
     private func reset() {
@@ -295,8 +368,104 @@ final class DictationOrchestrator {
         appState.partialTranscript = ""
         appState.audioLevels = []
         appState.isPopoverPresented = false
+        pendingRestartAfterForging = false
         silenceStartTime = nil
         peakSpeechLevel = 0
+    }
+
+    private func maybeStartChunkSendIfNeeded() {
+        var shouldSend = false
+        var chunkToSend = Data()
+        var sid: String?
+
+        bufferQueue.sync {
+            guard !isStoppingRecording else { return }
+            guard !isChunkSendInFlight else { return }
+            guard audioBuffer.count >= Constants.chunkAccumulationBytes else { return }
+            guard let currentSessionId = sessionId else { return }
+
+            chunkToSend = audioBuffer
+            audioBuffer.removeAll()
+            sid = currentSessionId
+            isChunkSendInFlight = true
+            shouldSend = true
+        }
+
+        guard shouldSend, let sid else { return }
+
+        chunkSendTask = Task { [weak self] in
+            await self?.sendChunkAndContinue(sessionId: sid, pcmData: chunkToSend)
+        }
+    }
+
+    private func sendChunkAndContinue(sessionId sid: String, pcmData: Data) async {
+        do {
+            let response = try await asrClient.sendChunk(sessionId: sid, pcmData: pcmData)
+            await MainActor.run {
+                guard self.sessionId == sid else { return }
+                guard appState.dictationState == .listening else { return }
+                appState.partialTranscript = PartialTranscriptMerger.merge(
+                    previous: appState.partialTranscript,
+                    incoming: response.text
+                )
+            }
+        } catch {
+            if !Task.isCancelled {
+                logger.warn("Chunk send failed: \(error)")
+            }
+        }
+
+        bufferQueue.sync {
+            isChunkSendInFlight = false
+        }
+
+        if !Task.isCancelled {
+            maybeStartChunkSendIfNeeded()
+        }
+    }
+
+    private static func currentASRProvider() -> ASRProvider {
+        if let raw = UserDefaults.standard.string(forKey: Constants.asrProviderKey),
+           let provider = ASRProvider(rawValue: raw) {
+            return provider
+        }
+        return Constants.defaultASRProvider
+    }
+
+    private static func currentLocalBaseURL() -> String {
+        UserDefaults.standard.string(forKey: Constants.localServerEndpointKey)
+            ?? Constants.defaultLocalServerEndpoint
+    }
+
+    private static func currentLocalASRModelPreset() -> LocalASRModelPreset {
+        if let raw = UserDefaults.standard.string(forKey: Constants.localASRModelPresetKey),
+           let preset = LocalASRModelPreset(rawValue: raw) {
+            return preset
+        }
+        return Constants.defaultLocalASRModelPreset
+    }
+
+    private static func makeConfiguredASRClient() -> ASRClient {
+        let provider = currentASRProvider()
+
+        switch provider {
+        case .hosted:
+            return ASRClient(
+                baseURL: Constants.hostedServerEndpoint,
+                apiKey: Constants.hostedServerPassword,
+                requestTimeout: 15
+            )
+        case .server:
+            let baseURL = UserDefaults.standard.string(forKey: Constants.serverEndpointKey)
+                ?? Constants.defaultServerEndpoint
+            let password = UserDefaults.standard.string(forKey: Constants.customServerPasswordKey)
+                ?? Constants.defaultCustomServerPassword
+            return ASRClient(baseURL: baseURL, apiKey: password, requestTimeout: 15)
+        case .local:
+            let baseURL = UserDefaults.standard.string(forKey: Constants.localServerEndpointKey)
+                ?? Constants.defaultLocalServerEndpoint
+            return ASRClient(baseURL: baseURL, apiKey: "", requestTimeout: 300)
+        }
     }
 
     // MARK: - Silence Detection

@@ -40,6 +40,23 @@ struct AppStateTests {
         #expect(state.audioLevels.isEmpty)
     }
 
+    @Test("asrProvider defaults to configured default")
+    func asrProviderDefault() {
+        let defaults = UserDefaults.standard
+        let prior = defaults.string(forKey: Constants.asrProviderKey)
+        defer {
+            if let prior {
+                defaults.set(prior, forKey: Constants.asrProviderKey)
+            } else {
+                defaults.removeObject(forKey: Constants.asrProviderKey)
+            }
+        }
+        defaults.removeObject(forKey: Constants.asrProviderKey)
+
+        let state = AppState()
+        #expect(state.asrProvider == Constants.defaultASRProvider)
+    }
+
     // MARK: - Appearance Mode
 
     @Test("preferredColorScheme resolves system appearance for system mode")

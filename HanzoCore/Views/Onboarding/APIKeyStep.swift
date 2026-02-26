@@ -2,7 +2,7 @@ import SwiftUI
 
 struct APIKeyStep: View {
     var onNext: () -> Void
-    @State private var apiKey: String = UserDefaults.standard.string(forKey: Constants.apiKeyKey) ?? Constants.defaultAPIKey
+    @State private var serverPassword: String = UserDefaults.standard.string(forKey: Constants.customServerPasswordKey) ?? Constants.defaultCustomServerPassword
 
     var body: some View {
         VStack(spacing: 16) {
@@ -10,16 +10,16 @@ struct APIKeyStep: View {
                 .font(.system(size: 48))
                 .foregroundStyle(.primary)
 
-            Text("API key")
+            Text("Server password")
                 .font(.system(.title2, design: .rounded, weight: .bold))
 
-            Text("Enter your ASR server API key. You can change this later in Settings.")
+            Text("Enter your custom ASR server password. You can change this later in Settings.")
                 .font(.system(.body, design: .rounded))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 340)
 
-            TextField("API key", text: $apiKey)
+            SecureField("Server password", text: $serverPassword)
                 .textFieldStyle(.plain)
                 .font(.system(.body, design: .rounded))
                 .padding(.horizontal, 12)
@@ -29,14 +29,14 @@ struct APIKeyStep: View {
                 .frame(maxWidth: 300)
 
             Button("Continue") {
-                let trimmed = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+                let trimmed = serverPassword.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
-                    UserDefaults.standard.set(trimmed, forKey: Constants.apiKeyKey)
+                    UserDefaults.standard.set(trimmed, forKey: Constants.customServerPasswordKey)
                 }
                 onNext()
             }
             .buttonStyle(HUDButtonStyle())
-            .disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(serverPassword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
 }

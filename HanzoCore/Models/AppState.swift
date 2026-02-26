@@ -32,6 +32,12 @@ final class AppState {
         }
         return Constants.defaultAppearanceMode
     }()
+    var asrProvider: ASRProvider = {
+        if let raw = UserDefaults.standard.string(forKey: Constants.asrProviderKey) {
+            return ASRProvider(rawValue: raw) ?? Constants.defaultASRProvider
+        }
+        return Constants.defaultASRProvider
+    }()
 
     var preferredColorScheme: ColorScheme {
         switch appearanceMode {

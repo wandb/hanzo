@@ -7,7 +7,12 @@ struct TranscriptPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if !appState.partialTranscript.isEmpty {
+            if appState.dictationState == .error, let message = appState.errorMessage {
+                Text(message)
+                    .font(.system(.caption, design: .rounded, weight: .medium))
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if !appState.partialTranscript.isEmpty {
                 AnimatedTranscriptView(text: appState.partialTranscript)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -237,4 +242,3 @@ private struct WordFlowLayout: Layout {
         return (CGSize(width: maxX, height: totalHeight), positions)
     }
 }
-

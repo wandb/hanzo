@@ -82,6 +82,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
+        orchestrator.shutdown()
         stateObservationTask?.cancel()
         stateObservationTimer?.invalidate()
         if let localEventMonitor { NSEvent.removeMonitor(localEventMonitor) }
@@ -218,7 +219,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         window.isOpaque = false
         window.hasShadow = true
         window.isMovableByWindowBackground = true
-        window.setContentSize(NSSize(width: 420, height: 420))
+        window.setContentSize(NSSize(width: 420, height: 460))
         window.center()
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(nil)

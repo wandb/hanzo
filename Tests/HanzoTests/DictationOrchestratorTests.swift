@@ -61,6 +61,20 @@ struct DictationOrchestratorTests {
         )
     }
 
+    @MainActor
+    func waitUntil(
+        timeoutNanoseconds: UInt64 = 1_000_000_000,
+        pollNanoseconds: UInt64 = 20_000_000,
+        condition: () -> Bool
+    ) async -> Bool {
+        let deadline = DispatchTime.now().uptimeNanoseconds + timeoutNanoseconds
+        while DispatchTime.now().uptimeNanoseconds < deadline {
+            if condition() { return true }
+            try? await Task.sleep(nanoseconds: pollNanoseconds)
+        }
+        return condition()
+    }
+
     // MARK: - Initial State
 
     @Test("Initial state is idle")
@@ -150,6 +164,38 @@ struct DictationOrchestratorTests {
         try await Task.sleep(nanoseconds: 50_000_000)
         sut.orchestrator.toggle()
         #expect(sut.mockAudio.stopCaptureCalled == true)
+    }
+
+    @Test("Transcript remains visible while forging until HUD dismissal")
+    @MainActor func transcriptRemainsVisibleDuringForging() async throws {
+        let appState = AppState()
+        let asr = SlowFinishingASRClient()
+        let mockAudio = MockAudioCaptureService()
+        let mockText = MockTextInsertionService()
+        let mockPerms = MockPermissionService()
+        mockPerms.hasMicrophonePermission = true
+        let mockLogger = MockLogger()
+
+        let orchestrator = DictationOrchestrator(
+            appState: appState,
+            asrClient: asr,
+            audioService: mockAudio,
+            textInsertion: mockText,
+            permissionService: mockPerms,
+            logger: mockLogger
+        )
+
+        orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 60_000_000)
+
+        let chunk = Data(repeating: 0x01, count: Constants.chunkAccumulationBytes + 1)
+        mockAudio.simulateChunk(chunk)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        #expect(appState.partialTranscript == "streaming transcript")
+
+        orchestrator.toggle()
+        #expect(appState.dictationState == .forging)
+        #expect(appState.partialTranscript == "streaming transcript")
     }
 
     // MARK: - toggle() from forging (no-op)
@@ -276,6 +322,42 @@ struct DictationOrchestratorTests {
         #expect(sut.appState.partialTranscript == "hello world")
     }
 
+    @Test("Late chunk response from previous session is ignored")
+    @MainActor func lateChunkResponseFromPreviousSessionIgnored() async throws {
+        let appState = AppState()
+        let delayedASR = DelayedSessionASRClient()
+        let mockAudio = MockAudioCaptureService()
+        let mockText = MockTextInsertionService()
+        let mockPerms = MockPermissionService()
+        mockPerms.hasMicrophonePermission = true
+        let mockLogger = MockLogger()
+
+        let orchestrator = DictationOrchestrator(
+            appState: appState,
+            asrClient: delayedASR,
+            audioService: mockAudio,
+            textInsertion: mockText,
+            permissionService: mockPerms,
+            logger: mockLogger
+        )
+
+        let chunk = Data(repeating: 0x01, count: Constants.chunkAccumulationBytes + 1)
+
+        orchestrator.toggle() // Session 1
+        try await Task.sleep(nanoseconds: 60_000_000)
+        mockAudio.simulateChunk(chunk)
+
+        orchestrator.cancel()
+        try await Task.sleep(nanoseconds: 30_000_000)
+
+        orchestrator.toggle() // Session 2
+        try await Task.sleep(nanoseconds: 60_000_000)
+        mockAudio.simulateChunk(chunk)
+
+        try await Task.sleep(nanoseconds: 350_000_000)
+        #expect(appState.partialTranscript == "fresh from session two")
+    }
+
     // MARK: - Full flow: stop → finishStream
 
     @Test("finishStream is called with correct session ID when stopping")
@@ -285,9 +367,10 @@ struct DictationOrchestratorTests {
         try await Task.sleep(nanoseconds: 50_000_000)
 
         sut.orchestrator.toggle() // stop
-        try await Task.sleep(nanoseconds: 200_000_000)
-
-        #expect(sut.mockASR.finishStreamCalls.first == "flow-session-id")
+        let finished = await waitUntil {
+            sut.mockASR.finishStreamCalls.first == "flow-session-id"
+        }
+        #expect(finished)
     }
 
     @Test("State returns to idle after successful stop")
@@ -297,9 +380,10 @@ struct DictationOrchestratorTests {
         try await Task.sleep(nanoseconds: 50_000_000)
 
         sut.orchestrator.toggle()
-        try await Task.sleep(nanoseconds: 200_000_000)
-
-        #expect(sut.appState.dictationState == .idle)
+        let isIdle = await waitUntil {
+            sut.appState.dictationState == .idle
+        }
+        #expect(isIdle)
     }
 
     @Test("finishStream failure transitions to error state")
@@ -311,9 +395,10 @@ struct DictationOrchestratorTests {
         try await Task.sleep(nanoseconds: 50_000_000)
 
         sut.orchestrator.toggle()
-        try await Task.sleep(nanoseconds: 200_000_000)
-
-        #expect(sut.appState.dictationState == .error)
+        let isError = await waitUntil {
+            sut.appState.dictationState == .error
+        }
+        #expect(isError)
     }
 
     // MARK: - Audio Levels
