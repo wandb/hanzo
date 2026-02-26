@@ -14,21 +14,21 @@ Hanzo captures audio via a global hotkey (default: Ctrl + Space), streams it to 
 ## Quick start
 
 ```sh
-./run.sh
+./dev-run.sh
 ```
 
 This builds the project, assembles the `.app` bundle, and launches it. An onboarding wizard will guide you through granting permissions and setting up local runtime assets on first launch.
 
-`run.sh` supports build-time hosted server injection:
+`dev-run.sh` supports build-time hosted server injection:
 
 ```sh
 HANZO_HOSTED_SERVER_ENDPOINT="https://your-hosted-asr" \
 HANZO_HOSTED_SERVER_PASSWORD="your-password" \
-./run.sh
+./dev-run.sh
 ```
 
 For local development, you can also create `.env.build` (see `.env.build.example`).
-`run.sh` auto-loads `.env.build` when present.
+`dev-run.sh` auto-loads `.env.build` when present.
 
 Hanzo runs in the menu bar — there is no dock icon.
 

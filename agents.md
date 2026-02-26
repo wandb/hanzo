@@ -17,11 +17,11 @@ Package split into two targets: `HanzoCore` (library) and `HanzoApp` (executable
 - `HanzoApp/` — @main entry point only (HanzoApp.swift)
 - `HanzoCore/App/` — AppDelegate (menu bar icon, windows)
 - `HanzoCore/Orchestrator/` — DictationOrchestrator: coordinates record → transcribe → insert flow
-- `HanzoCore/Services/` — ASRClient, AudioCaptureService, HotkeyService, TextInsertionService, PermissionService, LoggingService
-- `HanzoCore/Protocols/` — Service protocols for DI (ASRClientProtocol, AudioCaptureProtocol, TextInsertionProtocol, PermissionServiceProtocol, LoggingServiceProtocol)
+- `HanzoCore/Services/` — ASRClient, AudioCaptureService, HotkeyService, TextInsertionService, PermissionService, LoggingService, LocalASRRuntimeManager
+- `HanzoCore/Protocols/` — Service protocols for DI (ASRClientProtocol, AudioCaptureProtocol, TextInsertionProtocol, PermissionServiceProtocol, LoggingServiceProtocol, LocalASRRuntimeManagerProtocol)
 - `HanzoCore/Models/` — AppState (@Observable with DictationState enum), TranscriptionSession
 - `HanzoCore/Views/` — SwiftUI views; onboarding wizard in Views/Onboarding/
-- `HanzoCore/Utilities/` — Constants (UserDefaults keys, audio params)
+- `HanzoCore/Utilities/` — Constants (UserDefaults keys, audio params), ASRProvider, PartialTranscriptMerger
 - `Tests/HanzoTests/` — Unit tests (Swift Testing framework)
 
 ## Code Style
