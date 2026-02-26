@@ -19,7 +19,7 @@ struct ModelDownloadStep: View {
             Text("Downloading local model")
                 .font(.system(.title2, design: .rounded, weight: .bold))
 
-            Text("Hanzo is setting up the on-device ASR model. This may take a while depending on your connection.")
+            Text("Hanzo is setting up all on-device ASR models. This may take a while depending on your connection.")
                 .font(.system(.body, design: .rounded))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -67,15 +67,57 @@ struct ModelDownloadStep: View {
             do {
                 let baseURL = UserDefaults.standard.string(forKey: Constants.localServerEndpointKey)
                     ?? Constants.defaultLocalServerEndpoint
-                try await runtimeManager.ensureRunning(baseURL: baseURL)
-
-                try await startModelDownload(baseURL: baseURL)
-                try await pollModelStatus(baseURL: baseURL)
+                try await downloadAllModelPresets(baseURL: baseURL)
             } catch {
+                if error is CancellationError {
+                    return
+                }
                 await MainActor.run {
                     errorText = error.localizedDescription
                 }
             }
+        }
+    }
+
+    private func downloadAllModelPresets(baseURL: String) async throws {
+        let presets = LocalASRModelPreset.allCases
+        let total = presets.count
+        let originalPresetRaw = UserDefaults.standard.string(forKey: Constants.localASRModelPresetKey)
+        let originalPreset = LocalASRModelPreset(rawValue: originalPresetRaw ?? "")
+            ?? Constants.defaultLocalASRModelPreset
+
+        defer {
+            UserDefaults.standard.set(originalPreset.rawValue, forKey: Constants.localASRModelPresetKey)
+        }
+
+        for (index, preset) in presets.enumerated() {
+            try Task.checkCancellation()
+
+            UserDefaults.standard.set(preset.rawValue, forKey: Constants.localASRModelPresetKey)
+            await MainActor.run {
+                let completed = Double(index) / Double(total)
+                progress = max(progress, completed)
+                statusText = "Preparing \(preset.displayName) (\(index + 1)/\(total))..."
+            }
+
+            try await runtimeManager.ensureRunning(baseURL: baseURL)
+            try await startModelDownload(baseURL: baseURL)
+            try await pollModelStatus(
+                baseURL: baseURL,
+                preset: preset,
+                presetIndex: index,
+                totalPresets: total
+            )
+        }
+
+        await MainActor.run {
+            progress = 1.0
+            statusText = "All local models downloaded"
+        }
+
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        await MainActor.run {
+            onDownloaded()
         }
     }
 
@@ -93,27 +135,34 @@ struct ModelDownloadStep: View {
         }
     }
 
-    private func pollModelStatus(baseURL: String) async throws {
-        var hasAdvanced = false
+    private func pollModelStatus(
+        baseURL: String,
+        preset: LocalASRModelPreset,
+        presetIndex: Int,
+        totalPresets: Int
+    ) async throws {
         while !Task.isCancelled {
             let status = try await fetchModelStatus(baseURL: baseURL)
+            let baseProgress = Double(presetIndex) / Double(totalPresets)
+            let weightedProgress = (Double(presetIndex) + status.download.progress) / Double(totalPresets)
 
             await MainActor.run {
-                progress = max(progress, status.download.progress)
-                statusText = statusMessage(for: status)
+                progress = max(progress, max(baseProgress, weightedProgress))
+                statusText = statusMessage(
+                    for: status,
+                    preset: preset,
+                    presetIndex: presetIndex,
+                    totalPresets: totalPresets
+                )
             }
 
             if status.downloaded {
                 await MainActor.run {
-                    progress = 1.0
-                    statusText = "Model downloaded"
-                }
-                if !hasAdvanced {
-                    hasAdvanced = true
-                    try? await Task.sleep(nanoseconds: 300_000_000)
-                    await MainActor.run {
-                        onDownloaded()
-                    }
+                    progress = max(
+                        progress,
+                        Double(presetIndex + 1) / Double(totalPresets)
+                    )
+                    statusText = "Downloaded \(preset.displayName) (\(presetIndex + 1)/\(totalPresets))"
                 }
                 return
             }
@@ -142,23 +191,29 @@ struct ModelDownloadStep: View {
         return try JSONDecoder().decode(LocalModelStatusResponse.self, from: data)
     }
 
-    private func statusMessage(for status: LocalModelStatusResponse) -> String {
+    private func statusMessage(
+        for status: LocalModelStatusResponse,
+        preset: LocalASRModelPreset,
+        presetIndex: Int,
+        totalPresets: Int
+    ) -> String {
+        let prefix = "\(preset.displayName) (\(presetIndex + 1)/\(totalPresets))"
         switch status.download.phase {
         case "downloading":
-            return "Downloading model files..."
+            return "Downloading \(prefix)..."
         case "loading":
-            return "Loading model..."
+            return "Loading \(prefix)..."
         case "ready":
-            return "Model ready"
+            return "Ready: \(prefix)"
         case "idle":
             if status.downloaded {
-                return "Model downloaded"
+                return "Downloaded \(prefix)"
             }
-            return "Starting download..."
+            return "Starting \(prefix)..."
         case "error":
             return status.download.error ?? "Download failed"
         default:
-            return "Preparing..."
+            return "Preparing \(prefix)..."
         }
     }
 }

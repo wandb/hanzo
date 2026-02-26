@@ -59,6 +59,35 @@ actor LocalASRRuntimeManager: LocalASRRuntimeManagerProtocol {
         launchedPreset = nil
     }
 
+    func prepareModel(baseURL: String) async throws {
+        guard let endpoint = URL(string: baseURL + Constants.localModelPreparePath) else {
+            throw ASRError.invalidURL
+        }
+
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 300
+
+        do {
+            let (_, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                throw ASRError.localRuntimeUnavailable(
+                    detail: "Invalid response while preparing local model"
+                )
+            }
+            guard (200...299).contains(http.statusCode) else {
+                throw ASRError.localRuntimeUnavailable(
+                    detail: "Failed to prepare local model (HTTP \(http.statusCode))"
+                )
+            }
+        } catch {
+            if let asrError = error as? ASRError {
+                throw asrError
+            }
+            throw ASRError.networkError(underlying: error)
+        }
+    }
+
     // MARK: - Private
 
     private func isHealthy(_ healthURL: URL) async -> Bool {

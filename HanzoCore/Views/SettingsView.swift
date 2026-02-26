@@ -41,7 +41,7 @@ struct SettingsView: View {
     @State private var isRecordingHotkey = false
     @FocusState private var focusedField: Field?
 
-    private enum Field { case endpoint, apiKey, localEndpoint }
+    private enum Field { case endpoint, apiKey }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -147,16 +147,6 @@ struct SettingsView: View {
                         .focused($focusedField, equals: .apiKey)
                         .onChange(of: apiKey) { saveTranscriptionSettings() }
                 } else {
-                    TextField("Local ASR endpoint", text: $localServerEndpoint)
-                        .textFieldStyle(.plain)
-                        .font(.system(.body, design: .rounded))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(.primary.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .focused($focusedField, equals: .localEndpoint)
-                        .onChange(of: localServerEndpoint) { saveTranscriptionSettings() }
-
                     HStack {
                         Text("Model")
                             .font(.system(.body, design: .rounded))
