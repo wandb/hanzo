@@ -15,7 +15,7 @@ struct SettingsView: View {
         return Constants.defaultASRProvider
     }()
     @State private var serverEndpoint: String = UserDefaults.standard.string(forKey: Constants.serverEndpointKey) ?? Constants.defaultServerEndpoint
-    @State private var apiKey: String = UserDefaults.standard.string(forKey: Constants.apiKeyKey) ?? ""
+    @State private var serverPassword: String = UserDefaults.standard.string(forKey: Constants.customServerPasswordKey) ?? Constants.defaultCustomServerPassword
     @State private var localServerEndpoint: String = UserDefaults.standard.string(forKey: Constants.localServerEndpointKey) ?? Constants.defaultLocalServerEndpoint
     @State private var localASRModelPreset: LocalASRModelPreset = {
         if let raw = UserDefaults.standard.string(forKey: Constants.localASRModelPresetKey) {
@@ -41,7 +41,7 @@ struct SettingsView: View {
     @State private var isRecordingHotkey = false
     @FocusState private var focusedField: Field?
 
-    private enum Field { case endpoint, apiKey }
+    private enum Field { case endpoint, serverPassword }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -119,7 +119,7 @@ struct SettingsView: View {
                         }
                     }
                     .pickerStyle(.segmented)
-                    .frame(width: 180)
+                    .frame(width: 300)
                     .onChange(of: asrProvider) {
                         appState.asrProvider = asrProvider
                         saveTranscriptionSettings()
@@ -127,7 +127,7 @@ struct SettingsView: View {
                 }
 
                 if asrProvider == .server {
-                    TextField("ASR server endpoint", text: $serverEndpoint)
+                    TextField("Custom server endpoint", text: $serverEndpoint)
                         .textFieldStyle(.plain)
                         .font(.system(.body, design: .rounded))
                         .padding(.horizontal, 12)
@@ -137,16 +137,16 @@ struct SettingsView: View {
                         .focused($focusedField, equals: .endpoint)
                         .onChange(of: serverEndpoint) { saveTranscriptionSettings() }
 
-                    TextField("API key", text: $apiKey)
+                    SecureField("Server password", text: $serverPassword)
                         .textFieldStyle(.plain)
                         .font(.system(.body, design: .rounded))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(.primary.opacity(0.08))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .focused($focusedField, equals: .apiKey)
-                        .onChange(of: apiKey) { saveTranscriptionSettings() }
-                } else {
+                        .focused($focusedField, equals: .serverPassword)
+                        .onChange(of: serverPassword) { saveTranscriptionSettings() }
+                } else if asrProvider == .local {
                     HStack {
                         Text("Model")
                             .font(.system(.body, design: .rounded))
@@ -160,6 +160,10 @@ struct SettingsView: View {
                         .labelsHidden()
                         .onChange(of: localASRModelPreset) { saveTranscriptionSettings() }
                     }
+                } else {
+                    Text("Hosted runs on Hanzo's managed ASR service. Credentials are managed by the app.")
+                        .font(.system(.caption, design: .rounded))
+                        .foregroundStyle(.secondary)
                 }
             }
 
@@ -217,7 +221,7 @@ struct SettingsView: View {
     private func saveTranscriptionSettings() {
         UserDefaults.standard.set(asrProvider.rawValue, forKey: Constants.asrProviderKey)
         UserDefaults.standard.set(serverEndpoint, forKey: Constants.serverEndpointKey)
-        UserDefaults.standard.set(apiKey, forKey: Constants.apiKeyKey)
+        UserDefaults.standard.set(serverPassword, forKey: Constants.customServerPasswordKey)
         UserDefaults.standard.set(localServerEndpoint, forKey: Constants.localServerEndpointKey)
         UserDefaults.standard.set(localASRModelPreset.rawValue, forKey: Constants.localASRModelPresetKey)
         appState.asrProvider = asrProvider

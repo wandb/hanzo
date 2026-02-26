@@ -31,3 +31,6 @@ xcuserdata/
 
 # Context
 .context/
+
+# Local build secrets
+.env.build

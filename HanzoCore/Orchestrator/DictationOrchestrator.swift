@@ -225,7 +225,8 @@ final class DictationOrchestrator {
                 await MainActor.run {
                     appState.dictationState = .error
                     appState.errorMessage = error.localizedDescription
-                    appState.isPopoverPresented = false
+                    // Keep HUD visible so the error state is discoverable.
+                    appState.isPopoverPresented = true
                 }
             }
         }
@@ -448,11 +449,18 @@ final class DictationOrchestrator {
         let provider = currentASRProvider()
 
         switch provider {
+        case .hosted:
+            return ASRClient(
+                baseURL: Constants.hostedServerEndpoint,
+                apiKey: Constants.hostedServerPassword,
+                requestTimeout: 15
+            )
         case .server:
             let baseURL = UserDefaults.standard.string(forKey: Constants.serverEndpointKey)
                 ?? Constants.defaultServerEndpoint
-            let apiKey = UserDefaults.standard.string(forKey: Constants.apiKeyKey) ?? Constants.defaultAPIKey
-            return ASRClient(baseURL: baseURL, apiKey: apiKey, requestTimeout: 15)
+            let password = UserDefaults.standard.string(forKey: Constants.customServerPasswordKey)
+                ?? Constants.defaultCustomServerPassword
+            return ASRClient(baseURL: baseURL, apiKey: password, requestTimeout: 15)
         case .local:
             let baseURL = UserDefaults.standard.string(forKey: Constants.localServerEndpointKey)
                 ?? Constants.defaultLocalServerEndpoint

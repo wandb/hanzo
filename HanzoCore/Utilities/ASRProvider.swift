@@ -1,15 +1,18 @@
 import Foundation
 
 enum ASRProvider: String, CaseIterable {
-    case server
+    case hosted
     case local
+    case server
 
     var displayName: String {
         switch self {
-        case .server:
-            return "Server"
+        case .hosted:
+            return "Hosted"
         case .local:
             return "Local"
+        case .server:
+            return "Custom Server"
         }
     }
 }

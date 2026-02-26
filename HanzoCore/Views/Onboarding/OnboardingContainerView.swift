@@ -55,7 +55,7 @@ struct OnboardingContainerView: View {
         .frame(width: 480, height: 380)
         .hudBackground()
         .onAppear {
-            UserDefaults.standard.set(ASRProvider.local.rawValue, forKey: Constants.asrProviderKey)
+            UserDefaults.standard.set(ASRProvider.hosted.rawValue, forKey: Constants.asrProviderKey)
             if UserDefaults.standard.string(forKey: Constants.localServerEndpointKey) == nil {
                 UserDefaults.standard.set(
                     Constants.defaultLocalServerEndpoint,

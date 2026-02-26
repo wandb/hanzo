@@ -14,7 +14,17 @@ enum AppearanceMode: String {
 
 enum Constants {
     static let bundleIdentifier = "com.hanzo.app"
-    static let defaultServerEndpoint = "https://grunt.zain.aaronbatilo.dev"
+    static let defaultHostedServerEndpoint = "https://grunt.zain.aaronbatilo.dev"
+    static let defaultHostedServerPassword = ""
+    static let hostedServerEndpointInfoKey = "HanzoHostedServerEndpoint"
+    static let hostedServerPasswordInfoKey = "HanzoHostedServerPassword"
+    static var hostedServerEndpoint: String {
+        bundleString(for: hostedServerEndpointInfoKey) ?? defaultHostedServerEndpoint
+    }
+    static var hostedServerPassword: String {
+        bundleString(for: hostedServerPasswordInfoKey) ?? defaultHostedServerPassword
+    }
+    static let defaultServerEndpoint = ""
     static let defaultLocalServerEndpoint = "http://127.0.0.1:8765"
     static let localRuntimeHealthPath = "healthz"
     static let localRuntimeHelperExecutableName = "HanzoLocalASR"
@@ -24,12 +34,12 @@ enum Constants {
     static let localModelDownloadPath = "/v1/model/download"
     static let localModelPreparePath = "/v1/model/prepare"
     static let localModelsFolderName = "models"
-    static let defaultAPIKey = ""
+    static let defaultCustomServerPassword = ""
     static let serverEndpointKey = "serverEndpoint"
+    static let customServerPasswordKey = "customServerPassword"
     static let localServerEndpointKey = "localServerEndpoint"
-    static let apiKeyKey = "apiKey"
     static let asrProviderKey = "asrProvider"
-    static let defaultASRProvider: ASRProvider = .local
+    static let defaultASRProvider: ASRProvider = .hosted
     static let localASRModelPresetKey = "localASRModelPreset"
     static let defaultLocalASRModelPreset: LocalASRModelPreset = .balanced
     static let onboardingCompleteKey = "onboardingComplete"
@@ -60,4 +70,13 @@ enum Constants {
     static let defaultSilenceTimeout: Double = 2.0  // seconds; 0 = disabled
     static let silenceRelativeThreshold: Float = 0.15  // fraction of peak speech level
     static let silenceAbsoluteFloor: Float = 0.005  // minimum silence threshold
+
+    private static func bundleString(for key: String) -> String? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String else {
+            return nil
+        }
+
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
 }

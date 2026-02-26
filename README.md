@@ -17,7 +17,18 @@ Hanzo captures audio via a global hotkey (default: Ctrl + Space), streams it to 
 ./run.sh
 ```
 
-This builds the project, assembles the `.app` bundle, and launches it. An onboarding wizard will guide you through granting permissions and entering your API key on first launch.
+This builds the project, assembles the `.app` bundle, and launches it. An onboarding wizard will guide you through granting permissions and setting up local runtime assets on first launch.
+
+`run.sh` supports build-time hosted server injection:
+
+```sh
+HANZO_HOSTED_SERVER_ENDPOINT="https://your-hosted-asr" \
+HANZO_HOSTED_SERVER_PASSWORD="your-password" \
+./run.sh
+```
+
+For local development, you can also create `.env.build` (see `.env.build.example`).
+`run.sh` auto-loads `.env.build` when present.
 
 Hanzo runs in the menu bar — there is no dock icon.
 
@@ -32,5 +43,5 @@ Hanzo runs in the menu bar — there is no dock icon.
 ## Configuration
 
 - **Hotkey** — Configurable in the app settings (default: Ctrl + Space)
-- **ASR endpoint** — Configurable (default: `https://grunt.zain.aaronbatilo.dev`)
-- **API key** — Stored securely in Keychain; set during onboarding
+- **ASR provider** — `Hosted` (default), `Local`, or `Custom Server`
+- **Custom server endpoint + password** — Configurable in Settings when `Custom Server` is selected

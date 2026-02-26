@@ -4,12 +4,11 @@ macOS menu bar dictation app. Captures speech via global hotkey, streams to host
 
 ## Build & Run
 
-- `./run.sh` — build and launch (wraps `swift build`, assembles .app bundle, opens it)
+- `./dev-run.sh` — build and launch (wraps `swift build`, assembles .app bundle, opens it)
+- `./dev-restart.sh` — kill, clear models, reset permissions, rebuild and launch
 - `swift build` — build only
 - `swift test` — run all tests
-- Kill: `pkill -x Hanzo`
-- Reset permissions: `tccutil reset Microphone com.hanzo.app && tccutil reset Accessibility com.hanzo.app`
-- XcodeGen (`project.yml`) exists for Xcode workflows but SPM via `run.sh` is primary
+- XcodeGen (`project.yml`) exists for Xcode workflows but SPM via `dev-run.sh` is primary
 
 ## Architecture
 
