@@ -20,7 +20,6 @@ enum ASRProvider: String, CaseIterable {
 enum LocalASRModelPreset: String, CaseIterable {
     case fast
     case balanced
-    case max
 
     var displayName: String {
         switch self {
@@ -28,8 +27,6 @@ enum LocalASRModelPreset: String, CaseIterable {
             return "Fast (0.6B 8-bit)"
         case .balanced:
             return "Balanced (1.7B 4-bit)"
-        case .max:
-            return "Max (1.7B 8-bit)"
         }
     }
 
@@ -39,8 +36,6 @@ enum LocalASRModelPreset: String, CaseIterable {
             return "mlx-community/Qwen3-ASR-0.6B-8bit"
         case .balanced:
             return "mlx-community/Qwen3-ASR-1.7B-4bit"
-        case .max:
-            return "mlx-community/Qwen3-ASR-1.7B-8bit"
         }
     }
 }

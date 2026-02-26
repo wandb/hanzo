@@ -39,7 +39,6 @@ except ModuleNotFoundError as exc:
 MODEL_PRESETS = {
     "fast": "mlx-community/Qwen3-ASR-0.6B-8bit",
     "balanced": "mlx-community/Qwen3-ASR-1.7B-4bit",
-    "max": "mlx-community/Qwen3-ASR-1.7B-8bit",
 }
 
 # Required to run mlx-audio Qwen3 ASR from a local directory.

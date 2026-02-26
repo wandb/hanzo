@@ -266,8 +266,6 @@ struct ModelDownloadStep: View {
             return "Fast - Qwen3-ASR-0.6B 8-bit"
         case .balanced:
             return "Balanced - Qwen3-ASR-1.7B 4-bit"
-        case .max:
-            return "Max - Qwen3-ASR-1.7B 8-bit"
         }
     }
 }
