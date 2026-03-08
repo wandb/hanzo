@@ -92,13 +92,20 @@ struct ModelDownloadStep: View {
 
     private func downloadAllModelPresets() async throws {
         let presets = LocalASRModelPreset.allCases
+        let modelsRoot = modelsRootDirectoryURL()
+
+        // If all models are already downloaded, skip immediately
+        let missing = missingModelPresets(from: presets, modelsRoot: modelsRoot)
+        if missing.isEmpty {
+            await MainActor.run { onDownloaded() }
+            return
+        }
 
         await MainActor.run {
             totalModelCount = presets.count
             statusText = "Checking downloaded model files..."
         }
 
-        let modelsRoot = modelsRootDirectoryURL()
         let plan = try await Self.buildDownloadPlan(
             for: presets,
             requiredFiles: Self.requiredModelFiles,
