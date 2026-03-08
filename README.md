@@ -8,27 +8,30 @@ Hanzo captures audio via a global hotkey (default: Ctrl + Space), streams it to 
 
 - macOS 15+
 - Swift 6.0 toolchain
+- [direnv](https://direnv.net/) (`brew install direnv`) — manages build-time env vars
 - Microphone permission
 - Accessibility permission (for text insertion)
 
 ## Quick start
 
 ```sh
+# 1. Install direnv and hook it into your shell
+brew install direnv
+# Add the direnv hook to your shell profile — see https://direnv.net/docs/hook.html
+
+# 2. Set up build secrets (shared across git worktrees)
+mkdir -p ~/.config/hanzo
+cp .env.build.example ~/.config/hanzo/.env.build
+# Edit ~/.config/hanzo/.env.build with your values
+
+# 3. Allow direnv for this repo
+direnv allow
+
+# 4. Build and run
 ./dev-run.sh
 ```
 
 This builds the project, assembles the `.app` bundle, and launches it. An onboarding wizard will guide you through granting permissions and setting up local runtime assets on first launch.
-
-`dev-run.sh` supports build-time hosted server injection:
-
-```sh
-HANZO_HOSTED_SERVER_ENDPOINT="https://your-hosted-asr" \
-HANZO_HOSTED_SERVER_PASSWORD="your-password" \
-./dev-run.sh
-```
-
-For local development, you can also create `.env.build` (see `.env.build.example`).
-`dev-run.sh` auto-loads `.env.build` when present.
 
 Hanzo runs in the menu bar — there is no dock icon.
 

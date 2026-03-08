@@ -1,17 +1,7 @@
 #!/bin/bash
 set -e
 
-# Load local build env if present (fallback for shells without direnv).
-# Prefer: install direnv and place secrets in ~/.config/hanzo/.env.build
-# so they are shared across git worktrees automatically.
-if [ -f ".env.build" ]; then
-    set -a
-    # shellcheck disable=SC1091
-    source .env.build
-    set +a
-fi
-
-# Hosted ASR build-time injection
+# Hosted ASR build-time injection (env vars loaded by direnv via .envrc)
 HOSTED_ENDPOINT="${HANZO_HOSTED_SERVER_ENDPOINT:-https://grunt.zain.aaronbatilo.dev}"
 HOSTED_PASSWORD="${HANZO_HOSTED_SERVER_PASSWORD:-}"
 
