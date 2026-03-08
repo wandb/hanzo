@@ -1,7 +1,9 @@
 #!/bin/bash
 set -e
 
-# Load local build env if present.
+# Load local build env if present (fallback for shells without direnv).
+# Prefer: install direnv and place secrets in ~/.config/hanzo/.env.build
+# so they are shared across git worktrees automatically.
 if [ -f ".env.build" ]; then
     set -a
     # shellcheck disable=SC1091
