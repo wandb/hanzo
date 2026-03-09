@@ -2,9 +2,11 @@
 set -e
 
 KEEP_MODELS=false
+RESET_PERMISSIONS=false
 for arg in "$@"; do
     case "$arg" in
         --keep-models) KEEP_MODELS=true ;;
+        --reset-permissions) RESET_PERMISSIONS=true ;;
     esac
 done
 
@@ -16,9 +18,11 @@ if [ "$KEEP_MODELS" = false ]; then
     rm -rf "$HOME/Library/Application Support/com.hanzo.app/models"
 fi
 
-# Reset permissions
-tccutil reset Microphone com.hanzo.app
-tccutil reset Accessibility com.hanzo.app
+# Reset permissions (opt-in)
+if [ "$RESET_PERMISSIONS" = true ]; then
+    tccutil reset Microphone com.hanzo.app
+    tccutil reset Accessibility com.hanzo.app
+fi
 
 # Hosted ASR build-time injection (env vars loaded by direnv via .envrc)
 HOSTED_ENDPOINT="${HANZO_HOSTED_SERVER_ENDPOINT:-https://grunt.zain.aaronbatilo.dev}"
