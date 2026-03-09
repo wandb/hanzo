@@ -34,3 +34,4 @@ xcuserdata/
 
 # Local build secrets
 .env.build
+.env
