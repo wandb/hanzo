@@ -4,8 +4,8 @@ macOS menu bar dictation app. Captures speech via global hotkey, streams to host
 
 ## Build & Run
 
-- `./dev-run.sh` — build and launch (wraps `swift build`, assembles .app bundle, opens it)
-- `./dev-restart.sh` — kill, clear models, reset permissions, rebuild and launch
+- `./dev-run.sh` — kill running instance, clear models, reset permissions, rebuild and launch
+- `./dev-run.sh --keep-models` — same but skip model cleanup
 - `swift build` — build only
 - `swift test` — run all tests
 - XcodeGen (`project.yml`) exists for Xcode workflows but SPM via `dev-run.sh` is primary

@@ -1,6 +1,25 @@
 #!/bin/bash
 set -e
 
+KEEP_MODELS=false
+for arg in "$@"; do
+    case "$arg" in
+        --keep-models) KEEP_MODELS=true ;;
+    esac
+done
+
+# Kill running instance
+pkill -x Hanzo || true
+
+# Clear downloaded models
+if [ "$KEEP_MODELS" = false ]; then
+    rm -rf "$HOME/Library/Application Support/com.hanzo.app/models"
+fi
+
+# Reset permissions
+tccutil reset Microphone com.hanzo.app
+tccutil reset Accessibility com.hanzo.app
+
 # Hosted ASR build-time injection (env vars loaded by direnv via .envrc)
 HOSTED_ENDPOINT="${HANZO_HOSTED_SERVER_ENDPOINT:-https://grunt.zain.aaronbatilo.dev}"
 HOSTED_PASSWORD="${HANZO_HOSTED_SERVER_PASSWORD:-}"
