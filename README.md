@@ -31,7 +31,7 @@ direnv allow
 ./dev-run.sh
 ```
 
-This builds the project, assembles the `.app` bundle, and launches it. An onboarding wizard will guide you through granting permissions and setting up local runtime assets on first launch.
+This builds the project, assembles the `.app` bundle at `~/.local/share/hanzo/Hanzo.app`, and launches it. The fixed bundle path ensures macOS retains permissions across git worktrees. An onboarding wizard will guide you through granting permissions and setting up local runtime assets on first launch.
 
 Hanzo runs in the menu bar — there is no dock icon.
 
@@ -39,6 +39,8 @@ Hanzo runs in the menu bar — there is no dock icon.
 
 | Command | Description |
 |---|---|
+| `./dev-run.sh --keep-models` | Skip model cleanup during build |
+| `./dev-run.sh --reset-permissions` | Reset Microphone & Accessibility permissions (useful for testing onboarding) |
 | `swift build` | Build without launching |
 | `swift test` | Run the test suite |
 | `pkill -x Hanzo` | Kill the running app |

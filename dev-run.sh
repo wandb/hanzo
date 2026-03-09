@@ -31,8 +31,8 @@ HOSTED_PASSWORD="${HANZO_HOSTED_SERVER_PASSWORD:-}"
 # Build
 swift build
 
-# Create .app bundle
-APP_DIR=".build/Hanzo.app/Contents"
+# Create .app bundle at a fixed location so macOS retains permissions across worktrees
+APP_DIR="$HOME/.local/share/hanzo/Hanzo.app/Contents"
 mkdir -p "$APP_DIR/MacOS"
 mkdir -p "$APP_DIR/Resources"
 mkdir -p "$APP_DIR/Helpers"
@@ -57,6 +57,6 @@ cp LocalASRHelper/HanzoLocalASR "$APP_DIR/Helpers/HanzoLocalASR"
 cp LocalASRHelper/HanzoLocalASR.py "$APP_DIR/Helpers/HanzoLocalASR.py"
 chmod +x "$APP_DIR/Helpers/HanzoLocalASR"
 
-echo "App bundle created at .build/Hanzo.app"
+echo "App bundle created at $HOME/.local/share/hanzo/Hanzo.app"
 echo "Launching..."
-open .build/Hanzo.app
+open "$HOME/.local/share/hanzo/Hanzo.app"
