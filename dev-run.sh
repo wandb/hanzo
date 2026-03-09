@@ -1,11 +1,11 @@
 #!/bin/bash
 set -e
 
-KEEP_MODELS=false
+RESET_MODELS=false
 RESET_PERMISSIONS=false
 for arg in "$@"; do
     case "$arg" in
-        --keep-models) KEEP_MODELS=true ;;
+        --reset-models) RESET_MODELS=true ;;
         --reset-permissions) RESET_PERMISSIONS=true ;;
     esac
 done
@@ -13,8 +13,8 @@ done
 # Kill running instance
 pkill -x Hanzo || true
 
-# Clear downloaded models
-if [ "$KEEP_MODELS" = false ]; then
+# Clear downloaded models (opt-in)
+if [ "$RESET_MODELS" = true ]; then
     rm -rf "$HOME/Library/Application Support/com.hanzo.app/models"
 fi
 

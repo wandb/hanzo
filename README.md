@@ -39,7 +39,7 @@ Hanzo runs in the menu bar — there is no dock icon.
 
 | Command | Description |
 |---|---|
-| `./dev-run.sh --keep-models` | Skip model cleanup during build |
+| `./dev-run.sh --reset-models` | Clear downloaded models before building |
 | `./dev-run.sh --reset-permissions` | Reset Microphone & Accessibility permissions (useful for testing onboarding) |
 | `swift build` | Build without launching |
 | `swift test` | Run the test suite |

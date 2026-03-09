@@ -4,8 +4,8 @@ macOS menu bar dictation app. Captures speech via global hotkey, streams to host
 
 ## Build & Run
 
-- `./dev-run.sh` — kill running instance, clear models, rebuild and launch
-- `./dev-run.sh --keep-models` — skip model cleanup
+- `./dev-run.sh` — kill running instance, rebuild and launch
+- `./dev-run.sh --reset-models` — clear downloaded models before building
 - `./dev-run.sh --reset-permissions` — reset Microphone & Accessibility permissions (useful for testing onboarding)
 - `swift build` — build only
 - `swift test` — run all tests
