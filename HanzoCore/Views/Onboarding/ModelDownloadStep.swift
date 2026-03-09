@@ -94,13 +94,6 @@ struct ModelDownloadStep: View {
         let presets = LocalASRModelPreset.allCases
         let modelsRoot = modelsRootDirectoryURL()
 
-        // If all models are already downloaded, skip immediately
-        let missing = missingModelPresets(from: presets, modelsRoot: modelsRoot)
-        if missing.isEmpty {
-            await MainActor.run { onDownloaded() }
-            return
-        }
-
         await MainActor.run {
             totalModelCount = presets.count
             statusText = "Checking downloaded model files..."
@@ -111,6 +104,12 @@ struct ModelDownloadStep: View {
             requiredFiles: Self.requiredModelFiles,
             modelsRoot: modelsRoot
         )
+
+        // If every file is already complete (size-verified), skip immediately
+        if plan.itemsByPreset.values.allSatisfy({ $0.isEmpty }) {
+            await MainActor.run { onDownloaded() }
+            return
+        }
 
         try await executeDownloadPlan(
             plan,

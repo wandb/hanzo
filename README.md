@@ -24,7 +24,7 @@ mkdir -p ~/.config/hanzo
 cp .env.build.example ~/.config/hanzo/.env.build
 # Edit ~/.config/hanzo/.env.build with your values
 
-# 3. Allow direnv for this repo
+# 3. Allow direnv in this worktree (run once per worktree)
 direnv allow
 
 # 4. Build and run
