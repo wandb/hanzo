@@ -1,6 +1,29 @@
 #!/bin/bash
 set -e
 
+RESET_MODELS=false
+RESET_PERMISSIONS=false
+for arg in "$@"; do
+    case "$arg" in
+        --reset-models) RESET_MODELS=true ;;
+        --reset-permissions) RESET_PERMISSIONS=true ;;
+    esac
+done
+
+# Kill running instance
+pkill -x Hanzo || true
+
+# Clear downloaded models (opt-in)
+if [ "$RESET_MODELS" = true ]; then
+    rm -rf "$HOME/Library/Application Support/com.hanzo.app/models"
+fi
+
+# Reset permissions (opt-in)
+if [ "$RESET_PERMISSIONS" = true ]; then
+    tccutil reset Microphone com.hanzo.app
+    tccutil reset Accessibility com.hanzo.app
+fi
+
 # Hosted ASR build-time injection (env vars loaded by direnv via .envrc)
 HOSTED_ENDPOINT="${HANZO_HOSTED_SERVER_ENDPOINT:-https://grunt.zain.aaronbatilo.dev}"
 HOSTED_PASSWORD="${HANZO_HOSTED_SERVER_PASSWORD:-}"
@@ -8,8 +31,8 @@ HOSTED_PASSWORD="${HANZO_HOSTED_SERVER_PASSWORD:-}"
 # Build
 swift build
 
-# Create .app bundle
-APP_DIR=".build/Hanzo.app/Contents"
+# Create .app bundle at a fixed location so macOS retains permissions across worktrees
+APP_DIR="$HOME/.local/share/hanzo/Hanzo.app/Contents"
 mkdir -p "$APP_DIR/MacOS"
 mkdir -p "$APP_DIR/Resources"
 mkdir -p "$APP_DIR/Helpers"
@@ -34,6 +57,6 @@ cp LocalASRHelper/HanzoLocalASR "$APP_DIR/Helpers/HanzoLocalASR"
 cp LocalASRHelper/HanzoLocalASR.py "$APP_DIR/Helpers/HanzoLocalASR.py"
 chmod +x "$APP_DIR/Helpers/HanzoLocalASR"
 
-echo "App bundle created at .build/Hanzo.app"
+echo "App bundle created at $HOME/.local/share/hanzo/Hanzo.app"
 echo "Launching..."
-open .build/Hanzo.app
+open "$HOME/.local/share/hanzo/Hanzo.app"
