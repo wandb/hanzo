@@ -25,6 +25,7 @@ Non-2xx responses return:
 
 ```bash
 python3 -m pip install -r reference/requirements.txt
+python3 -m pip install qwen-asr
 uvicorn external_asr_server:app --app-dir reference --host 127.0.0.1 --port 8000
 ```
 

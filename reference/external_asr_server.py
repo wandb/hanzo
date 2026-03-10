@@ -20,14 +20,13 @@ import os
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import soundfile as sf
 from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from qwen_asr import Qwen3ASRModel
 
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen3-ASR-1.7B")
 API_KEY = os.getenv("API_KEY")  # if unset, auth is disabled
@@ -51,7 +50,7 @@ STREAM_CHANNELS = 1
 
 app = FastAPI(title="Hanzo Reference ASR Service", version="1.0.0")
 
-model: Optional[Qwen3ASRModel] = None
+model: Optional[Any] = None
 inference_lock = asyncio.Lock()
 
 
@@ -229,6 +228,14 @@ async def on_unhandled_exception(_: Request, exc: Exception):
 @app.on_event("startup")
 def startup() -> None:
     global model
+    try:
+        from qwen_asr import Qwen3ASRModel  # type: ignore
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Missing optional dependency `qwen_asr`. Install it to run the reference "
+            "Qwen backend, e.g. `python3 -m pip install qwen-asr`."
+        ) from exc
+
     print(
         "Loading model "
         f"MODEL_NAME={MODEL_NAME}, "
