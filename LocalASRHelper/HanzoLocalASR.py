@@ -3,6 +3,7 @@
 HanzoLocalASR helper.
 
 Provides Hanzo's streaming contract on Apple Silicon using mlx-audio:
+  - GET  /v1/capabilities
   - POST /v1/stream/start
   - POST /v1/stream/chunk?session_id=...
   - POST /v1/stream/finish?session_id=...
@@ -28,6 +29,8 @@ from huggingface_hub import HfApi, hf_hub_download
 
 try:
     from fastapi import FastAPI, HTTPException, Query, Request
+    from fastapi.exceptions import RequestValidationError
+    from fastapi.responses import JSONResponse
     import uvicorn
     from mlx_audio.stt.utils import load_model
 except ModuleNotFoundError as exc:
@@ -54,6 +57,10 @@ CORE_MODEL_FILES = {
 }
 
 STREAM_SAMPLE_RATE = 16_000
+STREAM_CHANNELS = 1
+STREAM_ENCODING = "pcm_f32le"
+CONTRACT_API_VERSION = 1
+MAX_CHUNK_BYTES = 1_048_576
 
 
 @dataclass
@@ -61,6 +68,9 @@ class Session:
     audio_accum: np.ndarray = field(
         default_factory=lambda: np.zeros((0,), dtype=np.float32)
     )
+    audio_encoding: str = STREAM_ENCODING
+    sample_rate_hz: int = STREAM_SAMPLE_RATE
+    channels: int = STREAM_CHANNELS
     text: str = ""
     language: str = "unknown"
     created_at: float = field(default_factory=time.time)
@@ -304,10 +314,20 @@ class LocalASRService:
         for session_id in stale:
             self.sessions.pop(session_id, None)
 
-    def start_session(self) -> str:
+    def start_session(
+        self,
+        *,
+        encoding: str,
+        sample_rate_hz: int,
+        channels: int,
+    ) -> str:
         self.cleanup_sessions()
         session_id = str(uuid.uuid4())
-        self.sessions[session_id] = Session()
+        self.sessions[session_id] = Session(
+            audio_encoding=encoding,
+            sample_rate_hz=sample_rate_hz,
+            channels=channels,
+        )
         return session_id
 
     def get_session(self, session_id: str) -> Session:
@@ -365,8 +385,74 @@ class LocalASRService:
         return session.text, session.language
 
 
+def api_error(
+    *,
+    status_code: int,
+    code: str,
+    message: str,
+    retryable: bool = False,
+) -> None:
+    raise HTTPException(
+        status_code=status_code,
+        detail={
+            "code": code,
+            "message": message,
+            "retryable": retryable,
+        },
+    )
+
+
 def create_app(service: LocalASRService) -> FastAPI:
     app = FastAPI(title="Hanzo Local ASR", version="1.0.0")
+
+    @app.exception_handler(HTTPException)
+    async def on_http_exception(_: Request, exc: HTTPException):
+        detail = exc.detail
+        if isinstance(detail, dict):
+            code = str(detail.get("code", "http_error"))
+            message = str(detail.get("message", "Request failed"))
+            retryable = bool(detail.get("retryable", False))
+        else:
+            code = "http_error"
+            message = str(detail)
+            retryable = False
+
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "error": {
+                    "code": code,
+                    "message": message,
+                    "retryable": retryable,
+                }
+            },
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def on_validation_exception(_: Request, exc: RequestValidationError):
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": {
+                    "code": "invalid_request",
+                    "message": str(exc),
+                    "retryable": False,
+                }
+            },
+        )
+
+    @app.exception_handler(Exception)
+    async def on_unhandled_exception(_: Request, exc: Exception):
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": {
+                    "code": "internal_error",
+                    "message": str(exc),
+                    "retryable": False,
+                }
+            },
+        )
 
     @app.get("/healthz")
     async def healthz():
@@ -378,6 +464,13 @@ def create_app(service: LocalASRService) -> FastAPI:
             "model_dir": str(service.model_dir),
             "download": service.download_state.as_dict(),
             "session_count": len(service.sessions),
+        }
+
+    @app.get("/v1/capabilities")
+    async def capabilities():
+        return {
+            "api_version": CONTRACT_API_VERSION,
+            "limits": {"max_chunk_bytes": MAX_CHUNK_BYTES},
         }
 
     @app.get("/v1/model/status")
@@ -401,21 +494,82 @@ def create_app(service: LocalASRService) -> FastAPI:
         try:
             await asyncio.to_thread(service.download_and_load_blocking)
         except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            api_error(
+                status_code=500,
+                code="model_prepare_failed",
+                message=str(exc),
+                retryable=False,
+            )
         return {"status": "ready"}
 
     @app.post("/v1/stream/start")
-    async def stream_start():
+    async def stream_start(request: Request):
+        try:
+            payload = await request.json()
+        except Exception:  # noqa: BLE001
+            api_error(
+                status_code=400,
+                code="invalid_request",
+                message="Expected JSON request body",
+                retryable=False,
+            )
+
+        if not isinstance(payload, dict):
+            api_error(
+                status_code=400,
+                code="invalid_request",
+                message="Expected JSON object body",
+                retryable=False,
+            )
+
+        audio = payload.get("audio")
+        if not isinstance(audio, dict):
+            api_error(
+                status_code=400,
+                code="invalid_request",
+                message="Missing required `audio` object",
+                retryable=False,
+            )
+
+        encoding = audio.get("encoding")
+        sample_rate_hz = audio.get("sample_rate_hz")
+        channels = audio.get("channels")
+
+        if not isinstance(encoding, str) or not isinstance(sample_rate_hz, int) or not isinstance(channels, int):
+            api_error(
+                status_code=400,
+                code="invalid_request",
+                message="`audio.encoding` (string), `audio.sample_rate_hz` (int), and `audio.channels` (int) are required",
+                retryable=False,
+            )
+
+        if encoding != STREAM_ENCODING or sample_rate_hz != STREAM_SAMPLE_RATE or channels != STREAM_CHANNELS:
+            api_error(
+                status_code=400,
+                code="unsupported_audio_format",
+                message=(
+                    f"Unsupported audio format. Expected encoding={STREAM_ENCODING}, "
+                    f"sample_rate_hz={STREAM_SAMPLE_RATE}, channels={STREAM_CHANNELS}"
+                ),
+                retryable=False,
+            )
+
         if service.model is None:
             try:
                 await asyncio.to_thread(service.ensure_model_loaded_blocking)
             except Exception as exc:  # noqa: BLE001
-                raise HTTPException(
+                api_error(
                     status_code=503,
-                    detail=f"Local model is not ready: {exc}",
-                ) from exc
+                    code="runtime_unavailable",
+                    message=f"Local model is not ready: {exc}",
+                    retryable=True,
+                )
 
-        session_id = service.start_session()
+        session_id = service.start_session(
+            encoding=encoding,
+            sample_rate_hz=sample_rate_hz,
+            channels=channels,
+        )
         return {"session_id": session_id}
 
     @app.post("/v1/stream/chunk")
@@ -425,16 +579,35 @@ def create_app(service: LocalASRService) -> FastAPI:
     ):
         try:
             session = service.get_session(session_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Session not found") from exc
+        except KeyError:
+            api_error(
+                status_code=404,
+                code="session_not_found",
+                message="Session not found",
+                retryable=False,
+            )
 
         body = await request.body()
+        if len(body) > MAX_CHUNK_BYTES:
+            api_error(
+                status_code=413,
+                code="chunk_too_large",
+                message=f"Chunk exceeds max_chunk_bytes={MAX_CHUNK_BYTES}",
+                retryable=False,
+            )
         if len(body) == 0:
-            raise HTTPException(status_code=400, detail="Empty chunk")
-        if len(body) % 4 != 0:
-            raise HTTPException(
+            api_error(
                 status_code=400,
-                detail="Chunk must be float32 PCM (byte length multiple of 4)",
+                code="invalid_audio_payload",
+                message="Empty chunk",
+                retryable=False,
+            )
+        if len(body) % 4 != 0:
+            api_error(
+                status_code=400,
+                code="invalid_audio_payload",
+                message="Chunk must be float32 PCM (byte length multiple of 4)",
+                retryable=False,
             )
 
         pcm = np.frombuffer(body, dtype=np.float32)
@@ -448,7 +621,12 @@ def create_app(service: LocalASRService) -> FastAPI:
                     force=False,
                 )
             except Exception as exc:  # noqa: BLE001
-                raise HTTPException(status_code=500, detail=str(exc)) from exc
+                api_error(
+                    status_code=500,
+                    code="inference_failure",
+                    message=str(exc),
+                    retryable=False,
+                )
 
         return {"text": text, "language": language}
 
@@ -458,8 +636,13 @@ def create_app(service: LocalASRService) -> FastAPI:
     ):
         try:
             session = service.pop_session(session_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Session not found") from exc
+        except KeyError:
+            api_error(
+                status_code=404,
+                code="session_not_found",
+                message="Session not found",
+                retryable=False,
+            )
 
         async with service.inference_lock:
             try:
@@ -469,7 +652,12 @@ def create_app(service: LocalASRService) -> FastAPI:
                     force=True,
                 )
             except Exception as exc:  # noqa: BLE001
-                raise HTTPException(status_code=500, detail=str(exc)) from exc
+                api_error(
+                    status_code=500,
+                    code="finalize_failure",
+                    message=str(exc),
+                    retryable=False,
+                )
 
         return {"text": text, "language": language}
 

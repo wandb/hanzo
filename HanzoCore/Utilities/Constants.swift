@@ -51,6 +51,7 @@ enum Constants {
     static let maxLogFileSizeMB = 10
     static let audioSampleRate: Double = 16000
     static let audioChannels: UInt32 = 1
+    static let defaultMaxChunkBytes = 1_048_576
     // ~250ms of float32 mono audio at 16kHz
     static let chunkAccumulationBytes = 16000
 
