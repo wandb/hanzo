@@ -42,6 +42,7 @@ UNFIXED_CHUNK_NUM = int(os.getenv("UNFIXED_CHUNK_NUM", "2"))
 UNFIXED_TOKEN_NUM = int(os.getenv("UNFIXED_TOKEN_NUM", "5"))
 CHUNK_SIZE_SEC = float(os.getenv("CHUNK_SIZE_SEC", "2.0"))
 SESSION_TTL_SEC = int(os.getenv("SESSION_TTL_SEC", "600"))
+DEBUG_ERRORS = os.getenv("DEBUG_ERRORS", "").lower() in ("1", "true", "yes")
 
 # Unified streaming contract audio format.
 STREAM_ENCODING = "pcm_f32le"
@@ -104,14 +105,23 @@ def require_model_loaded() -> None:
         )
 
 
-def cleanup_sessions() -> None:
+async def cleanup_sessions() -> None:
     now = time.time()
     expired = [sid for sid, s in sessions.items() if now - s.last_seen > SESSION_TTL_SEC]
+    stale_states: list[object] = []
     for sid in expired:
         stale = sessions.pop(sid)
+        stale_states.append(stale.state)
+
+    if not stale_states or model is None:
+        return
+
+    for state in stale_states:
         try:
-            model.finish_streaming_transcribe(stale.state)
+            async with inference_lock:
+                await asyncio.to_thread(model.finish_streaming_transcribe, state)
         except Exception:
+            # Session cleanup is best-effort.
             pass
 
 
@@ -202,12 +212,14 @@ async def on_validation_exception(_: Request, exc: RequestValidationError):
 
 @app.exception_handler(Exception)
 async def on_unhandled_exception(_: Request, exc: Exception):
+    print(f"Unhandled server error: {exc!r}")
+    message = str(exc) if DEBUG_ERRORS else "Internal server error"
     return JSONResponse(
         status_code=500,
         content={
             "error": {
                 "code": "internal_error",
-                "message": str(exc),
+                "message": message,
                 "retryable": False,
             }
         },
@@ -336,7 +348,7 @@ async def stream_start(
         )
 
     encoding, sample_rate_hz, channels = parse_start_audio_contract(payload)
-    cleanup_sessions()
+    await cleanup_sessions()
 
     state = model.init_streaming_state(
         unfixed_chunk_num=UNFIXED_CHUNK_NUM,
