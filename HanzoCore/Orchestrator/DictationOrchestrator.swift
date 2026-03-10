@@ -268,7 +268,7 @@ final class DictationOrchestrator {
                 sessionId = nil
                 previousApp = nil
 
-                logger.info("Final transcription (\(finalText.count) chars): \(finalText.prefix(100))")
+                logger.info("Final transcription ready (\(finalText.count) chars)")
 
                 // PHASE 1: Dismiss UI now that we have the final transcript
                 // Must happen BEFORE activating the target app, otherwise
