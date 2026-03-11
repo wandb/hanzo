@@ -81,6 +81,7 @@ enum ASRError: Error, LocalizedError {
 final class ASRClient: ASRClientProtocol {
     private let session: URLSession
     private let requestTimeout: TimeInterval
+    private let requiresCapabilitiesHandshake: Bool
     var baseURL: String {
         didSet {
             if oldValue != baseURL {
@@ -103,16 +104,20 @@ final class ASRClient: ASRClientProtocol {
         baseURL: String,
         apiKey: String,
         requestTimeout: TimeInterval = 15,
+        requiresCapabilitiesHandshake: Bool = true,
         session: URLSession = .shared
     ) {
         self.baseURL = baseURL
         self.apiKey = apiKey
         self.requestTimeout = requestTimeout
+        self.requiresCapabilitiesHandshake = requiresCapabilitiesHandshake
         self.session = session
     }
 
     func startStream() async throws -> String {
-        try await ensureSupportedCapabilities()
+        if requiresCapabilitiesHandshake {
+            try await ensureSupportedCapabilities()
+        }
 
         var request = try makeRequest(path: "/v1/stream/start")
         let startPayload = ASRStreamStartRequest(

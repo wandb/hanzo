@@ -7,11 +7,20 @@ struct ASRClientTests {
 
     // MARK: - Helpers
 
-    func makeSUT(baseURL: String = "https://example.com", apiKey: String = "test-key") -> ASRClient {
+    func makeSUT(
+        baseURL: String = "https://example.com",
+        apiKey: String = "test-key",
+        requiresCapabilitiesHandshake: Bool = true
+    ) -> ASRClient {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [MockURLProtocol.self]
         let session = URLSession(configuration: config)
-        return ASRClient(baseURL: baseURL, apiKey: apiKey, session: session)
+        return ASRClient(
+            baseURL: baseURL,
+            apiKey: apiKey,
+            requiresCapabilitiesHandshake: requiresCapabilitiesHandshake,
+            session: session
+        )
     }
 
     func httpResponse(for request: URLRequest, statusCode: Int) -> HTTPURLResponse {
@@ -54,6 +63,20 @@ struct ASRClientTests {
         _ = try await sut.startStream()
 
         #expect(seenPaths == ["/v1/capabilities", "/v1/stream/start"])
+    }
+
+    @Test("startStream skips capabilities when handshake disabled")
+    func startStreamSkipsCapabilitiesWhenDisabled() async throws {
+        var seenPaths: [String] = []
+        MockURLProtocol.requestHandler = { request in
+            seenPaths.append(request.url?.path ?? "")
+            return (httpResponse(for: request, statusCode: 200), Data(#"{"session_id":"abc123"}"#.utf8))
+        }
+
+        let sut = makeSUT(requiresCapabilitiesHandshake: false)
+        _ = try await sut.startStream()
+
+        #expect(seenPaths == ["/v1/stream/start"])
     }
 
     @Test("startStream sends X-API-Key on capabilities and start requests")
