@@ -1,11 +1,18 @@
 import Foundation
 
+protocol LocalWhisperRuntimeClientProtocol {
+    func startSession() async throws -> String
+    func appendChunk(sessionId: String, pcmData: Data) async throws -> ASRChunkResponse
+    func finishSession(sessionId: String) async throws -> ASRFinishResponse
+    func abortSession(sessionId: String) async
+}
+
 final class LocalWhisperASRClient: ASRClientProtocol {
-    private let runtime: LocalWhisperRuntime
+    private let runtime: LocalWhisperRuntimeClientProtocol
     private let logger: LoggingServiceProtocol
 
     init(
-        runtime: LocalWhisperRuntime = .shared,
+        runtime: LocalWhisperRuntimeClientProtocol = LocalWhisperRuntime.shared,
         logger: LoggingServiceProtocol = LoggingService.shared
     ) {
         self.runtime = runtime
@@ -22,6 +29,13 @@ final class LocalWhisperASRClient: ASRClientProtocol {
     }
 
     func sendChunk(sessionId: String, pcmData: Data) async throws -> ASRChunkResponse {
+        guard pcmData.count <= Constants.defaultMaxChunkBytes else {
+            throw ASRError.chunkExceedsLimit(
+                maxBytes: Constants.defaultMaxChunkBytes,
+                actualBytes: pcmData.count
+            )
+        }
+
         do {
             return try await runtime.appendChunk(sessionId: sessionId, pcmData: pcmData)
         } catch {
@@ -37,6 +51,10 @@ final class LocalWhisperASRClient: ASRClientProtocol {
             logger.error("Failed to finish local Whisper stream: \(error)")
             throw mapToASRError(error)
         }
+    }
+
+    func abortStream(sessionId: String) async {
+        await runtime.abortSession(sessionId: sessionId)
     }
 
     private func mapToASRError(_ error: Error) -> ASRError {

@@ -12,8 +12,7 @@ actor LocalASRRuntimeManager: LocalASRRuntimeManagerProtocol {
         self.runtime = runtime
     }
 
-    func ensureRunning(baseURL: String) async throws {
-        _ = baseURL // Local runtime is in-process; endpoint is no longer used.
+    func ensureRunning() async throws {
         do {
             try await runtime.prepare()
             logger.info("Local Whisper runtime is ready")
@@ -26,8 +25,8 @@ actor LocalASRRuntimeManager: LocalASRRuntimeManagerProtocol {
         }
     }
 
-    func prepareModel(baseURL: String) async throws {
-        try await ensureRunning(baseURL: baseURL)
+    func prepareModel() async throws {
+        try await ensureRunning()
     }
 
     func stop() async {

@@ -30,6 +30,8 @@ enum Constants {
     static let localWhisperModelRepository = "argmaxinc/whisperkit-coreml"
     static let localWhisperPartialMinSeconds: Double = 2.0
     static let localWhisperPartialMinIntervalSeconds: Double = 0.8
+    static let localWhisperPartialWindowSeconds: Double = 30.0
+    static let localWhisperSessionTTLSeconds: Double = 180.0
     static let defaultCustomServerPassword = ""
     static let serverEndpointKey = "serverEndpoint"
     static let customServerPasswordKey = "customServerPassword"

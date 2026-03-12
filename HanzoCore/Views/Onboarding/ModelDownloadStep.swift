@@ -57,7 +57,7 @@ struct ModelDownloadStep: View {
         prepareTask = Task {
             do {
                 let manager = LocalASRRuntimeManager()
-                try await manager.prepareModel(baseURL: "")
+                try await manager.prepareModel()
                 await MainActor.run {
                     statusText = "Local Whisper model is ready"
                     onDownloaded()

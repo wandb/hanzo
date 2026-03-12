@@ -123,7 +123,7 @@ final class DictationOrchestrator {
                 guard shouldWarmLocalRuntime else { return }
 
                 do {
-                    try await localRuntimeManager.prepareModel(baseURL: "")
+                    try await localRuntimeManager.prepareModel()
                     logger.info("Local Whisper runtime warmed after settings change")
                 } catch {
                     logger.warn("Failed to warm local Whisper runtime after settings change: \(error)")
@@ -149,6 +149,7 @@ final class DictationOrchestrator {
 
     func cancel() {
         logger.info("Recording cancelled")
+        let sid = sessionId
         chunkSendTask?.cancel()
         audioService.stopCapture()
         bufferQueue.sync {
@@ -157,6 +158,7 @@ final class DictationOrchestrator {
             isStoppingRecording = false
         }
         sessionId = nil
+        abortLocalSessionIfNeeded(sid)
         previousApp = nil
         pendingRestartAfterForging = false
         silenceStartTime = nil
@@ -312,6 +314,8 @@ final class DictationOrchestrator {
                 }
             } catch {
                 logger.error("Transcription failed: \(error)")
+                let failedSessionId = sessionId
+                abortLocalSessionIfNeeded(failedSessionId)
                 await MainActor.run {
                     appState.dictationState = .error
                     appState.errorMessage = error.localizedDescription
@@ -403,6 +407,17 @@ final class DictationOrchestrator {
 
         if !Task.isCancelled {
             maybeStartChunkSendIfNeeded()
+        }
+    }
+
+    private func abortLocalSessionIfNeeded(_ sessionId: String?) {
+        guard let sessionId,
+              let localClient = asrClient as? LocalWhisperASRClient else {
+            return
+        }
+
+        Task {
+            await localClient.abortStream(sessionId: sessionId)
         }
     }
 

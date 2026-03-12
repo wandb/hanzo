@@ -1,13 +1,14 @@
 import Foundation
 import WhisperKit
 
-actor LocalWhisperRuntime {
+actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
     static let shared = LocalWhisperRuntime()
 
     private struct Session {
         var audioSamples: [Float] = []
         var partialText = ""
         var language = "unknown"
+        var lastSeenAt = Date()
         var lastPartialDecodeAt = Date.distantPast
         var lastDecodedSampleCount = 0
     }
@@ -40,22 +41,29 @@ actor LocalWhisperRuntime {
     }
 
     func startSession() async throws -> String {
+        cleanupStaleSessions()
         try await prepare()
         let sessionId = UUID().uuidString
-        sessions[sessionId] = Session()
+        sessions[sessionId] = Session(lastSeenAt: Date())
         return sessionId
     }
 
     func appendChunk(sessionId: String, pcmData: Data) async throws -> ASRChunkResponse {
+        cleanupStaleSessions()
+
         guard var session = sessions[sessionId] else {
             throw ASRError.sessionNotFound
         }
+        session.lastSeenAt = Date()
 
         let chunkSamples = try decodePCMFloat32(pcmData)
         session.audioSamples.append(contentsOf: chunkSamples)
 
         if shouldDecodePartial(session: session) {
-            let partial = try await transcribe(audioSamples: session.audioSamples, isFinal: false)
+            let partial = try await transcribe(
+                audioSamples: partialDecodeInput(session.audioSamples),
+                isFinal: false
+            )
             session.partialText = partial.text
             session.language = partial.language
             session.lastPartialDecodeAt = Date()
@@ -67,12 +75,18 @@ actor LocalWhisperRuntime {
     }
 
     func finishSession(sessionId: String) async throws -> ASRFinishResponse {
+        cleanupStaleSessions()
+
         guard let session = sessions.removeValue(forKey: sessionId) else {
             throw ASRError.sessionNotFound
         }
 
         let final = try await transcribe(audioSamples: session.audioSamples, isFinal: true)
         return ASRFinishResponse(text: final.text, language: final.language)
+    }
+
+    func abortSession(sessionId: String) async {
+        sessions.removeValue(forKey: sessionId)
     }
 
     func stop() async {
@@ -96,6 +110,16 @@ actor LocalWhisperRuntime {
 
         let elapsed = Date().timeIntervalSince(session.lastPartialDecodeAt)
         return elapsed >= Constants.localWhisperPartialMinIntervalSeconds
+    }
+
+    private func partialDecodeInput(_ audioSamples: [Float]) -> [Float] {
+        let windowSamples = Int(
+            Constants.localWhisperPartialWindowSeconds * Constants.audioSampleRate
+        )
+        guard windowSamples > 0, audioSamples.count > windowSamples else {
+            return audioSamples
+        }
+        return Array(audioSamples.suffix(windowSamples))
     }
 
     private func transcribe(
@@ -150,6 +174,13 @@ actor LocalWhisperRuntime {
             data.copyBytes(to: buffer)
         }
         return samples
+    }
+
+    private func cleanupStaleSessions(now: Date = Date()) {
+        let cutoff = now.addingTimeInterval(-Constants.localWhisperSessionTTLSeconds)
+        sessions = sessions.filter { _, session in
+            session.lastSeenAt >= cutoff
+        }
     }
 
     private func modelsDirectoryURL() -> URL {
