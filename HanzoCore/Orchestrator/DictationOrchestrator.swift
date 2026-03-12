@@ -10,6 +10,7 @@ final class DictationOrchestrator {
     private let permissionService: PermissionServiceProtocol
     private let localRuntimeManager: LocalASRRuntimeManagerProtocol
     private let logger: LoggingServiceProtocol
+    private let frontmostApplicationProvider: () -> NSRunningApplication?
 
     private var asrClient: ASRClientProtocol
     private let isASRClientInjected: Bool
@@ -20,6 +21,7 @@ final class DictationOrchestrator {
     private var isChunkSendInFlight = false
     private var isStoppingRecording = false
     private var previousApp: NSRunningApplication?
+    private var activeSessionTargetBundleIdentifier: String?
     private var pendingRestartAfterForging = false
     private var configuredASRProvider: ASRProvider
 
@@ -38,7 +40,10 @@ final class DictationOrchestrator {
         textInsertion: TextInsertionProtocol = TextInsertionService(),
         permissionService: PermissionServiceProtocol = PermissionService.shared,
         localRuntimeManager: LocalASRRuntimeManagerProtocol = LocalASRRuntimeManager(),
-        logger: LoggingServiceProtocol = LoggingService.shared
+        logger: LoggingServiceProtocol = LoggingService.shared,
+        frontmostApplicationProvider: @escaping () -> NSRunningApplication? = {
+            NSWorkspace.shared.frontmostApplication
+        }
     ) {
         self.appState = appState
         self.audioService = audioService
@@ -46,17 +51,10 @@ final class DictationOrchestrator {
         self.permissionService = permissionService
         self.localRuntimeManager = localRuntimeManager
         self.logger = logger
+        self.frontmostApplicationProvider = frontmostApplicationProvider
 
-        if let raw = UserDefaults.standard.string(forKey: Constants.autoSubmitKey) {
-            self.autoSubmitMode = AutoSubmitMode(rawValue: raw) ?? Constants.defaultAutoSubmitMode
-        } else {
-            self.autoSubmitMode = Constants.defaultAutoSubmitMode
-        }
-
-        let storedTimeout = UserDefaults.standard.object(forKey: Constants.silenceTimeoutKey)
-        self.silenceTimeout = storedTimeout != nil
-            ? UserDefaults.standard.double(forKey: Constants.silenceTimeoutKey)
-            : Constants.defaultSilenceTimeout
+        self.autoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode()
+        self.silenceTimeout = AppBehaviorSettings.globalSilenceTimeout()
 
         if let asrClient = asrClient {
             self.asrClient = asrClient
@@ -89,19 +87,12 @@ final class DictationOrchestrator {
     func reloadSettings() {
         let previousProvider = configuredASRProvider
 
-        if let raw = UserDefaults.standard.string(forKey: Constants.autoSubmitKey) {
-            autoSubmitMode = AutoSubmitMode(rawValue: raw) ?? Constants.defaultAutoSubmitMode
+        if let activeSessionTargetBundleIdentifier {
+            applyEffectiveBehavior(for: activeSessionTargetBundleIdentifier)
         } else {
-            autoSubmitMode = Constants.defaultAutoSubmitMode
+            applyEffectiveBehavior(for: nil)
         }
 
-        let storedTimeout = UserDefaults.standard.object(forKey: Constants.silenceTimeoutKey)
-        silenceTimeout = storedTimeout != nil
-            ? UserDefaults.standard.double(forKey: Constants.silenceTimeoutKey)
-            : Constants.defaultSilenceTimeout
-
-        appState.autoSubmitMode = autoSubmitMode
-        appState.silenceTimeout = silenceTimeout
         configuredASRProvider = DictationOrchestrator.currentASRProvider()
         appState.asrProvider = configuredASRProvider
 
@@ -160,9 +151,11 @@ final class DictationOrchestrator {
         sessionId = nil
         abortLocalSessionIfNeeded(sid)
         previousApp = nil
+        activeSessionTargetBundleIdentifier = nil
         pendingRestartAfterForging = false
         silenceStartTime = nil
         peakSpeechLevel = 0
+        applyEffectiveBehavior(for: nil)
 
         Task { @MainActor in
             appState.dictationState = .idle
@@ -186,7 +179,16 @@ final class DictationOrchestrator {
             return
         }
 
-        previousApp = NSWorkspace.shared.frontmostApplication
+        previousApp = frontmostApplicationProvider()
+        activeSessionTargetBundleIdentifier = previousApp?.bundleIdentifier
+        if let activeSessionTargetBundleIdentifier,
+           AppBehaviorSettings.isSupported(bundleIdentifier: activeSessionTargetBundleIdentifier) {
+            applyEffectiveBehavior(for: activeSessionTargetBundleIdentifier)
+            logger.info("Resolved app behavior for \(activeSessionTargetBundleIdentifier)")
+        } else {
+            appState.activeTargetBundleIdentifier = activeSessionTargetBundleIdentifier
+        }
+
         logger.info("Starting recording session")
         appState.dictationState = .listening
         appState.partialTranscript = ""
@@ -251,6 +253,7 @@ final class DictationOrchestrator {
                 let targetApp = previousApp
                 sessionId = nil
                 previousApp = nil
+                activeSessionTargetBundleIdentifier = nil
 
                 logger.info("Final transcription ready (\(finalText.count) chars)")
 
@@ -312,6 +315,9 @@ final class DictationOrchestrator {
                     appState.partialTranscript = ""
                     appState.audioLevels = []
                 }
+                await MainActor.run {
+                    applyEffectiveBehavior(for: nil)
+                }
             } catch {
                 logger.error("Transcription failed: \(error)")
                 let failedSessionId = sessionId
@@ -322,6 +328,10 @@ final class DictationOrchestrator {
                 }
                 sessionId = nil
                 previousApp = nil
+                activeSessionTargetBundleIdentifier = nil
+                await MainActor.run {
+                    applyEffectiveBehavior(for: nil)
+                }
             }
 
             bufferQueue.sync {
@@ -354,9 +364,12 @@ final class DictationOrchestrator {
         appState.partialTranscript = ""
         appState.audioLevels = []
         appState.isPopoverPresented = false
+        appState.activeTargetBundleIdentifier = nil
         pendingRestartAfterForging = false
         silenceStartTime = nil
         peakSpeechLevel = 0
+        activeSessionTargetBundleIdentifier = nil
+        applyEffectiveBehavior(for: nil)
     }
 
     private func maybeStartChunkSendIfNeeded() {
@@ -449,6 +462,15 @@ final class DictationOrchestrator {
         case .local:
             return LocalWhisperASRClient()
         }
+    }
+
+    private func applyEffectiveBehavior(for targetBundleIdentifier: String?) {
+        let resolved = AppBehaviorSettings.resolvedBehavior(for: targetBundleIdentifier)
+        autoSubmitMode = resolved.autoSubmitMode
+        silenceTimeout = resolved.silenceTimeout
+        appState.autoSubmitMode = resolved.autoSubmitMode
+        appState.silenceTimeout = resolved.silenceTimeout
+        appState.activeTargetBundleIdentifier = targetBundleIdentifier
     }
 
     // MARK: - Silence Detection

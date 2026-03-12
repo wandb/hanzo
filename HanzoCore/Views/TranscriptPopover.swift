@@ -138,7 +138,14 @@ private struct StatusFooterView: View {
         let nextIndex = (currentIndex + 1) % silenceSteps.count
         let newValue = silenceSteps[nextIndex]
         appState.silenceTimeout = newValue
-        UserDefaults.standard.set(newValue, forKey: Constants.silenceTimeoutKey)
+        if let bundleIdentifier = appState.activeTargetBundleIdentifier,
+           AppBehaviorSettings.isSupported(bundleIdentifier: bundleIdentifier) {
+            var appOverride = AppBehaviorSettings.override(for: bundleIdentifier) ?? AppBehaviorOverride()
+            appOverride.silenceTimeout = newValue
+            AppBehaviorSettings.saveOverride(appOverride, for: bundleIdentifier)
+        } else {
+            AppBehaviorSettings.setGlobalSilenceTimeout(newValue)
+        }
         onSettingsChanged?()
     }
 
@@ -148,7 +155,14 @@ private struct StatusFooterView: View {
         let nextIndex = (currentIndex + 1) % modes.count
         let newMode = modes[nextIndex]
         appState.autoSubmitMode = newMode
-        UserDefaults.standard.set(newMode.rawValue, forKey: Constants.autoSubmitKey)
+        if let bundleIdentifier = appState.activeTargetBundleIdentifier,
+           AppBehaviorSettings.isSupported(bundleIdentifier: bundleIdentifier) {
+            var appOverride = AppBehaviorSettings.override(for: bundleIdentifier) ?? AppBehaviorOverride()
+            appOverride.autoSubmitMode = newMode
+            AppBehaviorSettings.saveOverride(appOverride, for: bundleIdentifier)
+        } else {
+            AppBehaviorSettings.setGlobalAutoSubmitMode(newMode)
+        }
         onSettingsChanged?()
     }
 }

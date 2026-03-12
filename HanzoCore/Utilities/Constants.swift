@@ -1,9 +1,20 @@
 import Foundation
 
-enum AutoSubmitMode: String {
+enum AutoSubmitMode: String, CaseIterable, Codable {
     case enter
     case cmdEnter
     case off
+
+    var displayName: String {
+        switch self {
+        case .off:
+            return "Off"
+        case .enter:
+            return "Enter"
+        case .cmdEnter:
+            return "Cmd+Enter"
+        }
+    }
 }
 
 enum AppearanceMode: String {
@@ -66,6 +77,10 @@ enum Constants {
     static let defaultSilenceTimeout: Double = 2.0  // seconds; 0 = disabled
     static let silenceRelativeThreshold: Float = 0.15  // fraction of peak speech level
     static let silenceAbsoluteFloor: Float = 0.005  // minimum silence threshold
+
+    // App-specific behavior overrides
+    static let appBehaviorOverridesKey = "appBehaviorOverrides"
+    static let appBehaviorCustomAppsKey = "appBehaviorCustomApps"
 
     private static func bundleString(for key: String) -> String? {
         guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String else {

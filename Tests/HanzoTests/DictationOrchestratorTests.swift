@@ -48,7 +48,8 @@ struct DictationOrchestratorTests {
             audioService: mockAudio,
             textInsertion: mockText,
             permissionService: mockPerms,
-            logger: mockLogger
+            logger: mockLogger,
+            frontmostApplicationProvider: { nil }
         )
         return SUT(
             orchestrator: orchestrator,
@@ -182,7 +183,8 @@ struct DictationOrchestratorTests {
             audioService: mockAudio,
             textInsertion: mockText,
             permissionService: mockPerms,
-            logger: mockLogger
+            logger: mockLogger,
+            frontmostApplicationProvider: { nil }
         )
 
         orchestrator.toggle()
@@ -338,7 +340,8 @@ struct DictationOrchestratorTests {
             audioService: mockAudio,
             textInsertion: mockText,
             permissionService: mockPerms,
-            logger: mockLogger
+            logger: mockLogger,
+            frontmostApplicationProvider: { nil }
         )
 
         let chunk = Data(repeating: 0x01, count: Constants.chunkAccumulationBytes + 1)
