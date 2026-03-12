@@ -1,7 +1,7 @@
 import Foundation
 
 protocol LocalASRRuntimeManagerProtocol {
-    func ensureRunning(baseURL: String) async throws
-    func prepareModel(baseURL: String) async throws
+    func ensureRunning() async throws
+    func prepareModel() async throws
     func stop() async
 }

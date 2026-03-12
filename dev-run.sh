@@ -35,7 +35,6 @@ swift build
 APP_DIR="$HOME/.local/share/hanzo/Hanzo.app/Contents"
 mkdir -p "$APP_DIR/MacOS"
 mkdir -p "$APP_DIR/Resources"
-mkdir -p "$APP_DIR/Helpers"
 
 # Copy executable
 cp .build/debug/HanzoApp "$APP_DIR/MacOS/Hanzo"
@@ -51,11 +50,6 @@ plutil -replace HanzoHostedServerPassword -string "$HOSTED_PASSWORD" "$APP_DIR/I
 if [ -d ".build/debug/HanzoCore_HanzoCore.bundle" ]; then
     cp -R ".build/debug/HanzoCore_HanzoCore.bundle" "$APP_DIR/Resources/"
 fi
-
-# Copy local ASR helper
-cp LocalASRHelper/HanzoLocalASR "$APP_DIR/Helpers/HanzoLocalASR"
-cp LocalASRHelper/HanzoLocalASR.py "$APP_DIR/Helpers/HanzoLocalASR.py"
-chmod +x "$APP_DIR/Helpers/HanzoLocalASR"
 
 echo "App bundle created at $HOME/.local/share/hanzo/Hanzo.app"
 echo "Launching..."

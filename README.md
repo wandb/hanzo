@@ -31,7 +31,7 @@ direnv allow
 ./dev-run.sh
 ```
 
-This builds the project, assembles the `.app` bundle at `~/.local/share/hanzo/Hanzo.app`, and launches it. The fixed bundle path ensures macOS retains permissions across git worktrees. An onboarding wizard will guide you through granting permissions and setting up local runtime assets on first launch.
+This builds the project, assembles the `.app` bundle at `~/.local/share/hanzo/Hanzo.app`, and launches it. The fixed bundle path ensures macOS retains permissions across git worktrees. An onboarding wizard will guide you through granting permissions and preparing the on-device Whisper model on first launch.
 
 Hanzo runs in the menu bar — there is no dock icon.
 
@@ -48,5 +48,11 @@ Hanzo runs in the menu bar — there is no dock icon.
 ## Configuration
 
 - **Hotkey** — Configurable in the app settings (default: Ctrl + Space)
-- **ASR provider** — `Hosted` (default), `Local`, or `Custom Server`
+- **ASR provider** — `Hosted` (default), `Local (Whisper)`, or `Custom Server`
 - **Custom server endpoint + password** — Configurable in Settings when `Custom Server` is selected
+- **Local model** — Uses `base.en` from `argmaxinc/whisperkit-coreml`, downloaded on first use
+
+## Example Servers
+
+- `reference/` includes the hosted-compatible Qwen3 reference server for Custom Server mode
+- `LocalASRHelper/` remains an example local Qwen3 server helper for users who want to run their own runtime

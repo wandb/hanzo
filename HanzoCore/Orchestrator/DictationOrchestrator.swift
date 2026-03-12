@@ -22,8 +22,6 @@ final class DictationOrchestrator {
     private var previousApp: NSRunningApplication?
     private var pendingRestartAfterForging = false
     private var configuredASRProvider: ASRProvider
-    private var configuredLocalBaseURL: String
-    private var configuredLocalModelPreset: LocalASRModelPreset
 
     // Auto-submit
     var autoSubmitMode: AutoSubmitMode
@@ -69,8 +67,6 @@ final class DictationOrchestrator {
         }
 
         self.configuredASRProvider = DictationOrchestrator.currentASRProvider()
-        self.configuredLocalBaseURL = DictationOrchestrator.currentLocalBaseURL()
-        self.configuredLocalModelPreset = DictationOrchestrator.currentLocalASRModelPreset()
 
         appState.autoSubmitMode = self.autoSubmitMode
         appState.silenceTimeout = self.silenceTimeout
@@ -92,8 +88,6 @@ final class DictationOrchestrator {
 
     func reloadSettings() {
         let previousProvider = configuredASRProvider
-        let previousLocalBaseURL = configuredLocalBaseURL
-        let previousLocalModelPreset = configuredLocalModelPreset
 
         if let raw = UserDefaults.standard.string(forKey: Constants.autoSubmitKey) {
             autoSubmitMode = AutoSubmitMode(rawValue: raw) ?? Constants.defaultAutoSubmitMode
@@ -109,23 +103,18 @@ final class DictationOrchestrator {
         appState.autoSubmitMode = autoSubmitMode
         appState.silenceTimeout = silenceTimeout
         configuredASRProvider = DictationOrchestrator.currentASRProvider()
-        configuredLocalBaseURL = DictationOrchestrator.currentLocalBaseURL()
-        configuredLocalModelPreset = DictationOrchestrator.currentLocalASRModelPreset()
         appState.asrProvider = configuredASRProvider
 
         if !isASRClientInjected {
             asrClient = DictationOrchestrator.makeConfiguredASRClient()
         }
 
-        let localConfigChanged = previousLocalBaseURL != configuredLocalBaseURL
-            || previousLocalModelPreset != configuredLocalModelPreset
         let shouldRestartLocalRuntime = previousProvider == .local
-            && (configuredASRProvider != .local || localConfigChanged)
+            && configuredASRProvider != .local
         let shouldWarmLocalRuntime = configuredASRProvider == .local
-            && (previousProvider != .local || localConfigChanged)
+            && previousProvider != .local
 
         if shouldRestartLocalRuntime || shouldWarmLocalRuntime {
-            let baseURL = configuredLocalBaseURL
             Task {
                 if shouldRestartLocalRuntime {
                     await localRuntimeManager.stop()
@@ -134,11 +123,10 @@ final class DictationOrchestrator {
                 guard shouldWarmLocalRuntime else { return }
 
                 do {
-                    try await localRuntimeManager.ensureRunning(baseURL: baseURL)
-                    try await localRuntimeManager.prepareModel(baseURL: baseURL)
-                    logger.info("Local ASR helper warmed after settings change")
+                    try await localRuntimeManager.prepareModel()
+                    logger.info("Local Whisper runtime warmed after settings change")
                 } catch {
-                    logger.warn("Failed to warm local ASR helper after settings change: \(error)")
+                    logger.warn("Failed to warm local Whisper runtime after settings change: \(error)")
                 }
             }
         }
@@ -161,6 +149,7 @@ final class DictationOrchestrator {
 
     func cancel() {
         logger.info("Recording cancelled")
+        let sid = sessionId
         chunkSendTask?.cancel()
         audioService.stopCapture()
         bufferQueue.sync {
@@ -169,6 +158,7 @@ final class DictationOrchestrator {
             isStoppingRecording = false
         }
         sessionId = nil
+        abortLocalSessionIfNeeded(sid)
         previousApp = nil
         pendingRestartAfterForging = false
         silenceStartTime = nil
@@ -211,12 +201,6 @@ final class DictationOrchestrator {
 
         Task {
             do {
-                if !isASRClientInjected, DictationOrchestrator.currentASRProvider() == .local {
-                    let localBaseURL = UserDefaults.standard.string(forKey: Constants.localServerEndpointKey)
-                        ?? Constants.defaultLocalServerEndpoint
-                    try await localRuntimeManager.ensureRunning(baseURL: localBaseURL)
-                }
-
                 sessionId = try await asrClient.startStream()
                 logger.info("ASR session started: \(sessionId ?? "nil")")
                 try audioService.startCapture()
@@ -330,6 +314,8 @@ final class DictationOrchestrator {
                 }
             } catch {
                 logger.error("Transcription failed: \(error)")
+                let failedSessionId = sessionId
+                abortLocalSessionIfNeeded(failedSessionId)
                 await MainActor.run {
                     appState.dictationState = .error
                     appState.errorMessage = error.localizedDescription
@@ -424,6 +410,17 @@ final class DictationOrchestrator {
         }
     }
 
+    private func abortLocalSessionIfNeeded(_ sessionId: String?) {
+        guard let sessionId,
+              let localClient = asrClient as? LocalWhisperASRClient else {
+            return
+        }
+
+        Task {
+            await localClient.abortStream(sessionId: sessionId)
+        }
+    }
+
     private static func currentASRProvider() -> ASRProvider {
         if let raw = UserDefaults.standard.string(forKey: Constants.asrProviderKey),
            let provider = ASRProvider(rawValue: raw) {
@@ -432,20 +429,7 @@ final class DictationOrchestrator {
         return Constants.defaultASRProvider
     }
 
-    private static func currentLocalBaseURL() -> String {
-        UserDefaults.standard.string(forKey: Constants.localServerEndpointKey)
-            ?? Constants.defaultLocalServerEndpoint
-    }
-
-    private static func currentLocalASRModelPreset() -> LocalASRModelPreset {
-        if let raw = UserDefaults.standard.string(forKey: Constants.localASRModelPresetKey),
-           let preset = LocalASRModelPreset(rawValue: raw) {
-            return preset
-        }
-        return Constants.defaultLocalASRModelPreset
-    }
-
-    private static func makeConfiguredASRClient() -> ASRClient {
+    private static func makeConfiguredASRClient() -> ASRClientProtocol {
         let provider = currentASRProvider()
 
         switch provider {
@@ -463,9 +447,7 @@ final class DictationOrchestrator {
                 ?? Constants.defaultCustomServerPassword
             return ASRClient(baseURL: baseURL, apiKey: password, requestTimeout: 15)
         case .local:
-            let baseURL = UserDefaults.standard.string(forKey: Constants.localServerEndpointKey)
-                ?? Constants.defaultLocalServerEndpoint
-            return ASRClient(baseURL: baseURL, apiKey: "", requestTimeout: 300)
+            return LocalWhisperASRClient()
         }
     }
 

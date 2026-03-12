@@ -16,13 +16,6 @@ struct SettingsView: View {
     }()
     @State private var serverEndpoint: String = UserDefaults.standard.string(forKey: Constants.serverEndpointKey) ?? Constants.defaultServerEndpoint
     @State private var serverPassword: String = UserDefaults.standard.string(forKey: Constants.customServerPasswordKey) ?? Constants.defaultCustomServerPassword
-    @State private var localServerEndpoint: String = UserDefaults.standard.string(forKey: Constants.localServerEndpointKey) ?? Constants.defaultLocalServerEndpoint
-    @State private var localASRModelPreset: LocalASRModelPreset = {
-        if let raw = UserDefaults.standard.string(forKey: Constants.localASRModelPresetKey) {
-            return LocalASRModelPreset(rawValue: raw) ?? Constants.defaultLocalASRModelPreset
-        }
-        return Constants.defaultLocalASRModelPreset
-    }()
     @State private var hotkeyCode: UInt32 = {
         let val = UserDefaults.standard.integer(forKey: Constants.hotkeyCodeKey)
         return val != 0 ? UInt32(val) : Constants.defaultHotkeyCode
@@ -153,19 +146,9 @@ struct SettingsView: View {
                         .focused($focusedField, equals: .serverPassword)
                         .onChange(of: serverPassword) { saveTranscriptionSettings() }
                 } else if asrProvider == .local {
-                    HStack {
-                        Text("Model")
-                            .font(.system(.body, design: .rounded))
-                        Spacer()
-                        Picker("", selection: $localASRModelPreset) {
-                            ForEach(LocalASRModelPreset.allCases, id: \.rawValue) { preset in
-                                Text(preset.displayName).tag(preset)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .onChange(of: localASRModelPreset) { saveTranscriptionSettings() }
-                    }
+                    Text("Local transcription uses an on-device Whisper model downloaded on first use.")
+                        .font(.system(.caption, design: .rounded))
+                        .foregroundStyle(.secondary)
                 } else {
                     Text("Hosted runs on Hanzo's managed ASR service. Credentials are managed by the app.")
                         .font(.system(.caption, design: .rounded))
@@ -231,8 +214,6 @@ struct SettingsView: View {
         UserDefaults.standard.set(asrProvider.rawValue, forKey: Constants.asrProviderKey)
         UserDefaults.standard.set(serverEndpoint, forKey: Constants.serverEndpointKey)
         UserDefaults.standard.set(serverPassword, forKey: Constants.customServerPasswordKey)
-        UserDefaults.standard.set(localServerEndpoint, forKey: Constants.localServerEndpointKey)
-        UserDefaults.standard.set(localASRModelPreset.rawValue, forKey: Constants.localASRModelPresetKey)
         appState.asrProvider = asrProvider
         onSave?()
     }
