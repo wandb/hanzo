@@ -57,18 +57,6 @@ struct OnboardingContainerView: View {
         .hudBackground()
         .onAppear {
             UserDefaults.standard.set(ASRProvider.hosted.rawValue, forKey: Constants.asrProviderKey)
-            if UserDefaults.standard.string(forKey: Constants.localServerEndpointKey) == nil {
-                UserDefaults.standard.set(
-                    Constants.defaultLocalServerEndpoint,
-                    forKey: Constants.localServerEndpointKey
-                )
-            }
-            if UserDefaults.standard.string(forKey: Constants.localASRModelPresetKey) == nil {
-                UserDefaults.standard.set(
-                    Constants.defaultLocalASRModelPreset.rawValue,
-                    forKey: Constants.localASRModelPresetKey
-                )
-            }
         }
     }
 }
