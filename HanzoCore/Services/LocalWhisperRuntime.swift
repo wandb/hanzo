@@ -28,14 +28,17 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
             attributes: nil
         )
 
+        let existingModelFolder = findExistingModelFolder(under: modelsDirectory)
+
         let config = WhisperKitConfig(
             model: Constants.localWhisperModel,
             downloadBase: modelsDirectory,
             modelRepo: Constants.localWhisperModelRepository,
+            modelFolder: existingModelFolder,
             verbose: false,
             prewarm: true,
             load: true,
-            download: true
+            download: existingModelFolder == nil
         )
         whisperKit = try await WhisperKit(config)
     }
@@ -181,6 +184,28 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
         sessions = sessions.filter { _, session in
             session.lastSeenAt >= cutoff
         }
+    }
+
+    /// Searches `downloadBase` for a fully-downloaded model folder (contains AudioEncoder.mlmodelc).
+    /// Returns the path string if found, nil otherwise.
+    private func findExistingModelFolder(under base: URL) -> String? {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
+            at: base,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return nil
+        }
+
+        for case let url as URL in enumerator {
+            let audioEncoder = url.appendingPathComponent("AudioEncoder.mlmodelc")
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: audioEncoder.path, isDirectory: &isDir), isDir.boolValue {
+                return url.path
+            }
+        }
+        return nil
     }
 
     private func modelsDirectoryURL() -> URL {
