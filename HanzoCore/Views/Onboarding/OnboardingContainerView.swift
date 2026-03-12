@@ -2,6 +2,7 @@ import SwiftUI
 
 struct OnboardingContainerView: View {
     @State private var currentStep = Self.initialStep()
+    var appState: AppState
     var onComplete: () -> Void
 
     private static func initialStep() -> Int {
@@ -41,7 +42,7 @@ struct OnboardingContainerView: View {
                     withAnimation { currentStep = 3 }
                 }
             case 3:
-                HotkeyConfirmationStep {
+                HotkeyConfirmationStep(appState: appState) {
                     UserDefaults.standard.set(true, forKey: Constants.onboardingCompleteKey)
                     onComplete()
                 }

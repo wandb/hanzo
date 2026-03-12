@@ -1,36 +1,84 @@
 import SwiftUI
 
 struct HotkeyConfirmationStep: View {
+    var appState: AppState
     var onDone: () -> Void
+
+    @State private var demoText = ""
+    @State private var demoCompleted = false
+    @FocusState private var isTextFieldFocused: Bool
 
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "keyboard.fill")
+            Image(systemName: demoCompleted ? "checkmark.circle.fill" : "keyboard.fill")
                 .font(.system(size: 48))
-                .foregroundStyle(.primary)
+                .foregroundStyle(demoCompleted ? .green : .primary)
+                .contentTransition(.symbolEffect(.replace))
 
-            Text("Your dictation hotkey")
+            Text(demoCompleted ? "You're all set!" : "Try it out")
                 .font(.system(.title2, design: .rounded, weight: .bold))
 
-            HStack(spacing: 4) {
-                KeyCapView(label: "Ctrl")
-                Text("+")
-                    .font(.system(.body, design: .rounded))
-                    .foregroundStyle(.secondary)
-                KeyCapView(label: "Space")
-            }
-            .padding(.vertical, 8)
-
-            Text("Press this combination anywhere to start dictation.\nPress again to stop and insert the transcript.")
+            Text(instructionText)
                 .font(.system(.body, design: .rounded))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 340)
 
-            Button("Done") {
-                onDone()
+            // Demo text field — mimics a real input the user would dictate into
+            TextField("Transcription appears here…", text: $demoText)
+                .textFieldStyle(.plain)
+                .font(.system(.body, design: .rounded))
+                .padding(12)
+                .background(.primary.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .focused($isTextFieldFocused)
+                .frame(maxWidth: 360)
+
+            if !demoCompleted {
+                HStack(spacing: 4) {
+                    KeyCapView(label: "Ctrl")
+                    Text("+")
+                        .font(.system(.body, design: .rounded))
+                        .foregroundStyle(.secondary)
+                    KeyCapView(label: "Space")
+                }
             }
-            .buttonStyle(HUDButtonStyle())
+
+            if demoCompleted {
+                Button("Done") {
+                    onDone()
+                }
+                .buttonStyle(HUDButtonStyle())
+            } else {
+                Button("Skip") {
+                    onDone()
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .font(.system(.body, design: .rounded))
+            }
+        }
+        .onAppear {
+            isTextFieldFocused = true
+        }
+        .onChange(of: demoText) { _, newText in
+            if !newText.isEmpty && !demoCompleted {
+                withAnimation { demoCompleted = true }
+            }
+        }
+    }
+
+    private var instructionText: String {
+        switch appState.dictationState {
+        case .listening:
+            return "Listening… speak and it'll stop automatically when you pause."
+        case .forging:
+            return "Processing your speech…"
+        default:
+            if demoCompleted {
+                return "That's how it works — dictate into any text field, anywhere."
+            }
+            return "Click the field, then press your hotkey to start dictating."
         }
     }
 }

@@ -284,6 +284,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showOnboarding() {
         let onboardingView = OnboardingContainerView(
+            appState: appState,
             onComplete: { [weak self] in
                 self?.onboardingWindow?.close()
                 self?.onboardingWindow = nil
