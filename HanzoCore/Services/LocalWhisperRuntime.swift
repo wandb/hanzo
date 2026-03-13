@@ -186,26 +186,52 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
         }
     }
 
-    /// Searches `downloadBase` for a fully-downloaded model folder (contains AudioEncoder.mlmodelc).
-    /// Returns the path string if found, nil otherwise.
+    /// Searches directories under `downloadBase` for a fully-downloaded model folder
+    /// (contains AudioEncoder.mlmodelc). Traversal is directory-only and depth-limited
+    /// to avoid scanning every file in large model trees.
     private func findExistingModelFolder(under base: URL) -> String? {
         let fm = FileManager.default
-        guard let enumerator = fm.enumerator(
-            at: base,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        ) else {
-            return nil
-        }
+        let maxDepth = 6
+        var queue: [(url: URL, depth: Int)] = [(base, 0)]
 
-        for case let url as URL in enumerator {
+        while !queue.isEmpty {
+            let (url, depth) = queue.removeFirst()
             let audioEncoder = url.appendingPathComponent("AudioEncoder.mlmodelc")
             var isDir: ObjCBool = false
             if fm.fileExists(atPath: audioEncoder.path, isDirectory: &isDir), isDir.boolValue {
                 return url.path
             }
+
+            guard depth < maxDepth else {
+                continue
+            }
+
+            let children = directoryChildren(of: url, fileManager: fm)
+            for child in children {
+                queue.append((child, depth + 1))
+            }
         }
         return nil
+    }
+
+    private func directoryChildren(of base: URL, fileManager: FileManager) -> [URL] {
+        guard let children = try? fileManager.contentsOfDirectory(
+            at: base,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else {
+            return []
+        }
+
+        var directories: [URL] = []
+        for child in children {
+            guard let values = try? child.resourceValues(forKeys: [.isDirectoryKey]),
+                  values.isDirectory == true else {
+                continue
+            }
+            directories.append(child)
+        }
+        return directories
     }
 
     private func modelsDirectoryURL() -> URL {

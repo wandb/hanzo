@@ -198,6 +198,7 @@ enum AppBehaviorSettings {
         let globalSilenceTimeout = globalSilenceTimeout(defaults: defaults)
 
         guard let bundleIdentifier,
+              isSupported(bundleIdentifier: bundleIdentifier, defaults: defaults),
               let appOverride = override(for: bundleIdentifier, defaults: defaults) else {
             return ResolvedAppBehavior(
                 autoSubmitMode: globalAutoSubmitMode,

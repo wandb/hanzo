@@ -48,6 +48,28 @@ struct AppBehaviorSettingsTests {
         }
     }
 
+    @Test("resolvedBehavior ignores overrides for unsupported bundle identifiers")
+    func resolvedBehaviorIgnoresUnsupportedOverrides() {
+        withDefaults { defaults in
+            let unsupportedBundleIdentifier = "com.example.UnsupportedApp"
+            AppBehaviorSettings.setGlobalAutoSubmitMode(.off, defaults: defaults)
+            AppBehaviorSettings.setGlobalSilenceTimeout(5, defaults: defaults)
+            AppBehaviorSettings.saveOverride(
+                AppBehaviorOverride(autoSubmitMode: .enter, silenceTimeout: 1),
+                for: unsupportedBundleIdentifier,
+                defaults: defaults
+            )
+
+            let resolved = AppBehaviorSettings.resolvedBehavior(
+                for: unsupportedBundleIdentifier,
+                defaults: defaults
+            )
+            #expect(resolved.autoSubmitMode == .off)
+            #expect(resolved.silenceTimeout == 5)
+            #expect(resolved.isUsingAppOverride == false)
+        }
+    }
+
     @Test("saveOverride removes entry when override is empty")
     func saveOverrideRemovesEntryWhenEmpty() {
         withDefaults { defaults in

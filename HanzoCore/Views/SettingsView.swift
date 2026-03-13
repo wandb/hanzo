@@ -38,6 +38,7 @@ struct SettingsView: View {
     @State private var supportedApps: [SupportedAppBehavior] = AppBehaviorSettings.supportedApps
     @State private var isDetectingApp = false
     @State private var detectCountdown: Int?
+    @State private var detectCurrentAppTask: Task<Void, Never>?
 
     @State private var isRecordingHotkey = false
     @FocusState private var focusedField: Field?
@@ -51,7 +52,10 @@ struct SettingsView: View {
                 // Close button
                 HStack {
                     Spacer()
-                    Button(action: { onClose?() }) {
+                    Button(action: {
+                        cancelDetectCurrentAppTask()
+                        onClose?()
+                    }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 16))
                             .foregroundStyle(.primary.opacity(0.3))
@@ -324,6 +328,9 @@ struct SettingsView: View {
             isRecordingHotkey = false
             saveHotkey()
         }) .frame(width: 0, height: 0) : nil)
+        .onDisappear {
+            cancelDetectCurrentAppTask()
+        }
     }
 
     private func autoSubmitBinding(for app: SupportedAppBehavior) -> Binding<AutoSubmitMode?> {
@@ -380,22 +387,54 @@ struct SettingsView: View {
     private func detectCurrentApp() {
         guard !isDetectingApp else { return }
         isDetectingApp = true
+        detectCurrentAppTask?.cancel()
 
-
-        Task {
+        detectCurrentAppTask = Task {
             for remaining in stride(from: 3, through: 1, by: -1) {
+                if Task.isCancelled {
+                    await MainActor.run {
+                        clearDetectCurrentAppState()
+                    }
+                    return
+                }
+
                 await MainActor.run {
                     detectCountdown = remaining
                 }
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+
+                do {
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                } catch {
+                    await MainActor.run {
+                        clearDetectCurrentAppState()
+                    }
+                    return
+                }
             }
 
             await MainActor.run {
+                guard !Task.isCancelled else {
+                    clearDetectCurrentAppState()
+                    return
+                }
+
                 detectCountdown = nil
                 isDetectingApp = false
+                detectCurrentAppTask = nil
                 captureFrontmostAppForCustomBehavior()
             }
         }
+    }
+
+    private func clearDetectCurrentAppState() {
+        detectCountdown = nil
+        isDetectingApp = false
+        detectCurrentAppTask = nil
+    }
+
+    private func cancelDetectCurrentAppTask() {
+        detectCurrentAppTask?.cancel()
+        clearDetectCurrentAppState()
     }
 
     private func captureFrontmostAppForCustomBehavior() {
