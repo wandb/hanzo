@@ -197,14 +197,6 @@ struct SettingsView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                             .focused($focusedField, equals: .serverPassword)
                             .onChange(of: serverPassword) { saveTranscriptionSettings() }
-                    } else if asrProvider == .local {
-                        Text("Local transcription uses an on-device Whisper model downloaded on first use.")
-                            .font(.system(.caption, design: .rounded))
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Text("Hosted runs on Hanzo's managed ASR service. Credentials are managed by the app.")
-                            .font(.system(.caption, design: .rounded))
-                            .foregroundStyle(.secondary)
                     }
 
                     HStack {
