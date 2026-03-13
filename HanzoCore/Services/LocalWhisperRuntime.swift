@@ -28,14 +28,17 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
             attributes: nil
         )
 
+        let existingModelFolder = findExistingModelFolder(under: modelsDirectory)
+
         let config = WhisperKitConfig(
             model: Constants.localWhisperModel,
             downloadBase: modelsDirectory,
             modelRepo: Constants.localWhisperModelRepository,
+            modelFolder: existingModelFolder,
             verbose: false,
             prewarm: true,
             load: true,
-            download: true
+            download: existingModelFolder == nil
         )
         whisperKit = try await WhisperKit(config)
     }
@@ -181,6 +184,54 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
         sessions = sessions.filter { _, session in
             session.lastSeenAt >= cutoff
         }
+    }
+
+    /// Searches directories under `downloadBase` for a fully-downloaded model folder
+    /// (contains AudioEncoder.mlmodelc). Traversal is directory-only and depth-limited
+    /// to avoid scanning every file in large model trees.
+    private func findExistingModelFolder(under base: URL) -> String? {
+        let fm = FileManager.default
+        let maxDepth = 6
+        var queue: [(url: URL, depth: Int)] = [(base, 0)]
+
+        while !queue.isEmpty {
+            let (url, depth) = queue.removeFirst()
+            let audioEncoder = url.appendingPathComponent("AudioEncoder.mlmodelc")
+            var isDir: ObjCBool = false
+            if fm.fileExists(atPath: audioEncoder.path, isDirectory: &isDir), isDir.boolValue {
+                return url.path
+            }
+
+            guard depth < maxDepth else {
+                continue
+            }
+
+            let children = directoryChildren(of: url, fileManager: fm)
+            for child in children {
+                queue.append((child, depth + 1))
+            }
+        }
+        return nil
+    }
+
+    private func directoryChildren(of base: URL, fileManager: FileManager) -> [URL] {
+        guard let children = try? fileManager.contentsOfDirectory(
+            at: base,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else {
+            return []
+        }
+
+        var directories: [URL] = []
+        for child in children {
+            guard let values = try? child.resourceValues(forKeys: [.isDirectoryKey]),
+                  values.isDirectory == true else {
+                continue
+            }
+            directories.append(child)
+        }
+        return directories
     }
 
     private func modelsDirectoryURL() -> URL {

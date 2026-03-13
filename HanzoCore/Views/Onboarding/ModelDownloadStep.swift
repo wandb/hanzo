@@ -3,7 +3,6 @@ import SwiftUI
 struct ModelDownloadStep: View {
     var onDownloaded: () -> Void
 
-    @State private var statusText = "Preparing on-device Whisper model..."
     @State private var errorText: String?
     @State private var prepareTask: Task<Void, Never>?
 
@@ -22,13 +21,13 @@ struct ModelDownloadStep: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 360)
 
-            VStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.large)
+            ProgressView()
+                .controlSize(.large)
 
-                Text(errorText ?? statusText)
+            if let errorText {
+                Text(errorText)
                     .font(.system(.caption, design: .rounded))
-                    .foregroundColor(errorText == nil ? .secondary : .red)
+                    .foregroundColor(.red)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 360)
             }
@@ -52,14 +51,12 @@ struct ModelDownloadStep: View {
     private func startFlow() {
         prepareTask?.cancel()
         errorText = nil
-        statusText = "Preparing on-device Whisper model..."
 
         prepareTask = Task {
             do {
                 let manager = LocalASRRuntimeManager()
                 try await manager.prepareModel()
                 await MainActor.run {
-                    statusText = "Local Whisper model is ready"
                     onDownloaded()
                 }
             } catch {

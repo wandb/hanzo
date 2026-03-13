@@ -50,6 +50,7 @@ Hanzo runs in the menu bar — there is no dock icon.
 - **Hotkey** — Configurable in the app settings (default: Ctrl + Space)
 - **ASR provider** — `Hosted` (default), `Local (Whisper)`, or `Custom Server`
 - **Custom server endpoint + password** — Configurable in Settings when `Custom Server` is selected
+- **App-specific behavior** — Configure per-app auto-submit and silence timeout overrides (global values remain fallback defaults)
 - **Local model** — Uses `base.en` from `argmaxinc/whisperkit-coreml`, downloaded on first use
 
 ## Example Servers

@@ -15,17 +15,11 @@ final class AppState {
     var partialTranscript: String = ""
     var errorMessage: String?
     var audioLevels: [Float] = []
+    var activeTargetBundleIdentifier: String?
     var isOnboardingComplete: Bool = UserDefaults.standard.bool(forKey: Constants.onboardingCompleteKey)
     var isPopoverPresented: Bool = false
-    var silenceTimeout: Double = UserDefaults.standard.object(forKey: Constants.silenceTimeoutKey) != nil
-        ? UserDefaults.standard.double(forKey: Constants.silenceTimeoutKey)
-        : Constants.defaultSilenceTimeout
-    var autoSubmitMode: AutoSubmitMode = {
-        if let raw = UserDefaults.standard.string(forKey: Constants.autoSubmitKey) {
-            return AutoSubmitMode(rawValue: raw) ?? Constants.defaultAutoSubmitMode
-        }
-        return Constants.defaultAutoSubmitMode
-    }()
+    var silenceTimeout: Double = AppBehaviorSettings.globalSilenceTimeout()
+    var autoSubmitMode: AutoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode()
     var appearanceMode: AppearanceMode = {
         if let raw = UserDefaults.standard.string(forKey: Constants.appearanceModeKey) {
             return AppearanceMode(rawValue: raw) ?? Constants.defaultAppearanceMode
