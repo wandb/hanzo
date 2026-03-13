@@ -11,6 +11,7 @@ final class DictationOrchestrator {
     private let localRuntimeManager: LocalASRRuntimeManagerProtocol
     private let logger: LoggingServiceProtocol
     private let frontmostApplicationProvider: () -> NSRunningApplication?
+    private let verbalPauseFilterEnabledProvider: () -> Bool
 
     private var asrClient: ASRClientProtocol
     private let isASRClientInjected: Bool
@@ -24,6 +25,7 @@ final class DictationOrchestrator {
     private var activeSessionTargetBundleIdentifier: String?
     private var pendingRestartAfterForging = false
     private var configuredASRProvider: ASRProvider
+    private var verbalPauseFilterEnabled: Bool
 
     // Auto-submit
     var autoSubmitMode: AutoSubmitMode
@@ -41,6 +43,9 @@ final class DictationOrchestrator {
         permissionService: PermissionServiceProtocol = PermissionService.shared,
         localRuntimeManager: LocalASRRuntimeManagerProtocol = LocalASRRuntimeManager(),
         logger: LoggingServiceProtocol = LoggingService.shared,
+        verbalPauseFilterEnabledProvider: @escaping () -> Bool = {
+            DictationOrchestrator.isVerbalPauseFilterEnabled()
+        },
         frontmostApplicationProvider: @escaping () -> NSRunningApplication? = {
             NSWorkspace.shared.frontmostApplication
         }
@@ -51,6 +56,7 @@ final class DictationOrchestrator {
         self.permissionService = permissionService
         self.localRuntimeManager = localRuntimeManager
         self.logger = logger
+        self.verbalPauseFilterEnabledProvider = verbalPauseFilterEnabledProvider
         self.frontmostApplicationProvider = frontmostApplicationProvider
 
         self.autoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode()
@@ -65,6 +71,7 @@ final class DictationOrchestrator {
         }
 
         self.configuredASRProvider = DictationOrchestrator.currentASRProvider()
+        self.verbalPauseFilterEnabled = verbalPauseFilterEnabledProvider()
 
         appState.autoSubmitMode = self.autoSubmitMode
         appState.silenceTimeout = self.silenceTimeout
@@ -95,6 +102,7 @@ final class DictationOrchestrator {
 
         configuredASRProvider = DictationOrchestrator.currentASRProvider()
         appState.asrProvider = configuredASRProvider
+        verbalPauseFilterEnabled = verbalPauseFilterEnabledProvider()
 
         if !isASRClientInjected {
             asrClient = DictationOrchestrator.makeConfiguredASRClient()
@@ -249,7 +257,10 @@ final class DictationOrchestrator {
                     throw ASRError.sessionNotFound
                 }
                 let finalResponse = try await asrClient.finishStream(sessionId: sid)
-                let finalText = finalResponse.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let rawFinalText = finalResponse.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let finalText = verbalPauseFilterEnabled
+                    ? VerbalPausePostProcessor.process(rawFinalText)
+                    : rawFinalText
                 let targetApp = previousApp
                 sessionId = nil
                 previousApp = nil
@@ -462,6 +473,14 @@ final class DictationOrchestrator {
         case .local:
             return LocalWhisperASRClient()
         }
+    }
+
+    private static func isVerbalPauseFilterEnabled() -> Bool {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: Constants.verbalPauseFilterEnabledKey) != nil else {
+            return Constants.defaultVerbalPauseFilterEnabled
+        }
+        return defaults.bool(forKey: Constants.verbalPauseFilterEnabledKey)
     }
 
     private func applyEffectiveBehavior(for targetBundleIdentifier: String?) {

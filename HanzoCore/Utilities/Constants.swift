@@ -65,6 +65,10 @@ enum Constants {
     static let autoSubmitKey = "autoSubmitMode"
     static let defaultAutoSubmitMode: AutoSubmitMode = .off
 
+    // Final transcript post-processing
+    static let verbalPauseFilterEnabledKey = "verbalPauseFilterEnabled"
+    static let defaultVerbalPauseFilterEnabled = false
+
     // Launch at login
     static let launchAtLoginDisabledByUserKey = "launchAtLoginDisabledByUser"
 
