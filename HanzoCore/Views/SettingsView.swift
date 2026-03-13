@@ -34,6 +34,13 @@ struct SettingsView: View {
     }()
     @State private var globalAutoSubmitMode: AutoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode()
     @State private var globalSilenceTimeout: Double = AppBehaviorSettings.globalSilenceTimeout()
+    @State private var verbalPauseFilterEnabled: Bool = {
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: Constants.verbalPauseFilterEnabledKey) != nil {
+            return defaults.bool(forKey: Constants.verbalPauseFilterEnabledKey)
+        }
+        return Constants.defaultVerbalPauseFilterEnabled
+    }()
     @State private var appBehaviorOverrides: [String: AppBehaviorOverride] = AppBehaviorSettings.loadOverrides()
     @State private var supportedApps: [SupportedAppBehavior] = AppBehaviorSettings.supportedApps
     @State private var isDetectingApp = false
@@ -198,6 +205,23 @@ struct SettingsView: View {
                         Text("Hosted runs on Hanzo's managed ASR service. Credentials are managed by the app.")
                             .font(.system(.caption, design: .rounded))
                             .foregroundStyle(.secondary)
+                    }
+
+                    HStack {
+                        Text("Filter verbal pauses")
+                            .font(.system(.body, design: .rounded))
+                        Spacer()
+                        Toggle("", isOn: $verbalPauseFilterEnabled)
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .labelsHidden()
+                    }
+                    .onChange(of: verbalPauseFilterEnabled) {
+                        UserDefaults.standard.set(
+                            verbalPauseFilterEnabled,
+                            forKey: Constants.verbalPauseFilterEnabledKey
+                        )
+                        onSave?()
                     }
                 }
 

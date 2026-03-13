@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import AppKit
 @testable import HanzoCore
 
 @Suite("DictationOrchestrator")
@@ -26,7 +27,9 @@ struct DictationOrchestratorTests {
         asrFinishResult: Result<ASRFinishResponse, Error> = .success(
             ASRFinishResponse(text: "final transcript", language: "en")
         ),
-        audioThrowOnStart: Error? = nil
+        audioThrowOnStart: Error? = nil,
+        verbalPauseFilterEnabledProvider: @escaping () -> Bool = { false },
+        frontmostApplicationProvider: @escaping () -> NSRunningApplication? = { nil }
     ) -> SUT {
         let appState = AppState()
         let mockASR = MockASRClient()
@@ -49,7 +52,8 @@ struct DictationOrchestratorTests {
             textInsertion: mockText,
             permissionService: mockPerms,
             logger: mockLogger,
-            frontmostApplicationProvider: { nil }
+            verbalPauseFilterEnabledProvider: verbalPauseFilterEnabledProvider,
+            frontmostApplicationProvider: frontmostApplicationProvider
         )
         return SUT(
             orchestrator: orchestrator,
@@ -402,6 +406,48 @@ struct DictationOrchestratorTests {
             sut.appState.dictationState == .error
         }
         #expect(isError)
+    }
+
+    @Test("Final transcript is post-processed before insertion when filter is enabled")
+    @MainActor func finalTranscriptPostProcessedBeforeInsertion() async throws {
+        let sut = makeSUT(
+            asrFinishResult: .success(
+                ASRFinishResponse(text: "Um I feel like this is, like, great uh.", language: "en")
+            ),
+            verbalPauseFilterEnabledProvider: { true },
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let inserted = await waitUntil(timeoutNanoseconds: 2_000_000_000) {
+            sut.mockText.insertedTexts.count == 1
+        }
+        #expect(inserted)
+        #expect(sut.mockText.insertedTexts.first == "I feel like this is great.")
+    }
+
+    @Test("Final transcript is unchanged when verbal pause filter is disabled")
+    @MainActor func finalTranscriptUnchangedWhenFilterDisabled() async throws {
+        let sut = makeSUT(
+            asrFinishResult: .success(
+                ASRFinishResponse(text: "Um this is still untouched.", language: "en")
+            ),
+            verbalPauseFilterEnabledProvider: { false },
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let inserted = await waitUntil(timeoutNanoseconds: 2_000_000_000) {
+            sut.mockText.insertedTexts.count == 1
+        }
+        #expect(inserted)
+        #expect(sut.mockText.insertedTexts.first == "Um this is still untouched.")
     }
 
     // MARK: - Audio Levels
