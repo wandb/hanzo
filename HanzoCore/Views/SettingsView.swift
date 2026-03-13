@@ -215,6 +215,7 @@ struct SettingsView: View {
                             .toggleStyle(.switch)
                             .controlSize(.small)
                             .labelsHidden()
+                            .accessibilityLabel("Filter verbal pauses")
                     }
                     .onChange(of: verbalPauseFilterEnabled) {
                         UserDefaults.standard.set(
