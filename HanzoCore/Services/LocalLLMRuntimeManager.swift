@@ -1,29 +1,8 @@
 import Foundation
 
-private final class ModelDownloadProgressDelegate: NSObject, URLSessionDownloadDelegate {
-    private let onProgress: (Int64, Int64) -> Void
-
-    init(onProgress: @escaping (Int64, Int64) -> Void) {
-        self.onProgress = onProgress
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        downloadTask: URLSessionDownloadTask,
-        didWriteData bytesWritten: Int64,
-        totalBytesWritten: Int64,
-        totalBytesExpectedToWrite: Int64
-    ) {
-        onProgress(totalBytesWritten, totalBytesExpectedToWrite)
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        downloadTask: URLSessionDownloadTask,
-        didFinishDownloadingTo location: URL
-    ) {
-        // No-op: the async URLSession download API returns this location directly.
-    }
+private final class DownloadTaskState: @unchecked Sendable {
+    var task: URLSessionDownloadTask?
+    var progressTask: Task<Void, Never>?
 }
 
 enum LocalLLMRuntimeError: Error, LocalizedError {
@@ -123,6 +102,10 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
 
     func prepareModel(progressHandler: ((Double) -> Void)?) async throws {
         try await ensureRunning(progressHandler: progressHandler)
+    }
+
+    func downloadModelIfNeeded(progressHandler: ((Double) -> Void)? = nil) async throws {
+        _ = try await ensureModelIsAvailable(progressHandler: progressHandler)
     }
 
     func postProcess(text: String, prompt: String) async throws -> String {
@@ -313,20 +296,10 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
         do {
             progressHandler?(0.0)
             let fallbackExpectedBytes = await resolveExpectedDownloadBytes(for: remoteURL)
-            let delegate = ModelDownloadProgressDelegate { totalBytesWritten, totalBytesExpectedToWrite in
-                let expectedBytes = totalBytesExpectedToWrite > 0
-                    ? totalBytesExpectedToWrite
-                    : fallbackExpectedBytes
-                guard expectedBytes > 0 else {
-                    return
-                }
-
-                let fraction = Self.clamp(Double(totalBytesWritten) / Double(expectedBytes))
-                progressHandler?(fraction)
-            }
-            let (tempURL, response) = try await modelDownloadSession.download(
+            let (tempURL, response) = try await downloadModelFile(
                 from: remoteURL,
-                delegate: delegate
+                fallbackExpectedBytes: fallbackExpectedBytes,
+                progressHandler: progressHandler
             )
             if let http = response as? HTTPURLResponse,
                !(200..<300).contains(http.statusCode) {
@@ -407,6 +380,62 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
         }
 
         return nil
+    }
+
+    private func downloadModelFile(
+        from remoteURL: URL,
+        fallbackExpectedBytes: Int64,
+        progressHandler: ((Double) -> Void)?
+    ) async throws -> (URL, URLResponse) {
+        let state = DownloadTaskState()
+
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let task = modelDownloadSession.downloadTask(with: remoteURL) { tempURL, response, error in
+                    state.progressTask?.cancel()
+
+                    if let error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+
+                    guard let tempURL, let response else {
+                        continuation.resume(
+                            throwing: LocalLLMRuntimeError.modelDownloadFailed(
+                                detail: "Download did not return a model file"
+                            )
+                        )
+                        return
+                    }
+
+                    continuation.resume(returning: (tempURL, response))
+                }
+
+                state.task = task
+                state.progressTask = Task { [weak task] in
+                    while !Task.isCancelled {
+                        guard let task else { return }
+
+                        let receivedBytes = max(task.countOfBytesReceived, 0)
+                        let expectedBytes = task.countOfBytesExpectedToReceive > 0
+                            ? task.countOfBytesExpectedToReceive
+                            : fallbackExpectedBytes
+
+                        if expectedBytes > 0 {
+                            let fraction = Self.clamp(Double(receivedBytes) / Double(expectedBytes))
+                            progressHandler?(fraction)
+                        }
+
+                        try? await Task.sleep(nanoseconds: 150_000_000)
+                    }
+                }
+
+                task.resume()
+            }
+        } onCancel: {
+            state.progressTask?.cancel()
+            state.task?.cancel()
+        }
     }
 
     private static func int64HeaderValue(_ header: String, in response: HTTPURLResponse) -> Int64? {

@@ -69,33 +69,30 @@ struct ModelDownloadStep: View {
 
         prepareTask = Task {
             do {
-                let shouldPrepareLLM = shouldPrepareLocalLLMModel()
                 let asrManager = LocalASRRuntimeManager()
                 try await asrManager.prepareModel(progressHandler: { progress in
                     Task { @MainActor in
                         whisperModelProgress = Self.clamp(progress)
-                        overallProgress = combinedProgress(shouldPrepareLLM: shouldPrepareLLM)
+                        overallProgress = combinedProgress()
                         statusText = whisperModelProgress < 1.0
                             ? "Downloading speech model..."
                             : "Optimizing speech model..."
                     }
                 })
 
-                if shouldPrepareLLM {
-                    await MainActor.run {
-                        statusText = "Preparing rewrite model..."
-                    }
-                    let llmManager = LocalLLMRuntimeManager()
-                    try await llmManager.prepareModel(progressHandler: { progress in
-                        Task { @MainActor in
-                            llmModelProgress = Self.clamp(progress)
-                            overallProgress = combinedProgress(shouldPrepareLLM: shouldPrepareLLM)
-                            statusText = llmModelProgress < 1.0
-                                ? "Downloading rewrite model..."
-                                : "Starting rewrite model..."
-                        }
-                    })
+                await MainActor.run {
+                    statusText = "Preparing rewrite model..."
                 }
+                let llmManager = LocalLLMRuntimeManager()
+                try await llmManager.prepareModel(progressHandler: { progress in
+                    Task { @MainActor in
+                        llmModelProgress = Self.clamp(progress)
+                        overallProgress = combinedProgress()
+                        statusText = llmModelProgress < 1.0
+                            ? "Downloading rewrite model..."
+                            : "Starting rewrite model..."
+                    }
+                })
 
                 await MainActor.run {
                     overallProgress = 1.0
@@ -114,13 +111,8 @@ struct ModelDownloadStep: View {
         }
     }
 
-    private func combinedProgress(shouldPrepareLLM: Bool) -> Double {
+    private func combinedProgress() -> Double {
         let whisperBytes = whisperModelProgress * Double(Constants.localWhisperModelExpectedDownloadBytes)
-
-        guard shouldPrepareLLM else {
-            return Self.clamp(whisperModelProgress)
-        }
-
         let llmBytes = llmModelProgress * Double(Constants.localLLMModelExpectedDownloadBytes)
         let totalBytes = Double(
             Constants.localWhisperModelExpectedDownloadBytes + Constants.localLLMModelExpectedDownloadBytes
@@ -138,18 +130,5 @@ struct ModelDownloadStep: View {
 
     private static func clamp(_ value: Double) -> Double {
         min(max(value, 0.0), 1.0)
-    }
-
-    private func shouldPrepareLocalLLMModel(defaults: UserDefaults = .standard) -> Bool {
-        if let raw = defaults.string(forKey: Constants.transcriptPostProcessingModeKey),
-           let mode = TranscriptPostProcessingMode(rawValue: raw) {
-            return mode == .llm
-        }
-
-        if defaults.object(forKey: Constants.verbalPauseFilterEnabledKey) != nil {
-            return false
-        }
-
-        return Constants.defaultTranscriptPostProcessingMode == .llm
     }
 }
