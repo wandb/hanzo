@@ -39,10 +39,24 @@ enum Constants {
     static let localModelsFolderName = "models"
     static let localWhisperModel = "base.en"
     static let localWhisperModelRepository = "argmaxinc/whisperkit-coreml"
+    // Remote model payload sizes (bytes) used to weight onboarding download progress.
+    static let localWhisperModelExpectedDownloadBytes: Int64 = 146_707_731
     static let localWhisperPartialMinSeconds: Double = 2.0
     static let localWhisperPartialMinIntervalSeconds: Double = 0.8
     static let localWhisperPartialWindowSeconds: Double = 30.0
     static let localWhisperSessionTTLSeconds: Double = 180.0
+    static let localLLMModelsSubfolderName = "llm"
+    static let localLLMModelRepository = "Qwen/Qwen3-4B-GGUF"
+    static let localLLMModelFileName = "Qwen3-4B-Q4_K_M.gguf"
+    static let localLLMModelExpectedDownloadBytes: Int64 = 2_497_280_256
+    static let localLLMModelContextSize = 8192
+    static let localLLMServerPort = 39281
+    static let localLLMServerHost = "127.0.0.1"
+    static let localLLMServerExecutableName = "llama-server"
+    static let localLLMServerExecutableOverrideKey = "localLLMServerExecutablePath"
+    static let localLLMServerGPULayers = 99
+    static let localLLMRequestTimeoutSeconds: TimeInterval = 20
+    static let localLLMPostProcessingTimeoutSeconds: Double = 4.0
     static let defaultCustomServerPassword = ""
     static let serverEndpointKey = "serverEndpoint"
     static let customServerPasswordKey = "customServerPassword"
@@ -66,6 +80,11 @@ enum Constants {
     static let defaultAutoSubmitMode: AutoSubmitMode = .off
 
     // Final transcript post-processing
+    static let transcriptPostProcessingModeKey = "transcriptPostProcessingMode"
+    static let defaultTranscriptPostProcessingMode: TranscriptPostProcessingMode = .llm
+    static let llmPostProcessingPromptKey = "llmPostProcessingPrompt"
+    static let defaultLLMPostProcessingPrompt = ""
+    // Legacy migration key (bool toggle before enum modes existed)
     static let verbalPauseFilterEnabledKey = "verbalPauseFilterEnabled"
     static let defaultVerbalPauseFilterEnabled = false
 

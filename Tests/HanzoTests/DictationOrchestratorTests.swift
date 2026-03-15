@@ -16,6 +16,7 @@ struct DictationOrchestratorTests {
         let mockText: MockTextInsertionService
         let mockPerms: MockPermissionService
         let mockLogger: MockLogger
+        let mockLLM: MockLocalLLMRuntimeManager
     }
 
     func makeSUT(
@@ -28,7 +29,9 @@ struct DictationOrchestratorTests {
             ASRFinishResponse(text: "final transcript", language: "en")
         ),
         audioThrowOnStart: Error? = nil,
-        verbalPauseFilterEnabledProvider: @escaping () -> Bool = { false },
+        localLLMRuntimeManager: MockLocalLLMRuntimeManager = MockLocalLLMRuntimeManager(),
+        transcriptPostProcessingModeProvider: @escaping () -> TranscriptPostProcessingMode = { .off },
+        llmPostProcessingPromptProvider: @escaping () -> String = { "" },
         frontmostApplicationProvider: @escaping () -> NSRunningApplication? = { nil }
     ) -> SUT {
         let appState = AppState()
@@ -51,8 +54,10 @@ struct DictationOrchestratorTests {
             audioService: mockAudio,
             textInsertion: mockText,
             permissionService: mockPerms,
+            localLLMRuntimeManager: localLLMRuntimeManager,
             logger: mockLogger,
-            verbalPauseFilterEnabledProvider: verbalPauseFilterEnabledProvider,
+            transcriptPostProcessingModeProvider: transcriptPostProcessingModeProvider,
+            llmPostProcessingPromptProvider: llmPostProcessingPromptProvider,
             frontmostApplicationProvider: frontmostApplicationProvider
         )
         return SUT(
@@ -62,7 +67,8 @@ struct DictationOrchestratorTests {
             mockAudio: mockAudio,
             mockText: mockText,
             mockPerms: mockPerms,
-            mockLogger: mockLogger
+            mockLogger: mockLogger,
+            mockLLM: localLLMRuntimeManager
         )
     }
 
@@ -414,7 +420,7 @@ struct DictationOrchestratorTests {
             asrFinishResult: .success(
                 ASRFinishResponse(text: "Um I feel like this is, like, great uh.", language: "en")
             ),
-            verbalPauseFilterEnabledProvider: { true },
+            transcriptPostProcessingModeProvider: { .removeVerbalPauses },
             frontmostApplicationProvider: { NSRunningApplication.current }
         )
 
@@ -435,7 +441,7 @@ struct DictationOrchestratorTests {
             asrFinishResult: .success(
                 ASRFinishResponse(text: "Um this is still untouched.", language: "en")
             ),
-            verbalPauseFilterEnabledProvider: { false },
+            transcriptPostProcessingModeProvider: { .off },
             frontmostApplicationProvider: { NSRunningApplication.current }
         )
 
@@ -448,6 +454,88 @@ struct DictationOrchestratorTests {
         }
         #expect(inserted)
         #expect(sut.mockText.insertedTexts.first == "Um this is still untouched.")
+    }
+
+    @Test("Final transcript uses LLM post-processing output when mode is LLM")
+    @MainActor func finalTranscriptUsesLLMOutputWhenModeEnabled() async throws {
+        let mockLLM = MockLocalLLMRuntimeManager()
+        mockLLM.postProcessResult = .success("This is concise and professional.")
+
+        let sut = makeSUT(
+            asrFinishResult: .success(
+                ASRFinishResponse(text: "Um this is, like, the update uh", language: "en")
+            ),
+            localLLMRuntimeManager: mockLLM,
+            transcriptPostProcessingModeProvider: { .llm },
+            llmPostProcessingPromptProvider: { "Make this concise and professional." },
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let inserted = await waitUntil(timeoutNanoseconds: 2_000_000_000) {
+            sut.mockText.insertedTexts.count == 1
+        }
+        #expect(inserted)
+        #expect(sut.mockText.insertedTexts.first == "This is concise and professional.")
+        #expect(mockLLM.postProcessCallCount == 1)
+        #expect(mockLLM.lastPrompt == "Make this concise and professional.")
+    }
+
+    @Test("LLM mode falls back to cleaned transcript when local LLM processing fails")
+    @MainActor func llmModeFallsBackWhenLocalLLMProcessingFails() async throws {
+        let mockLLM = MockLocalLLMRuntimeManager()
+        mockLLM.postProcessResult = .failure(LocalLLMRuntimeError.serverNotReady)
+
+        let sut = makeSUT(
+            asrFinishResult: .success(
+                ASRFinishResponse(text: "Um I feel like this is, like, great uh.", language: "en")
+            ),
+            localLLMRuntimeManager: mockLLM,
+            transcriptPostProcessingModeProvider: { .llm },
+            llmPostProcessingPromptProvider: { "Make this concise and professional." },
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let inserted = await waitUntil(timeoutNanoseconds: 2_000_000_000) {
+            sut.mockText.insertedTexts.count == 1
+        }
+        #expect(inserted)
+        #expect(sut.mockText.insertedTexts.first == "I feel like this is great.")
+        #expect(mockLLM.postProcessCallCount == 1)
+    }
+
+    @Test("LLM mode falls back to cleaned transcript when local LLM processing times out")
+    @MainActor func llmModeFallsBackWhenLocalLLMProcessingTimesOut() async throws {
+        let mockLLM = MockLocalLLMRuntimeManager()
+        mockLLM.postProcessDelayNanoseconds = 6_000_000_000
+        mockLLM.postProcessResult = .success("This should not be used.")
+
+        let sut = makeSUT(
+            asrFinishResult: .success(
+                ASRFinishResponse(text: "Um I feel like this is, like, great uh.", language: "en")
+            ),
+            localLLMRuntimeManager: mockLLM,
+            transcriptPostProcessingModeProvider: { .llm },
+            llmPostProcessingPromptProvider: { "Make this concise and professional." },
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let inserted = await waitUntil(timeoutNanoseconds: 8_000_000_000) {
+            sut.mockText.insertedTexts.count == 1
+        }
+        #expect(inserted)
+        #expect(sut.mockText.insertedTexts.first == "I feel like this is great.")
     }
 
     // MARK: - Audio Levels

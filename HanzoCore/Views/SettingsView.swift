@@ -34,13 +34,22 @@ struct SettingsView: View {
     }()
     @State private var globalAutoSubmitMode: AutoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode()
     @State private var globalSilenceTimeout: Double = AppBehaviorSettings.globalSilenceTimeout()
-    @State private var verbalPauseFilterEnabled: Bool = {
+    @State private var transcriptPostProcessingMode: TranscriptPostProcessingMode = {
         let defaults = UserDefaults.standard
+        if let raw = defaults.string(forKey: Constants.transcriptPostProcessingModeKey),
+           let mode = TranscriptPostProcessingMode(rawValue: raw) {
+            return mode
+        }
         if defaults.object(forKey: Constants.verbalPauseFilterEnabledKey) != nil {
             return defaults.bool(forKey: Constants.verbalPauseFilterEnabledKey)
+                ? .removeVerbalPauses
+                : .off
         }
-        return Constants.defaultVerbalPauseFilterEnabled
+        return Constants.defaultTranscriptPostProcessingMode
     }()
+    @State private var llmPostProcessingPrompt: String = UserDefaults.standard.string(
+        forKey: Constants.llmPostProcessingPromptKey
+    ) ?? Constants.defaultLLMPostProcessingPrompt
     @State private var appBehaviorOverrides: [String: AppBehaviorOverride] = AppBehaviorSettings.loadOverrides()
     @State private var supportedApps: [SupportedAppBehavior] = AppBehaviorSettings.supportedApps
     @State private var isDetectingApp = false
@@ -200,21 +209,38 @@ struct SettingsView: View {
                     }
 
                     HStack {
-                        Text("Filter verbal pauses")
+                        Text("Post-processing")
                             .font(.system(.body, design: .rounded))
                         Spacer()
-                        Toggle("", isOn: $verbalPauseFilterEnabled)
-                            .toggleStyle(.switch)
-                            .controlSize(.small)
-                            .labelsHidden()
-                            .accessibilityLabel("Filter verbal pauses")
+                        Picker("", selection: $transcriptPostProcessingMode) {
+                            ForEach(TranscriptPostProcessingMode.allCases, id: \.rawValue) { mode in
+                                Text(mode.displayName).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 300)
                     }
-                    .onChange(of: verbalPauseFilterEnabled) {
-                        UserDefaults.standard.set(
-                            verbalPauseFilterEnabled,
-                            forKey: Constants.verbalPauseFilterEnabledKey
-                        )
-                        onSave?()
+                    .onChange(of: transcriptPostProcessingMode) {
+                        saveTranscriptionSettings()
+                    }
+
+                    if transcriptPostProcessingMode == .llm {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("LLM prompt")
+                                .font(.system(.caption, design: .rounded, weight: .semibold))
+                                .foregroundStyle(.secondary)
+
+                            TextEditor(text: $llmPostProcessingPrompt)
+                                .font(.system(.body, design: .rounded))
+                                .frame(height: 90)
+                                .padding(8)
+                                .background(.primary.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                .accessibilityLabel("LLM prompt")
+                        }
+                        .onChange(of: llmPostProcessingPrompt) {
+                            saveTranscriptionSettings()
+                        }
                     }
                 }
 
@@ -492,6 +518,16 @@ struct SettingsView: View {
         UserDefaults.standard.set(asrProvider.rawValue, forKey: Constants.asrProviderKey)
         UserDefaults.standard.set(serverEndpoint, forKey: Constants.serverEndpointKey)
         UserDefaults.standard.set(serverPassword, forKey: Constants.customServerPasswordKey)
+        UserDefaults.standard.set(
+            transcriptPostProcessingMode.rawValue,
+            forKey: Constants.transcriptPostProcessingModeKey
+        )
+        UserDefaults.standard.set(
+            llmPostProcessingPrompt.trimmingCharacters(in: .whitespacesAndNewlines),
+            forKey: Constants.llmPostProcessingPromptKey
+        )
+        // Remove legacy bool setting once enum mode is persisted.
+        UserDefaults.standard.removeObject(forKey: Constants.verbalPauseFilterEnabledKey)
         appState.asrProvider = asrProvider
         onSave?()
     }

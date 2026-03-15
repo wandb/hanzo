@@ -23,6 +23,7 @@ brew install direnv
 mkdir -p ~/.config/hanzo
 cp .env.build.example ~/.config/hanzo/.env.build
 # Edit ~/.config/hanzo/.env.build with your values
+# Optional: set HANZO_LLAMA_SERVER_PATH if you want to use a specific local llama-server
 
 # 3. Allow direnv in this worktree (run once per worktree)
 direnv allow
@@ -32,6 +33,8 @@ direnv allow
 ```
 
 This builds the project, assembles the `.app` bundle at `~/.local/share/hanzo/Hanzo.app`, and launches it. The fixed bundle path ensures macOS retains permissions across git worktrees. An onboarding wizard will guide you through granting permissions and preparing the on-device Whisper model on first launch.
+
+`dev-run.sh` also bundles the local LLM runtime (`llama-server` + dylibs). If no local runtime is found, it auto-downloads a pinned llama.cpp macOS arm64 release into `~/.cache/hanzo/llama.cpp/` and reuses it on subsequent runs.
 
 Hanzo runs in the menu bar — there is no dock icon.
 
@@ -52,6 +55,7 @@ Hanzo runs in the menu bar — there is no dock icon.
 - **Custom server endpoint + password** — Configurable in Settings when `Custom Server` is selected
 - **App-specific behavior** — Configure per-app auto-submit and silence timeout overrides (global values remain fallback defaults)
 - **Local model** — Uses `base.en` from `argmaxinc/whisperkit-coreml`, downloaded on first use
+- **Local LLM post-processing** — Uses bundled `llama-server` + `Qwen3-4B-Q4_K_M.gguf` (downloaded on first use)
 
 ## Example Servers
 
