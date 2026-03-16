@@ -463,12 +463,7 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
     }
 
     private func modelsDirectoryURL() -> URL {
-        fileManager.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library")
-            .appendingPathComponent("Application Support")
-            .appendingPathComponent(Constants.bundleIdentifier)
-            .appendingPathComponent(Constants.localModelsFolderName)
-            .appendingPathComponent(Constants.localLLMModelsSubfolderName)
+        LocalModelPaths.llmModelsDirectory(fileManager: fileManager)
     }
 
     // MARK: - Inference

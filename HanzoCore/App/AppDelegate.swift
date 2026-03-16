@@ -308,12 +308,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func hasLocalWhisperModel() -> Bool {
         let fileManager = FileManager.default
-        let root = modelsRootDirectoryURL()
+        let root = LocalModelPaths.modelsRoot(fileManager: fileManager)
         let maxDepth = 6
         var queue: [(url: URL, depth: Int)] = [(root, 0)]
+        var queueIndex = 0
 
-        while !queue.isEmpty {
-            let (url, depth) = queue.removeFirst()
+        while queueIndex < queue.count {
+            let (url, depth) = queue[queueIndex]
+            queueIndex += 1
 
             let encoderDirectory = url.appendingPathComponent("AudioEncoder.mlmodelc")
             var isDirectory: ObjCBool = false
@@ -347,18 +349,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func hasLocalLLMModel() -> Bool {
-        let modelFile = modelsRootDirectoryURL()
-            .appendingPathComponent(Constants.localLLMModelsSubfolderName)
-            .appendingPathComponent(Constants.localLLMModelFileName)
+        let modelFile = LocalModelPaths.llmModelFile()
         return FileManager.default.fileExists(atPath: modelFile.path)
-    }
-
-    private func modelsRootDirectoryURL() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library")
-            .appendingPathComponent("Application Support")
-            .appendingPathComponent(Constants.bundleIdentifier)
-            .appendingPathComponent(Constants.localModelsFolderName)
     }
 
     private func showOnboarding() {

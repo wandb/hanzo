@@ -14,6 +14,16 @@ RESET_MODELS=false
 RESET_PERMISSIONS=false
 RESET_SETTINGS=false
 NO_LAUNCH=false
+SIGNED_EXECUTABLE_TEMP=""
+
+cleanup_signed_executable_temp() {
+    if [ -n "${SIGNED_EXECUTABLE_TEMP:-}" ] && [ -f "$SIGNED_EXECUTABLE_TEMP" ]; then
+        rm -f "$SIGNED_EXECUTABLE_TEMP"
+    fi
+}
+
+trap cleanup_signed_executable_temp EXIT
+
 for arg in "$@"; do
     case "$arg" in
         --reset-models) RESET_MODELS=true ;;
@@ -158,7 +168,8 @@ mkdir -p "$APP_DIR/Resources"
 # Re-sign a temp copy with a stable designated requirement before installing.
 SIGNED_EXECUTABLE="$APP_EXECUTABLE"
 if command -v codesign >/dev/null 2>&1; then
-    SIGNED_EXECUTABLE="$(mktemp /tmp/hanzo-signed.XXXXXX)"
+    SIGNED_EXECUTABLE_TEMP="$(mktemp /tmp/hanzo-signed.XXXXXX)"
+    SIGNED_EXECUTABLE="$SIGNED_EXECUTABLE_TEMP"
     cp "$APP_EXECUTABLE" "$SIGNED_EXECUTABLE"
     codesign --force --sign - \
         --identifier com.hanzo.app \
@@ -166,9 +177,6 @@ if command -v codesign >/dev/null 2>&1; then
         "$SIGNED_EXECUTABLE"
 fi
 install -m 755 "$SIGNED_EXECUTABLE" "$APP_DIR/MacOS/Hanzo"
-if [ "$SIGNED_EXECUTABLE" != "$APP_EXECUTABLE" ]; then
-    rm -f "$SIGNED_EXECUTABLE"
-fi
 
 # Copy bundled llama.cpp runtime (llama-server + required dylibs)
 LLAMA_RUNTIME_DIR="$(resolve_llama_runtime_dir)"
