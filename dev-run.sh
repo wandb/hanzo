@@ -150,8 +150,25 @@ APP_ROOT="$HOME/.local/share/hanzo/Hanzo.app"
 mkdir -p "$APP_DIR/MacOS"
 mkdir -p "$APP_DIR/Resources"
 
-# Copy executable
-install -m 755 "$APP_EXECUTABLE" "$APP_DIR/MacOS/Hanzo"
+# Copy executable.
+#
+# SwiftPM signs products ad-hoc with a cdhash-only designated requirement.
+# That cdhash changes across rebuilds/worktrees, which causes macOS TCC to
+# treat Accessibility trust as a different client and can stall onboarding.
+# Re-sign a temp copy with a stable designated requirement before installing.
+SIGNED_EXECUTABLE="$APP_EXECUTABLE"
+if command -v codesign >/dev/null 2>&1; then
+    SIGNED_EXECUTABLE="$(mktemp /tmp/hanzo-signed.XXXXXX)"
+    cp "$APP_EXECUTABLE" "$SIGNED_EXECUTABLE"
+    codesign --force --sign - \
+        --identifier com.hanzo.app \
+        -r='designated => identifier "com.hanzo.app"' \
+        "$SIGNED_EXECUTABLE"
+fi
+install -m 755 "$SIGNED_EXECUTABLE" "$APP_DIR/MacOS/Hanzo"
+if [ "$SIGNED_EXECUTABLE" != "$APP_EXECUTABLE" ]; then
+    rm -f "$SIGNED_EXECUTABLE"
+fi
 
 # Copy bundled llama.cpp runtime (llama-server + required dylibs)
 LLAMA_RUNTIME_DIR="$(resolve_llama_runtime_dir)"
