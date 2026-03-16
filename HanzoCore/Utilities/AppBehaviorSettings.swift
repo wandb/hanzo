@@ -170,15 +170,10 @@ enum AppBehaviorSettings {
     }
 
     static func globalPostProcessingMode(defaults: UserDefaults = .standard) -> TranscriptPostProcessingMode {
-        if let raw = defaults.string(forKey: Constants.transcriptPostProcessingModeKey),
-           let mode = TranscriptPostProcessingMode(rawValue: raw) {
-            return mode
-        }
-        // Legacy migration from bool toggle.
-        if defaults.object(forKey: Constants.verbalPauseFilterEnabledKey) != nil {
-            return defaults.bool(forKey: Constants.verbalPauseFilterEnabledKey)
-                ? .removeVerbalPauses
-                : .off
+        if let raw = defaults.string(forKey: Constants.transcriptPostProcessingModeKey) {
+            if let mode = TranscriptPostProcessingMode(rawValue: raw) {
+                return mode
+            }
         }
         return Constants.defaultTranscriptPostProcessingMode
     }
@@ -188,7 +183,6 @@ enum AppBehaviorSettings {
         defaults: UserDefaults = .standard
     ) {
         defaults.set(mode.rawValue, forKey: Constants.transcriptPostProcessingModeKey)
-        defaults.removeObject(forKey: Constants.verbalPauseFilterEnabledKey)
     }
 
     static func globalLLMPostProcessingPrompt(defaults: UserDefaults = .standard) -> String {

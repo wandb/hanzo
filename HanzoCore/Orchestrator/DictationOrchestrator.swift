@@ -549,24 +549,21 @@ final class DictationOrchestrator {
         switch transcriptPostProcessingMode {
         case .off:
             return rawFinalText
-        case .removeVerbalPauses:
-            return VerbalPausePostProcessor.process(rawFinalText)
         case .llm:
-            let cleanedText = VerbalPausePostProcessor.process(rawFinalText)
             let hasCustomPrompt = !llmPostProcessingPrompt
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .isEmpty
             logger.info(
-                "Starting local LLM post-processing (\(cleanedText.count) chars, custom prompt: \(hasCustomPrompt ? "yes" : "no"))"
+                "Starting local LLM post-processing (\(rawFinalText.count) chars, custom prompt: \(hasCustomPrompt ? "yes" : "no"))"
             )
             let start = Date()
             switch await llmPostProcessWithTimeout(
-                text: cleanedText,
+                text: rawFinalText,
                 prompt: llmPostProcessingPrompt
             ) {
             case .success(let rewritten):
                 let duration = Date().timeIntervalSince(start)
-                let changed = rewritten != cleanedText
+                let changed = rewritten != rawFinalText
                 logger.info(
                     "Local LLM post-processing finished in \(String(format: "%.2f", duration))s (changed: \(changed))"
                 )
@@ -574,15 +571,15 @@ final class DictationOrchestrator {
             case .failure(let error):
                 let duration = Date().timeIntervalSince(start)
                 logger.warn(
-                    "Local LLM post-processing failed after \(String(format: "%.2f", duration))s, falling back to cleaned transcript: \(error)"
+                    "Local LLM post-processing failed after \(String(format: "%.2f", duration))s, falling back to raw transcript: \(error)"
                 )
-                return cleanedText
+                return rawFinalText
             case .timeout:
                 let duration = Date().timeIntervalSince(start)
                 logger.warn(
-                    "Local LLM post-processing timed out after \(String(format: "%.2f", duration))s, falling back to cleaned transcript"
+                    "Local LLM post-processing timed out after \(String(format: "%.2f", duration))s, falling back to raw transcript"
                 )
-                return cleanedText
+                return rawFinalText
             }
         }
     }

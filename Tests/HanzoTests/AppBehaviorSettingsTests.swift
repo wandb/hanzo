@@ -121,7 +121,7 @@ struct AppBehaviorSettingsTests {
         withDefaults { defaults in
             AppBehaviorSettings.setGlobalPostProcessingMode(.llm, defaults: defaults)
             AppBehaviorSettings.saveOverride(
-                AppBehaviorOverride(postProcessingMode: .removeVerbalPauses),
+                AppBehaviorOverride(postProcessingMode: .off),
                 for: "com.tinyspeck.slackmacgap",
                 defaults: defaults
             )
@@ -130,7 +130,7 @@ struct AppBehaviorSettingsTests {
                 for: "com.tinyspeck.slackmacgap",
                 defaults: defaults
             )
-            #expect(resolved.postProcessingMode == .removeVerbalPauses)
+            #expect(resolved.postProcessingMode == .off)
             #expect(resolved.isUsingAppOverride == true)
         }
     }
@@ -156,7 +156,7 @@ struct AppBehaviorSettingsTests {
 
     @Test("hasOverrides returns true when only postProcessingMode is set")
     func hasOverridesWithOnlyPostProcessingMode() {
-        let override = AppBehaviorOverride(postProcessingMode: .removeVerbalPauses)
+        let override = AppBehaviorOverride(postProcessingMode: .off)
         #expect(override.hasOverrides == true)
     }
 

@@ -433,29 +433,8 @@ struct DictationOrchestratorTests {
         #expect(isError)
     }
 
-    @Test("Final transcript is post-processed before insertion when filter is enabled")
-    @MainActor func finalTranscriptPostProcessedBeforeInsertion() async throws {
-        let sut = makeSUT(
-            asrFinishResult: .success(
-                ASRFinishResponse(text: "Um I feel like this is, like, great uh.", language: "en")
-            ),
-            postProcessingMode: .removeVerbalPauses,
-            frontmostApplicationProvider: { NSRunningApplication.current }
-        )
-
-        sut.orchestrator.toggle()
-        try await Task.sleep(nanoseconds: 50_000_000)
-        sut.orchestrator.toggle()
-
-        let inserted = await waitUntil(timeoutNanoseconds: 4_000_000_000) {
-            sut.mockText.insertedTexts.count == 1
-        }
-        #expect(inserted)
-        #expect(sut.mockText.insertedTexts.first == "I feel like this is great.")
-    }
-
-    @Test("Final transcript is unchanged when verbal pause filter is disabled")
-    @MainActor func finalTranscriptUnchangedWhenFilterDisabled() async throws {
+    @Test("Final transcript is unchanged when post-processing mode is off")
+    @MainActor func finalTranscriptUnchangedWhenPostProcessingIsOff() async throws {
         let sut = makeSUT(
             asrFinishResult: .success(
                 ASRFinishResponse(text: "Um this is still untouched.", language: "en")
@@ -479,10 +458,11 @@ struct DictationOrchestratorTests {
     @MainActor func finalTranscriptUsesLLMOutputWhenModeEnabled() async throws {
         let mockLLM = MockLocalLLMRuntimeManager()
         mockLLM.postProcessResult = .success("This is concise and professional.")
+        let rawTranscript = "Um this is, like, the update uh"
 
         let sut = makeSUT(
             asrFinishResult: .success(
-                ASRFinishResponse(text: "Um this is, like, the update uh", language: "en")
+                ASRFinishResponse(text: rawTranscript, language: "en")
             ),
             localLLMRuntimeManager: mockLLM,
             postProcessingMode: .llm,
@@ -500,17 +480,19 @@ struct DictationOrchestratorTests {
         #expect(inserted)
         #expect(sut.mockText.insertedTexts.first == "This is concise and professional.")
         #expect(mockLLM.postProcessCallCount == 1)
+        #expect(mockLLM.lastInputText == rawTranscript)
         #expect(mockLLM.lastPrompt == "Make this concise and professional.")
     }
 
-    @Test("LLM mode falls back to cleaned transcript when local LLM processing fails")
+    @Test("LLM mode falls back to raw transcript when local LLM processing fails")
     @MainActor func llmModeFallsBackWhenLocalLLMProcessingFails() async throws {
         let mockLLM = MockLocalLLMRuntimeManager()
         mockLLM.postProcessResult = .failure(LocalLLMRuntimeError.serverNotReady)
+        let rawTranscript = "Um I feel like this is, like, great uh."
 
         let sut = makeSUT(
             asrFinishResult: .success(
-                ASRFinishResponse(text: "Um I feel like this is, like, great uh.", language: "en")
+                ASRFinishResponse(text: rawTranscript, language: "en")
             ),
             localLLMRuntimeManager: mockLLM,
             postProcessingMode: .llm,
@@ -526,19 +508,20 @@ struct DictationOrchestratorTests {
             sut.mockText.insertedTexts.count == 1
         }
         #expect(inserted)
-        #expect(sut.mockText.insertedTexts.first == "I feel like this is great.")
+        #expect(sut.mockText.insertedTexts.first == rawTranscript)
         #expect(mockLLM.postProcessCallCount == 1)
     }
 
-    @Test("LLM mode falls back to cleaned transcript when local LLM processing times out")
+    @Test("LLM mode falls back to raw transcript when local LLM processing times out")
     @MainActor func llmModeFallsBackWhenLocalLLMProcessingTimesOut() async throws {
         let mockLLM = MockLocalLLMRuntimeManager()
         mockLLM.postProcessDelayNanoseconds = 6_000_000_000
         mockLLM.postProcessResult = .success("This should not be used.")
+        let rawTranscript = "Um I feel like this is, like, great uh."
 
         let sut = makeSUT(
             asrFinishResult: .success(
-                ASRFinishResponse(text: "Um I feel like this is, like, great uh.", language: "en")
+                ASRFinishResponse(text: rawTranscript, language: "en")
             ),
             localLLMRuntimeManager: mockLLM,
             postProcessingMode: .llm,
@@ -554,7 +537,7 @@ struct DictationOrchestratorTests {
             sut.mockText.insertedTexts.count == 1
         }
         #expect(inserted)
-        #expect(sut.mockText.insertedTexts.first == "I feel like this is great.")
+        #expect(sut.mockText.insertedTexts.first == rawTranscript)
     }
 
     // MARK: - Audio Levels

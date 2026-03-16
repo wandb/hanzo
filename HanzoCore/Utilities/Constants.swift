@@ -84,9 +84,6 @@ enum Constants {
     static let defaultTranscriptPostProcessingMode: TranscriptPostProcessingMode = .llm
     static let llmPostProcessingPromptKey = "llmPostProcessingPrompt"
     static let defaultLLMPostProcessingPrompt = ""
-    // Legacy migration key (bool toggle before enum modes existed)
-    static let verbalPauseFilterEnabledKey = "verbalPauseFilterEnabled"
-    static let defaultVerbalPauseFilterEnabled = false
 
     // Launch at login
     static let launchAtLoginDisabledByUserKey = "launchAtLoginDisabledByUser"
