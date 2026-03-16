@@ -55,7 +55,6 @@ struct SettingsView: View {
 
     private enum SettingsSection: Hashable {
         case general
-        case transcription
         case defaultBehavior
         case app(String) // bundleIdentifier
     }
@@ -65,7 +64,6 @@ struct SettingsView: View {
             // Sidebar
             VStack(alignment: .leading, spacing: 0) {
                 sidebarButton(label: "General", icon: "gearshape", section: .general)
-                sidebarButton(label: "Transcription", icon: "waveform", section: .transcription)
 
                 Divider()
                     .padding(.vertical, 8)
@@ -134,8 +132,6 @@ struct SettingsView: View {
                         switch selectedSection {
                         case .general:
                             generalContent
-                        case .transcription:
-                            transcriptionContent
                         case .defaultBehavior:
                             defaultBehaviorContent
                         case .app(let bundleIdentifier):
@@ -305,6 +301,11 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(isRecordingHotkey ? "Cancel hotkey recording" : "Set hotkey")
             }
+
+            Divider()
+                .padding(.vertical, 4)
+
+            transcriptionContent
         }
     }
 
@@ -372,8 +373,8 @@ struct SettingsView: View {
                         Text(mode.displayName).tag(mode)
                     }
                 }
-                .pickerStyle(.segmented)
-                .frame(width: inputWidth)
+                .pickerStyle(.menu)
+                .frame(width: inputWidth, alignment: .trailing)
             }
             .onChange(of: transcriptPostProcessingMode) {
                 AppBehaviorSettings.setGlobalPostProcessingMode(transcriptPostProcessingMode)
@@ -431,8 +432,8 @@ struct SettingsView: View {
                         Text(mode.displayName).tag(mode)
                     }
                 }
-                .pickerStyle(.segmented)
-                .frame(width: inputWidth)
+                .pickerStyle(.menu)
+                .frame(width: inputWidth, alignment: .trailing)
             }
             .onChange(of: globalAutoSubmitMode) {
                 AppBehaviorSettings.setGlobalAutoSubmitMode(globalAutoSubmitMode)
