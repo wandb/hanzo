@@ -87,9 +87,17 @@ private struct StatusFooterView: View {
             Button {
                 cycleSilenceTimeout()
             } label: {
-                Text(silenceLabel)
-                    .font(.system(.caption2, design: .rounded))
-                    .foregroundStyle(.primary.opacity(appState.silenceTimeout > 0 ? 0.5 : 0.25))
+                HStack(spacing: 4) {
+                    Image(nsImage: activeAppIcon)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 11, height: 11)
+                    Text("·")
+                        .font(.system(.caption2, design: .rounded))
+                    Text(silenceLabel)
+                        .font(.system(.caption2, design: .rounded))
+                }
+                .foregroundStyle(.primary.opacity(appState.silenceTimeout > 0 ? 0.5 : 0.25))
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
@@ -131,6 +139,14 @@ private struct StatusFooterView: View {
         case .cmdEnter: return "↩ ⌘enter"
         case .off: return "↩ off"
         }
+    }
+
+    private var activeAppIcon: NSImage {
+        if let bundleIdentifier = appState.activeTargetBundleIdentifier,
+           let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) {
+            return NSWorkspace.shared.icon(forFile: appURL.path)
+        }
+        return NSWorkspace.shared.icon(for: .applicationBundle)
     }
 
     private func cycleSilenceTimeout() {

@@ -13,8 +13,12 @@ actor LocalASRRuntimeManager: LocalASRRuntimeManagerProtocol {
     }
 
     func ensureRunning() async throws {
+        try await ensureRunning(progressHandler: nil)
+    }
+
+    func ensureRunning(progressHandler: ((Double) -> Void)?) async throws {
         do {
-            try await runtime.prepare()
+            try await runtime.prepare(progressHandler: progressHandler)
             logger.info("Local Whisper runtime is ready")
         } catch {
             logger.error("Failed to prepare local Whisper runtime: \(error)")
@@ -26,7 +30,11 @@ actor LocalASRRuntimeManager: LocalASRRuntimeManagerProtocol {
     }
 
     func prepareModel() async throws {
-        try await ensureRunning()
+        try await prepareModel(progressHandler: nil)
+    }
+
+    func prepareModel(progressHandler: ((Double) -> Void)?) async throws {
+        try await ensureRunning(progressHandler: progressHandler)
     }
 
     func stop() async {

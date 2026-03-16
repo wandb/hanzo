@@ -16,20 +16,31 @@ private struct StoredCustomAppBehavior: Codable, Equatable {
 struct AppBehaviorOverride: Codable, Equatable {
     var autoSubmitMode: AutoSubmitMode?
     var silenceTimeout: Double?
+    var postProcessingMode: TranscriptPostProcessingMode?
+    var llmPostProcessingPrompt: String?
 
-    init(autoSubmitMode: AutoSubmitMode? = nil, silenceTimeout: Double? = nil) {
+    init(
+        autoSubmitMode: AutoSubmitMode? = nil,
+        silenceTimeout: Double? = nil,
+        postProcessingMode: TranscriptPostProcessingMode? = nil,
+        llmPostProcessingPrompt: String? = nil
+    ) {
         self.autoSubmitMode = autoSubmitMode
         self.silenceTimeout = silenceTimeout
+        self.postProcessingMode = postProcessingMode
+        self.llmPostProcessingPrompt = llmPostProcessingPrompt
     }
 
     var hasOverrides: Bool {
-        autoSubmitMode != nil || silenceTimeout != nil
+        autoSubmitMode != nil || silenceTimeout != nil || postProcessingMode != nil || llmPostProcessingPrompt != nil
     }
 }
 
 struct ResolvedAppBehavior {
     let autoSubmitMode: AutoSubmitMode
     let silenceTimeout: Double
+    let postProcessingMode: TranscriptPostProcessingMode
+    let llmPostProcessingPrompt: String
     let isUsingAppOverride: Bool
 }
 
@@ -158,6 +169,44 @@ enum AppBehaviorSettings {
         defaults.set(timeout, forKey: Constants.silenceTimeoutKey)
     }
 
+    static func globalPostProcessingMode(defaults: UserDefaults = .standard) -> TranscriptPostProcessingMode {
+        if let raw = defaults.string(forKey: Constants.transcriptPostProcessingModeKey),
+           let mode = TranscriptPostProcessingMode(rawValue: raw) {
+            return mode
+        }
+        // Legacy migration from bool toggle.
+        if defaults.object(forKey: Constants.verbalPauseFilterEnabledKey) != nil {
+            return defaults.bool(forKey: Constants.verbalPauseFilterEnabledKey)
+                ? .removeVerbalPauses
+                : .off
+        }
+        return Constants.defaultTranscriptPostProcessingMode
+    }
+
+    static func setGlobalPostProcessingMode(
+        _ mode: TranscriptPostProcessingMode,
+        defaults: UserDefaults = .standard
+    ) {
+        defaults.set(mode.rawValue, forKey: Constants.transcriptPostProcessingModeKey)
+        defaults.removeObject(forKey: Constants.verbalPauseFilterEnabledKey)
+    }
+
+    static func globalLLMPostProcessingPrompt(defaults: UserDefaults = .standard) -> String {
+        let stored = defaults.string(forKey: Constants.llmPostProcessingPromptKey)
+        return stored?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? Constants.defaultLLMPostProcessingPrompt
+    }
+
+    static func setGlobalLLMPostProcessingPrompt(
+        _ prompt: String,
+        defaults: UserDefaults = .standard
+    ) {
+        defaults.set(
+            prompt.trimmingCharacters(in: .whitespacesAndNewlines),
+            forKey: Constants.llmPostProcessingPromptKey
+        )
+    }
+
     static func loadOverrides(defaults: UserDefaults = .standard) -> [String: AppBehaviorOverride] {
         guard let data = defaults.data(forKey: Constants.appBehaviorOverridesKey) else {
             return [:]
@@ -196,6 +245,8 @@ enum AppBehaviorSettings {
     ) -> ResolvedAppBehavior {
         let globalAutoSubmitMode = globalAutoSubmitMode(defaults: defaults)
         let globalSilenceTimeout = globalSilenceTimeout(defaults: defaults)
+        let globalPostProcessing = globalPostProcessingMode(defaults: defaults)
+        let globalLLMPrompt = globalLLMPostProcessingPrompt(defaults: defaults)
 
         guard let bundleIdentifier,
               isSupported(bundleIdentifier: bundleIdentifier, defaults: defaults),
@@ -203,17 +254,26 @@ enum AppBehaviorSettings {
             return ResolvedAppBehavior(
                 autoSubmitMode: globalAutoSubmitMode,
                 silenceTimeout: globalSilenceTimeout,
+                postProcessingMode: globalPostProcessing,
+                llmPostProcessingPrompt: globalLLMPrompt,
                 isUsingAppOverride: false
             )
         }
 
         let resolvedAutoSubmitMode = appOverride.autoSubmitMode ?? globalAutoSubmitMode
         let resolvedSilenceTimeout = appOverride.silenceTimeout ?? globalSilenceTimeout
-        let isUsingAppOverride = appOverride.autoSubmitMode != nil || appOverride.silenceTimeout != nil
+        let resolvedPostProcessing = appOverride.postProcessingMode ?? globalPostProcessing
+        let resolvedLLMPrompt = appOverride.llmPostProcessingPrompt ?? globalLLMPrompt
+        let isUsingAppOverride = appOverride.autoSubmitMode != nil
+            || appOverride.silenceTimeout != nil
+            || appOverride.postProcessingMode != nil
+            || appOverride.llmPostProcessingPrompt != nil
 
         return ResolvedAppBehavior(
             autoSubmitMode: resolvedAutoSubmitMode,
             silenceTimeout: resolvedSilenceTimeout,
+            postProcessingMode: resolvedPostProcessing,
+            llmPostProcessingPrompt: resolvedLLMPrompt,
             isUsingAppOverride: isUsingAppOverride
         )
     }

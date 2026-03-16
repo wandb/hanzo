@@ -51,12 +51,17 @@ struct OnboardingContainerView: View {
             }
 
             Spacer()
-        }
+    }
         .padding(.horizontal, 24)
         .frame(width: 480, height: 380)
         .hudBackground()
         .onAppear {
-            UserDefaults.standard.set(ASRProvider.hosted.rawValue, forKey: Constants.asrProviderKey)
+            if UserDefaults.standard.string(forKey: Constants.asrProviderKey) == nil {
+                UserDefaults.standard.set(ASRProvider.local.rawValue, forKey: Constants.asrProviderKey)
+            }
+            if UserDefaults.standard.string(forKey: Constants.transcriptPostProcessingModeKey) == nil {
+                AppBehaviorSettings.setGlobalPostProcessingMode(.llm)
+            }
         }
     }
 }

@@ -9,9 +9,9 @@ final class DictationOrchestrator {
     private let textInsertion: TextInsertionProtocol
     private let permissionService: PermissionServiceProtocol
     private let localRuntimeManager: LocalASRRuntimeManagerProtocol
+    private let localLLMRuntimeManager: LocalLLMRuntimeManagerProtocol
     private let logger: LoggingServiceProtocol
     private let frontmostApplicationProvider: () -> NSRunningApplication?
-    private let verbalPauseFilterEnabledProvider: () -> Bool
 
     private var asrClient: ASRClientProtocol
     private let isASRClientInjected: Bool
@@ -25,7 +25,8 @@ final class DictationOrchestrator {
     private var activeSessionTargetBundleIdentifier: String?
     private var pendingRestartAfterForging = false
     private var configuredASRProvider: ASRProvider
-    private var verbalPauseFilterEnabled: Bool
+    private var transcriptPostProcessingMode: TranscriptPostProcessingMode
+    private var llmPostProcessingPrompt: String
 
     // Auto-submit
     var autoSubmitMode: AutoSubmitMode
@@ -42,10 +43,8 @@ final class DictationOrchestrator {
         textInsertion: TextInsertionProtocol = TextInsertionService(),
         permissionService: PermissionServiceProtocol = PermissionService.shared,
         localRuntimeManager: LocalASRRuntimeManagerProtocol = LocalASRRuntimeManager(),
+        localLLMRuntimeManager: LocalLLMRuntimeManagerProtocol = LocalLLMRuntimeManager.shared,
         logger: LoggingServiceProtocol = LoggingService.shared,
-        verbalPauseFilterEnabledProvider: @escaping () -> Bool = {
-            DictationOrchestrator.isVerbalPauseFilterEnabled()
-        },
         frontmostApplicationProvider: @escaping () -> NSRunningApplication? = {
             NSWorkspace.shared.frontmostApplication
         }
@@ -55,8 +54,8 @@ final class DictationOrchestrator {
         self.textInsertion = textInsertion
         self.permissionService = permissionService
         self.localRuntimeManager = localRuntimeManager
+        self.localLLMRuntimeManager = localLLMRuntimeManager
         self.logger = logger
-        self.verbalPauseFilterEnabledProvider = verbalPauseFilterEnabledProvider
         self.frontmostApplicationProvider = frontmostApplicationProvider
 
         self.autoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode()
@@ -71,7 +70,8 @@ final class DictationOrchestrator {
         }
 
         self.configuredASRProvider = DictationOrchestrator.currentASRProvider()
-        self.verbalPauseFilterEnabled = verbalPauseFilterEnabledProvider()
+        self.transcriptPostProcessingMode = AppBehaviorSettings.globalPostProcessingMode()
+        self.llmPostProcessingPrompt = AppBehaviorSettings.globalLLMPostProcessingPrompt()
 
         appState.autoSubmitMode = self.autoSubmitMode
         appState.silenceTimeout = self.silenceTimeout
@@ -89,10 +89,20 @@ final class DictationOrchestrator {
                 self?.evaluateSilence(levels: levels)
             }
         }
+
+        let hasRequiredPermissions = permissionService.hasMicrophonePermission
+            && permissionService.hasAccessibilityPermission
+        if appState.isOnboardingComplete && hasRequiredPermissions {
+            prewarmConfiguredRuntimes(
+                asrProvider: configuredASRProvider,
+                postProcessingMode: transcriptPostProcessingMode
+            )
+        }
     }
 
     func reloadSettings() {
         let previousProvider = configuredASRProvider
+        let previousPostProcessingMode = transcriptPostProcessingMode
 
         if let activeSessionTargetBundleIdentifier {
             applyEffectiveBehavior(for: activeSessionTargetBundleIdentifier)
@@ -102,7 +112,6 @@ final class DictationOrchestrator {
 
         configuredASRProvider = DictationOrchestrator.currentASRProvider()
         appState.asrProvider = configuredASRProvider
-        verbalPauseFilterEnabled = verbalPauseFilterEnabledProvider()
 
         if !isASRClientInjected {
             asrClient = DictationOrchestrator.makeConfiguredASRClient()
@@ -112,20 +121,38 @@ final class DictationOrchestrator {
             && configuredASRProvider != .local
         let shouldWarmLocalRuntime = configuredASRProvider == .local
             && previousProvider != .local
+        let shouldStopLocalLLMRuntime = previousPostProcessingMode == .llm
+            && transcriptPostProcessingMode != .llm
+        let shouldWarmLocalLLMRuntime = transcriptPostProcessingMode == .llm
+            && previousPostProcessingMode != .llm
 
-        if shouldRestartLocalRuntime || shouldWarmLocalRuntime {
+        if shouldRestartLocalRuntime || shouldWarmLocalRuntime
+            || shouldStopLocalLLMRuntime || shouldWarmLocalLLMRuntime {
             Task {
                 if shouldRestartLocalRuntime {
                     await localRuntimeManager.stop()
                 }
 
-                guard shouldWarmLocalRuntime else { return }
+                if shouldStopLocalLLMRuntime {
+                    await localLLMRuntimeManager.stop()
+                }
 
-                do {
-                    try await localRuntimeManager.prepareModel()
-                    logger.info("Local Whisper runtime warmed after settings change")
-                } catch {
-                    logger.warn("Failed to warm local Whisper runtime after settings change: \(error)")
+                if shouldWarmLocalRuntime {
+                    do {
+                        try await localRuntimeManager.prepareModel()
+                        logger.info("Local Whisper runtime warmed after settings change")
+                    } catch {
+                        logger.warn("Failed to warm local Whisper runtime after settings change: \(error)")
+                    }
+                }
+
+                if shouldWarmLocalLLMRuntime {
+                    do {
+                        try await localLLMRuntimeManager.prepareModel()
+                        logger.info("Local LLM runtime warmed after settings change")
+                    } catch {
+                        logger.warn("Failed to warm local LLM runtime after settings change: \(error)")
+                    }
                 }
             }
         }
@@ -174,7 +201,10 @@ final class DictationOrchestrator {
     }
 
     func shutdown() {
-        Task { await localRuntimeManager.stop() }
+        Task {
+            await localRuntimeManager.stop()
+            await localLLMRuntimeManager.stop()
+        }
     }
 
     // MARK: - Private
@@ -258,9 +288,7 @@ final class DictationOrchestrator {
                 }
                 let finalResponse = try await asrClient.finishStream(sessionId: sid)
                 let rawFinalText = finalResponse.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                let finalText = verbalPauseFilterEnabled
-                    ? VerbalPausePostProcessor.process(rawFinalText)
-                    : rawFinalText
+                let finalText = await postProcessFinalTranscript(rawFinalText)
                 let targetApp = previousApp
                 sessionId = nil
                 previousApp = nil
@@ -475,21 +503,121 @@ final class DictationOrchestrator {
         }
     }
 
-    private static func isVerbalPauseFilterEnabled() -> Bool {
-        let defaults = UserDefaults.standard
-        guard defaults.object(forKey: Constants.verbalPauseFilterEnabledKey) != nil else {
-            return Constants.defaultVerbalPauseFilterEnabled
-        }
-        return defaults.bool(forKey: Constants.verbalPauseFilterEnabledKey)
-    }
-
     private func applyEffectiveBehavior(for targetBundleIdentifier: String?) {
         let resolved = AppBehaviorSettings.resolvedBehavior(for: targetBundleIdentifier)
         autoSubmitMode = resolved.autoSubmitMode
         silenceTimeout = resolved.silenceTimeout
+        transcriptPostProcessingMode = resolved.postProcessingMode
+        llmPostProcessingPrompt = resolved.llmPostProcessingPrompt
         appState.autoSubmitMode = resolved.autoSubmitMode
         appState.silenceTimeout = resolved.silenceTimeout
         appState.activeTargetBundleIdentifier = targetBundleIdentifier
+    }
+
+    private func prewarmConfiguredRuntimes(
+        asrProvider: ASRProvider,
+        postProcessingMode: TranscriptPostProcessingMode
+    ) {
+        guard asrProvider == .local || postProcessingMode == .llm else {
+            return
+        }
+
+        Task {
+            if asrProvider == .local {
+                do {
+                    try await localRuntimeManager.prepareModel()
+                    logger.info("Local Whisper runtime prewarmed at launch")
+                } catch {
+                    logger.warn("Failed to prewarm local Whisper runtime at launch: \(error)")
+                }
+            }
+
+            if postProcessingMode == .llm {
+                do {
+                    try await localLLMRuntimeManager.prepareModel()
+                    logger.info("Local LLM runtime prewarmed at launch")
+                } catch {
+                    logger.warn("Failed to prewarm local LLM runtime at launch: \(error)")
+                }
+            }
+        }
+    }
+
+    private func postProcessFinalTranscript(_ rawFinalText: String) async -> String {
+        guard !rawFinalText.isEmpty else { return rawFinalText }
+
+        switch transcriptPostProcessingMode {
+        case .off:
+            return rawFinalText
+        case .removeVerbalPauses:
+            return VerbalPausePostProcessor.process(rawFinalText)
+        case .llm:
+            let cleanedText = VerbalPausePostProcessor.process(rawFinalText)
+            let hasCustomPrompt = !llmPostProcessingPrompt
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty
+            logger.info(
+                "Starting local LLM post-processing (\(cleanedText.count) chars, custom prompt: \(hasCustomPrompt ? "yes" : "no"))"
+            )
+            let start = Date()
+            switch await llmPostProcessWithTimeout(
+                text: cleanedText,
+                prompt: llmPostProcessingPrompt
+            ) {
+            case .success(let rewritten):
+                let duration = Date().timeIntervalSince(start)
+                let changed = rewritten != cleanedText
+                logger.info(
+                    "Local LLM post-processing finished in \(String(format: "%.2f", duration))s (changed: \(changed))"
+                )
+                return rewritten
+            case .failure(let error):
+                let duration = Date().timeIntervalSince(start)
+                logger.warn(
+                    "Local LLM post-processing failed after \(String(format: "%.2f", duration))s, falling back to cleaned transcript: \(error)"
+                )
+                return cleanedText
+            case .timeout:
+                let duration = Date().timeIntervalSince(start)
+                logger.warn(
+                    "Local LLM post-processing timed out after \(String(format: "%.2f", duration))s, falling back to cleaned transcript"
+                )
+                return cleanedText
+            }
+        }
+    }
+
+    private enum LLMPostProcessResult {
+        case success(String)
+        case failure(Error)
+        case timeout
+    }
+
+    private func llmPostProcessWithTimeout(text: String, prompt: String) async -> LLMPostProcessResult {
+        let timeoutNanoseconds = UInt64(Constants.localLLMPostProcessingTimeoutSeconds * 1_000_000_000)
+
+        return await withTaskGroup(of: LLMPostProcessResult.self) { group in
+            group.addTask { [self] in
+                do {
+                    let rewritten = try await self.localLLMRuntimeManager.postProcess(
+                        text: text,
+                        prompt: prompt
+                    )
+                    return .success(rewritten)
+                } catch {
+                    return .failure(error)
+                }
+            }
+
+            group.addTask {
+                try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+                return .timeout
+            }
+
+            let first = await group.next() ?? .timeout
+            group.cancelAll()
+            return first
+        }
     }
 
     // MARK: - Silence Detection

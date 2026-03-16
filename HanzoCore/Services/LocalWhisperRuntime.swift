@@ -17,7 +17,12 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
     private var sessions: [String: Session] = [:]
 
     func prepare() async throws {
+        try await prepare(progressHandler: nil)
+    }
+
+    func prepare(progressHandler: ((Double) -> Void)?) async throws {
         if whisperKit != nil {
+            progressHandler?(1.0)
             return
         }
 
@@ -29,18 +34,37 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
         )
 
         let existingModelFolder = findExistingModelFolder(under: modelsDirectory)
+        let resolvedModelFolder: String
+
+        if let existingModelFolder {
+            resolvedModelFolder = existingModelFolder
+            progressHandler?(1.0)
+        } else {
+            progressHandler?(0.0)
+            let downloadedFolder = try await WhisperKit.download(
+                variant: Constants.localWhisperModel,
+                downloadBase: modelsDirectory,
+                from: Constants.localWhisperModelRepository,
+                progressCallback: { progress in
+                    progressHandler?(Self.clamp(progress.fractionCompleted))
+                }
+            )
+            resolvedModelFolder = downloadedFolder.path
+            progressHandler?(1.0)
+        }
 
         let config = WhisperKitConfig(
             model: Constants.localWhisperModel,
             downloadBase: modelsDirectory,
             modelRepo: Constants.localWhisperModelRepository,
-            modelFolder: existingModelFolder,
+            modelFolder: resolvedModelFolder,
             verbose: false,
             prewarm: true,
             load: true,
-            download: existingModelFolder == nil
+            download: false
         )
         whisperKit = try await WhisperKit(config)
+        progressHandler?(1.0)
     }
 
     func startSession() async throws -> String {
@@ -113,6 +137,10 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
 
         let elapsed = Date().timeIntervalSince(session.lastPartialDecodeAt)
         return elapsed >= Constants.localWhisperPartialMinIntervalSeconds
+    }
+
+    private static func clamp(_ value: Double) -> Double {
+        min(max(value, 0.0), 1.0)
     }
 
     private func partialDecodeInput(_ audioSamples: [Float]) -> [Float] {

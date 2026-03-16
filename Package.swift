@@ -24,6 +24,7 @@ let package = Package(
             ],
             resources: [
                 .process("Assets.xcassets"),
+                .process("Prompts"),
             ],
             swiftSettings: [
                 .swiftLanguageMode(.v5),
