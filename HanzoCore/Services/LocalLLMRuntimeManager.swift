@@ -32,6 +32,8 @@ enum LocalLLMRuntimeError: Error, LocalizedError {
 }
 
 actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
+    static let shared = LocalLLMRuntimeManager()
+
     private let logger: LoggingServiceProtocol
     private let fileManager: FileManager
     private let inferenceSession: URLSession

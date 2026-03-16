@@ -1,6 +1,6 @@
 import Foundation
 
-enum TranscriptPostProcessingMode: String, CaseIterable {
+enum TranscriptPostProcessingMode: String, CaseIterable, Codable {
     case off
     case removeVerbalPauses
     case llm

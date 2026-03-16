@@ -13,9 +13,12 @@ done
 # Kill running instance
 pkill -x Hanzo || true
 
-# Clear downloaded models (opt-in)
+# Clear downloaded models (opt-in): Whisper + local rewrite LLM model.
 if [ "$RESET_MODELS" = true ]; then
-    rm -rf "$HOME/Library/Application Support/com.hanzo.app/models"
+    MODELS_ROOT="$HOME/Library/Application Support/com.hanzo.app/models"
+    LEGACY_LLM_ROOT="$HOME/Library/Application Support/com.hanzo.app/llm"
+    rm -rf "$MODELS_ROOT"
+    rm -rf "$LEGACY_LLM_ROOT"
 fi
 
 # Reset permissions (opt-in)
@@ -111,6 +114,7 @@ swift build
 
 # Create .app bundle at a fixed location so macOS retains permissions across worktrees
 APP_DIR="$HOME/.local/share/hanzo/Hanzo.app/Contents"
+APP_ROOT="$HOME/.local/share/hanzo/Hanzo.app"
 mkdir -p "$APP_DIR/MacOS"
 mkdir -p "$APP_DIR/Resources"
 
@@ -131,10 +135,13 @@ cp HanzoCore/Info.plist "$APP_DIR/Info.plist"
 plutil -replace HanzoHostedServerEndpoint -string "$HOSTED_ENDPOINT" "$APP_DIR/Info.plist"
 plutil -replace HanzoHostedServerPassword -string "$HOSTED_PASSWORD" "$APP_DIR/Info.plist"
 
-# Copy resources bundle if it exists
-if [ -d ".build/debug/HanzoCore_HanzoCore.bundle" ]; then
-    cp -R ".build/debug/HanzoCore_HanzoCore.bundle" "$APP_DIR/Resources/"
-fi
+# Copy all SwiftPM resource bundles (including transitive dependency bundles)
+find "$APP_ROOT" -maxdepth 1 -name "*.bundle" -exec rm -rf {} +
+for bundle in .build/debug/*.bundle; do
+    if [ -d "$bundle" ]; then
+        cp -R "$bundle" "$APP_ROOT/"
+    fi
+done
 
 echo "App bundle created at $HOME/.local/share/hanzo/Hanzo.app"
 echo "Launching..."

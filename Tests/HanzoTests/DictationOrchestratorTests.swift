@@ -3,7 +3,7 @@ import Foundation
 import AppKit
 @testable import HanzoCore
 
-@Suite("DictationOrchestrator")
+@Suite("DictationOrchestrator", .serialized)
 struct DictationOrchestratorTests {
 
     // MARK: - Helpers
@@ -21,6 +21,8 @@ struct DictationOrchestratorTests {
 
     func makeSUT(
         micPermission: Bool = true,
+        accessibilityPermission: Bool = true,
+        onboardingComplete: Bool = true,
         asrStartResult: Result<String, Error> = .success("test-session"),
         asrChunkResult: Result<ASRChunkResponse, Error> = .success(
             ASRChunkResponse(text: "partial", language: "en")
@@ -30,10 +32,14 @@ struct DictationOrchestratorTests {
         ),
         audioThrowOnStart: Error? = nil,
         localLLMRuntimeManager: MockLocalLLMRuntimeManager = MockLocalLLMRuntimeManager(),
-        transcriptPostProcessingModeProvider: @escaping () -> TranscriptPostProcessingMode = { .off },
-        llmPostProcessingPromptProvider: @escaping () -> String = { "" },
+        postProcessingMode: TranscriptPostProcessingMode = .off,
+        llmPostProcessingPrompt: String = "",
         frontmostApplicationProvider: @escaping () -> NSRunningApplication? = { nil }
     ) -> SUT {
+        // Set global post-processing settings so the orchestrator picks them up.
+        AppBehaviorSettings.setGlobalPostProcessingMode(postProcessingMode)
+        AppBehaviorSettings.setGlobalLLMPostProcessingPrompt(llmPostProcessingPrompt)
+
         let appState = AppState()
         let mockASR = MockASRClient()
         mockASR.startStreamResult = asrStartResult
@@ -46,7 +52,9 @@ struct DictationOrchestratorTests {
         let mockText = MockTextInsertionService()
         let mockPerms = MockPermissionService()
         mockPerms.hasMicrophonePermission = micPermission
+        mockPerms.hasAccessibilityPermission = accessibilityPermission
         let mockLogger = MockLogger()
+        appState.isOnboardingComplete = onboardingComplete
 
         let orchestrator = DictationOrchestrator(
             appState: appState,
@@ -56,8 +64,6 @@ struct DictationOrchestratorTests {
             permissionService: mockPerms,
             localLLMRuntimeManager: localLLMRuntimeManager,
             logger: mockLogger,
-            transcriptPostProcessingModeProvider: transcriptPostProcessingModeProvider,
-            llmPostProcessingPromptProvider: llmPostProcessingPromptProvider,
             frontmostApplicationProvider: frontmostApplicationProvider
         )
         return SUT(
@@ -92,6 +98,19 @@ struct DictationOrchestratorTests {
     func initialStateIsIdle() {
         let sut = makeSUT()
         #expect(sut.appState.dictationState == .idle)
+    }
+
+    @Test("Init skips LLM prewarm while onboarding is incomplete")
+    @MainActor func initSkipsLLMPrewarmWhenOnboardingIncomplete() async throws {
+        let mockLLM = MockLocalLLMRuntimeManager()
+        _ = makeSUT(
+            onboardingComplete: false,
+            localLLMRuntimeManager: mockLLM,
+            postProcessingMode: .llm
+        )
+
+        try await Task.sleep(nanoseconds: 50_000_000)
+        #expect(mockLLM.prepareModelCallCount == 0)
     }
 
     // MARK: - toggle() from idle → listening
@@ -420,7 +439,7 @@ struct DictationOrchestratorTests {
             asrFinishResult: .success(
                 ASRFinishResponse(text: "Um I feel like this is, like, great uh.", language: "en")
             ),
-            transcriptPostProcessingModeProvider: { .removeVerbalPauses },
+            postProcessingMode: .removeVerbalPauses,
             frontmostApplicationProvider: { NSRunningApplication.current }
         )
 
@@ -441,7 +460,7 @@ struct DictationOrchestratorTests {
             asrFinishResult: .success(
                 ASRFinishResponse(text: "Um this is still untouched.", language: "en")
             ),
-            transcriptPostProcessingModeProvider: { .off },
+            postProcessingMode: .off,
             frontmostApplicationProvider: { NSRunningApplication.current }
         )
 
@@ -466,8 +485,8 @@ struct DictationOrchestratorTests {
                 ASRFinishResponse(text: "Um this is, like, the update uh", language: "en")
             ),
             localLLMRuntimeManager: mockLLM,
-            transcriptPostProcessingModeProvider: { .llm },
-            llmPostProcessingPromptProvider: { "Make this concise and professional." },
+            postProcessingMode: .llm,
+            llmPostProcessingPrompt: "Make this concise and professional.",
             frontmostApplicationProvider: { NSRunningApplication.current }
         )
 
@@ -494,8 +513,8 @@ struct DictationOrchestratorTests {
                 ASRFinishResponse(text: "Um I feel like this is, like, great uh.", language: "en")
             ),
             localLLMRuntimeManager: mockLLM,
-            transcriptPostProcessingModeProvider: { .llm },
-            llmPostProcessingPromptProvider: { "Make this concise and professional." },
+            postProcessingMode: .llm,
+            llmPostProcessingPrompt: "Make this concise and professional.",
             frontmostApplicationProvider: { NSRunningApplication.current }
         )
 
@@ -522,8 +541,8 @@ struct DictationOrchestratorTests {
                 ASRFinishResponse(text: "Um I feel like this is, like, great uh.", language: "en")
             ),
             localLLMRuntimeManager: mockLLM,
-            transcriptPostProcessingModeProvider: { .llm },
-            llmPostProcessingPromptProvider: { "Make this concise and professional." },
+            postProcessingMode: .llm,
+            llmPostProcessingPrompt: "Make this concise and professional.",
             frontmostApplicationProvider: { NSRunningApplication.current }
         )
 

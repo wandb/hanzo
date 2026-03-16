@@ -83,7 +83,7 @@ struct ModelDownloadStep: View {
                 await MainActor.run {
                     statusText = "Preparing rewrite model..."
                 }
-                let llmManager = LocalLLMRuntimeManager()
+                let llmManager = LocalLLMRuntimeManager.shared
                 try await llmManager.prepareModel(progressHandler: { progress in
                     Task { @MainActor in
                         llmModelProgress = Self.clamp(progress)

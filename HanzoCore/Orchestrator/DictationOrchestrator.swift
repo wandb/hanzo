@@ -12,8 +12,6 @@ final class DictationOrchestrator {
     private let localLLMRuntimeManager: LocalLLMRuntimeManagerProtocol
     private let logger: LoggingServiceProtocol
     private let frontmostApplicationProvider: () -> NSRunningApplication?
-    private let transcriptPostProcessingModeProvider: () -> TranscriptPostProcessingMode
-    private let llmPostProcessingPromptProvider: () -> String
 
     private var asrClient: ASRClientProtocol
     private let isASRClientInjected: Bool
@@ -45,14 +43,8 @@ final class DictationOrchestrator {
         textInsertion: TextInsertionProtocol = TextInsertionService(),
         permissionService: PermissionServiceProtocol = PermissionService.shared,
         localRuntimeManager: LocalASRRuntimeManagerProtocol = LocalASRRuntimeManager(),
-        localLLMRuntimeManager: LocalLLMRuntimeManagerProtocol = LocalLLMRuntimeManager(),
+        localLLMRuntimeManager: LocalLLMRuntimeManagerProtocol = LocalLLMRuntimeManager.shared,
         logger: LoggingServiceProtocol = LoggingService.shared,
-        transcriptPostProcessingModeProvider: @escaping () -> TranscriptPostProcessingMode = {
-            DictationOrchestrator.currentTranscriptPostProcessingMode()
-        },
-        llmPostProcessingPromptProvider: @escaping () -> String = {
-            DictationOrchestrator.currentLLMPostProcessingPrompt()
-        },
         frontmostApplicationProvider: @escaping () -> NSRunningApplication? = {
             NSWorkspace.shared.frontmostApplication
         }
@@ -64,8 +56,6 @@ final class DictationOrchestrator {
         self.localRuntimeManager = localRuntimeManager
         self.localLLMRuntimeManager = localLLMRuntimeManager
         self.logger = logger
-        self.transcriptPostProcessingModeProvider = transcriptPostProcessingModeProvider
-        self.llmPostProcessingPromptProvider = llmPostProcessingPromptProvider
         self.frontmostApplicationProvider = frontmostApplicationProvider
 
         self.autoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode()
@@ -80,8 +70,8 @@ final class DictationOrchestrator {
         }
 
         self.configuredASRProvider = DictationOrchestrator.currentASRProvider()
-        self.transcriptPostProcessingMode = transcriptPostProcessingModeProvider()
-        self.llmPostProcessingPrompt = llmPostProcessingPromptProvider()
+        self.transcriptPostProcessingMode = AppBehaviorSettings.globalPostProcessingMode()
+        self.llmPostProcessingPrompt = AppBehaviorSettings.globalLLMPostProcessingPrompt()
 
         appState.autoSubmitMode = self.autoSubmitMode
         appState.silenceTimeout = self.silenceTimeout
@@ -100,10 +90,14 @@ final class DictationOrchestrator {
             }
         }
 
-        prewarmConfiguredRuntimes(
-            asrProvider: configuredASRProvider,
-            postProcessingMode: transcriptPostProcessingMode
-        )
+        let hasRequiredPermissions = permissionService.hasMicrophonePermission
+            && permissionService.hasAccessibilityPermission
+        if appState.isOnboardingComplete && hasRequiredPermissions {
+            prewarmConfiguredRuntimes(
+                asrProvider: configuredASRProvider,
+                postProcessingMode: transcriptPostProcessingMode
+            )
+        }
     }
 
     func reloadSettings() {
@@ -118,8 +112,6 @@ final class DictationOrchestrator {
 
         configuredASRProvider = DictationOrchestrator.currentASRProvider()
         appState.asrProvider = configuredASRProvider
-        transcriptPostProcessingMode = transcriptPostProcessingModeProvider()
-        llmPostProcessingPrompt = llmPostProcessingPromptProvider()
 
         if !isASRClientInjected {
             asrClient = DictationOrchestrator.makeConfiguredASRClient()
@@ -511,33 +503,12 @@ final class DictationOrchestrator {
         }
     }
 
-    private static func currentTranscriptPostProcessingMode() -> TranscriptPostProcessingMode {
-        let defaults = UserDefaults.standard
-        if let raw = defaults.string(forKey: Constants.transcriptPostProcessingModeKey),
-           let mode = TranscriptPostProcessingMode(rawValue: raw) {
-            return mode
-        }
-
-        // Migration from legacy bool toggle.
-        if defaults.object(forKey: Constants.verbalPauseFilterEnabledKey) != nil {
-            return defaults.bool(forKey: Constants.verbalPauseFilterEnabledKey)
-                ? .removeVerbalPauses
-                : .off
-        }
-
-        return Constants.defaultTranscriptPostProcessingMode
-    }
-
-    private static func currentLLMPostProcessingPrompt() -> String {
-        let stored = UserDefaults.standard.string(forKey: Constants.llmPostProcessingPromptKey)
-        return stored?.trimmingCharacters(in: .whitespacesAndNewlines)
-            ?? Constants.defaultLLMPostProcessingPrompt
-    }
-
     private func applyEffectiveBehavior(for targetBundleIdentifier: String?) {
         let resolved = AppBehaviorSettings.resolvedBehavior(for: targetBundleIdentifier)
         autoSubmitMode = resolved.autoSubmitMode
         silenceTimeout = resolved.silenceTimeout
+        transcriptPostProcessingMode = resolved.postProcessingMode
+        llmPostProcessingPrompt = resolved.llmPostProcessingPrompt
         appState.autoSubmitMode = resolved.autoSubmitMode
         appState.silenceTimeout = resolved.silenceTimeout
         appState.activeTargetBundleIdentifier = targetBundleIdentifier

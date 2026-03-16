@@ -103,6 +103,101 @@ struct AppBehaviorSettingsTests {
         }
     }
 
+    @Test("resolvedBehavior returns global post-processing mode when no override exists")
+    func resolvedBehaviorUsesGlobalPostProcessingMode() {
+        withDefaults { defaults in
+            AppBehaviorSettings.setGlobalPostProcessingMode(.llm, defaults: defaults)
+
+            let resolved = AppBehaviorSettings.resolvedBehavior(
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+            #expect(resolved.postProcessingMode == .llm)
+        }
+    }
+
+    @Test("resolvedBehavior returns overridden post-processing mode when set")
+    func resolvedBehaviorUsesOverriddenPostProcessingMode() {
+        withDefaults { defaults in
+            AppBehaviorSettings.setGlobalPostProcessingMode(.llm, defaults: defaults)
+            AppBehaviorSettings.saveOverride(
+                AppBehaviorOverride(postProcessingMode: .removeVerbalPauses),
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+
+            let resolved = AppBehaviorSettings.resolvedBehavior(
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+            #expect(resolved.postProcessingMode == .removeVerbalPauses)
+            #expect(resolved.isUsingAppOverride == true)
+        }
+    }
+
+    @Test("resolvedBehavior falls back to global post-processing mode when override is nil")
+    func resolvedBehaviorFallsBackToGlobalPostProcessingMode() {
+        withDefaults { defaults in
+            AppBehaviorSettings.setGlobalPostProcessingMode(.llm, defaults: defaults)
+            AppBehaviorSettings.saveOverride(
+                AppBehaviorOverride(autoSubmitMode: .enter, postProcessingMode: nil),
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+
+            let resolved = AppBehaviorSettings.resolvedBehavior(
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+            #expect(resolved.postProcessingMode == .llm)
+            #expect(resolved.autoSubmitMode == .enter)
+        }
+    }
+
+    @Test("hasOverrides returns true when only postProcessingMode is set")
+    func hasOverridesWithOnlyPostProcessingMode() {
+        let override = AppBehaviorOverride(postProcessingMode: .removeVerbalPauses)
+        #expect(override.hasOverrides == true)
+    }
+
+    @Test("resolvedBehavior uses per-app LLM prompt when set")
+    func resolvedBehaviorUsesPerAppLLMPrompt() {
+        withDefaults { defaults in
+            AppBehaviorSettings.setGlobalPostProcessingMode(.llm, defaults: defaults)
+            AppBehaviorSettings.setGlobalLLMPostProcessingPrompt("Global prompt", defaults: defaults)
+            AppBehaviorSettings.saveOverride(
+                AppBehaviorOverride(llmPostProcessingPrompt: "Slack-specific prompt"),
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+
+            let resolved = AppBehaviorSettings.resolvedBehavior(
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+            #expect(resolved.llmPostProcessingPrompt == "Slack-specific prompt")
+            #expect(resolved.isUsingAppOverride == true)
+        }
+    }
+
+    @Test("resolvedBehavior falls back to global LLM prompt when per-app prompt is nil")
+    func resolvedBehaviorFallsBackToGlobalLLMPrompt() {
+        withDefaults { defaults in
+            AppBehaviorSettings.setGlobalLLMPostProcessingPrompt("Global prompt", defaults: defaults)
+            AppBehaviorSettings.saveOverride(
+                AppBehaviorOverride(autoSubmitMode: .enter),
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+
+            let resolved = AppBehaviorSettings.resolvedBehavior(
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+            #expect(resolved.llmPostProcessingPrompt == "Global prompt")
+        }
+    }
+
     @Test("removeCustomApp removes custom app and its override")
     func removeCustomAppRemovesOverride() {
         withDefaults { defaults in
