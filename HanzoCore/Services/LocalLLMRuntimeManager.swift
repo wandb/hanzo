@@ -511,37 +511,18 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
             throw LocalLLMRuntimeError.invalidServerResponse
         }
 
-        let promptInstruction = userPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let userContent: String
-        if promptInstruction.isEmpty {
-            userContent = """
-            /no_think
-            Rewrite the transcript for clarity while preserving meaning.
-
-            Transcript:
-            \(transcript)
-            """
-        } else {
-            userContent = """
-            /no_think
-            User rewrite instruction:
-            \(promptInstruction)
-
-            Transcript:
-            \(transcript)
-            """
-        }
+        let prompt = TranscriptRewritePrompt.render(
+            transcript: transcript,
+            userPrompt: userPrompt
+        )
 
         let maxTokens = rewriteMaxTokens(for: transcript)
 
         let requestBody = ChatCompletionRequest(
             model: "qwen3-4b",
             messages: [
-                ChatMessage(
-                    role: "system",
-                    content: "You are a real-time transcript rewriter. Always return polished transcript text. Preserve meaning and factual content. Apply the user's instruction exactly. If the user gives a style or tone instruction, the output must clearly reflect that instruction. Return only the rewritten transcript text without analysis or commentary."
-                ),
-                ChatMessage(role: "user", content: userContent)
+                ChatMessage(role: "system", content: prompt.system),
+                ChatMessage(role: "user", content: "/no_think\n" + prompt.user)
             ],
             temperature: 0.2,
             maxTokens: maxTokens,

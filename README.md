@@ -44,6 +44,7 @@ Hanzo runs in the menu bar — there is no dock icon.
 |---|---|
 | `./dev-run.sh --reset-models` | Clear downloaded models before building |
 | `./dev-run.sh --reset-permissions` | Reset Microphone & Accessibility permissions (useful for testing onboarding) |
+| `./dev-run.sh --no-launch` | Build and assemble the app bundle without launching it |
 | `swift build` | Build without launching |
 | `swift test` | Run the test suite |
 | `pkill -x Hanzo` | Kill the running app |

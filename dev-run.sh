@@ -1,12 +1,24 @@
 #!/bin/bash
-set -e
+set -euo pipefail
+
+die() {
+    echo "Error: $*" >&2
+    exit 1
+}
+
+require_cmd() {
+    command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
+}
 
 RESET_MODELS=false
 RESET_PERMISSIONS=false
+NO_LAUNCH=false
 for arg in "$@"; do
     case "$arg" in
         --reset-models) RESET_MODELS=true ;;
         --reset-permissions) RESET_PERMISSIONS=true ;;
+        --no-launch) NO_LAUNCH=true ;;
+        *) die "Unknown argument: $arg" ;;
     esac
 done
 
@@ -36,8 +48,7 @@ LLAMA_RELEASE_TAG="${HANZO_LLAMA_RELEASE_TAG:-$LLAMA_RELEASE_TAG_DEFAULT}"
 LLAMA_RELEASE_SHA256="${HANZO_LLAMA_RELEASE_SHA256:-$LLAMA_RELEASE_SHA256_DEFAULT}"
 
 if [ "$LLAMA_RELEASE_TAG" != "$LLAMA_RELEASE_TAG_DEFAULT" ] && [ -z "${HANZO_LLAMA_RELEASE_SHA256:-}" ]; then
-    echo "Error: set HANZO_LLAMA_RELEASE_SHA256 when overriding HANZO_LLAMA_RELEASE_TAG."
-    exit 1
+    die "set HANZO_LLAMA_RELEASE_SHA256 when overriding HANZO_LLAMA_RELEASE_TAG."
 fi
 
 download_llama_runtime() {
@@ -64,8 +75,7 @@ download_llama_runtime() {
     local extracted_server
     extracted_server="$(find "$extract_root" -type f -name llama-server | head -n 1)"
     if [ -z "$extracted_server" ]; then
-        echo "Error: downloaded archive did not contain llama-server." >&2
-        exit 1
+        die "downloaded archive did not contain llama-server."
     fi
 
     local extracted_dir
@@ -109,8 +119,16 @@ resolve_llama_runtime_dir() {
     download_llama_runtime
 }
 
-# Build
+# Build and discover canonical SwiftPM artifact directory.
+require_cmd swift
+require_cmd plutil
+require_cmd rsync
+
 swift build
+BIN_DIR="$(swift build --show-bin-path)"
+APP_EXECUTABLE="$BIN_DIR/HanzoApp"
+[ -x "$APP_EXECUTABLE" ] || die "Built executable not found at $APP_EXECUTABLE"
+[ -f "HanzoCore/Info.plist" ] || die "Missing HanzoCore/Info.plist"
 
 # Create .app bundle at a fixed location so macOS retains permissions across worktrees
 APP_DIR="$HOME/.local/share/hanzo/Hanzo.app/Contents"
@@ -119,30 +137,45 @@ mkdir -p "$APP_DIR/MacOS"
 mkdir -p "$APP_DIR/Resources"
 
 # Copy executable
-cp .build/debug/HanzoApp "$APP_DIR/MacOS/Hanzo"
+install -m 755 "$APP_EXECUTABLE" "$APP_DIR/MacOS/Hanzo"
 
 # Copy bundled llama.cpp runtime (llama-server + required dylibs)
 LLAMA_RUNTIME_DIR="$(resolve_llama_runtime_dir)"
-rm -rf "$APP_DIR/MacOS/llama-runtime"
+[ -x "$LLAMA_RUNTIME_DIR/llama-server" ] || die "llama-server not found in $LLAMA_RUNTIME_DIR"
 mkdir -p "$APP_DIR/MacOS/llama-runtime"
-cp -R "$LLAMA_RUNTIME_DIR/." "$APP_DIR/MacOS/llama-runtime/"
+rsync -a --delete "$LLAMA_RUNTIME_DIR/" "$APP_DIR/MacOS/llama-runtime/"
 chmod +x "$APP_DIR/MacOS/llama-runtime/llama-server"
 
 # Copy Info.plist
-cp HanzoCore/Info.plist "$APP_DIR/Info.plist"
+install -m 644 HanzoCore/Info.plist "$APP_DIR/Info.plist"
 
 # Inject hosted server settings into the app bundle at build time.
 plutil -replace HanzoHostedServerEndpoint -string "$HOSTED_ENDPOINT" "$APP_DIR/Info.plist"
 plutil -replace HanzoHostedServerPassword -string "$HOSTED_PASSWORD" "$APP_DIR/Info.plist"
 
-# Copy all SwiftPM resource bundles (including transitive dependency bundles)
-find "$APP_ROOT" -maxdepth 1 -name "*.bundle" -exec rm -rf {} +
-for bundle in .build/debug/*.bundle; do
-    if [ -d "$bundle" ]; then
-        cp -R "$bundle" "$APP_ROOT/"
-    fi
-done
+# Copy all SwiftPM resource bundles (including transitive dependency bundles).
+# Start from a clean bundle set so stale resources cannot survive between runs.
+find "$APP_ROOT" -maxdepth 1 -name "*.bundle" -type d -exec rm -rf {} +
+
+resource_bundle_count=0
+hanzo_bundle_name=""
+while IFS= read -r bundle_path; do
+    bundle_name="$(basename "$bundle_path")"
+    rsync -a --delete "$bundle_path/" "$APP_ROOT/$bundle_name/"
+    resource_bundle_count=$((resource_bundle_count + 1))
+    case "$bundle_name" in
+        *_HanzoCore.bundle) hanzo_bundle_name="$bundle_name" ;;
+    esac
+done < <(find "$BIN_DIR" -maxdepth 1 -name "*.bundle" -type d | sort)
+
+[ "$resource_bundle_count" -gt 0 ] || die "No SwiftPM resource bundles found in $BIN_DIR"
+[ -n "$hanzo_bundle_name" ] || die "HanzoCore resource bundle was not copied"
+[ -f "$APP_ROOT/$hanzo_bundle_name/rewrite.txt" ] || die "rewrite.txt missing from $hanzo_bundle_name"
 
 echo "App bundle created at $HOME/.local/share/hanzo/Hanzo.app"
-echo "Launching..."
-open "$HOME/.local/share/hanzo/Hanzo.app"
+if [ "$NO_LAUNCH" = true ]; then
+    echo "Skipping launch (--no-launch)."
+else
+    echo "Launching..."
+    open "$HOME/.local/share/hanzo/Hanzo.app"
+fi
