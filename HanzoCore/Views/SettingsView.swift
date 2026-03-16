@@ -303,7 +303,7 @@ struct SettingsView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(isRecordingHotkey ? "Cancel hotkey recording" : "Change hotkey")
+                .accessibilityLabel(isRecordingHotkey ? "Cancel hotkey recording" : "Set hotkey")
             }
         }
     }
