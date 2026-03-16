@@ -12,11 +12,13 @@ require_cmd() {
 
 RESET_MODELS=false
 RESET_PERMISSIONS=false
+RESET_SETTINGS=false
 NO_LAUNCH=false
 for arg in "$@"; do
     case "$arg" in
         --reset-models) RESET_MODELS=true ;;
         --reset-permissions) RESET_PERMISSIONS=true ;;
+        --reset-settings) RESET_SETTINGS=true ;;
         --no-launch) NO_LAUNCH=true ;;
         *) die "Unknown argument: $arg" ;;
     esac
@@ -25,6 +27,12 @@ done
 # Kill running instance
 require_cmd pkill
 pkill -x Hanzo || true
+
+# Reset app UserDefaults (opt-in)
+if [ "$RESET_SETTINGS" = true ]; then
+    require_cmd defaults
+    defaults delete com.hanzo.app >/dev/null 2>&1 || true
+fi
 
 # Clear downloaded models (opt-in): Whisper + local rewrite LLM model.
 if [ "$RESET_MODELS" = true ]; then

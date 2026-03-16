@@ -61,7 +61,7 @@ enum Constants {
     static let serverEndpointKey = "serverEndpoint"
     static let customServerPasswordKey = "customServerPassword"
     static let asrProviderKey = "asrProvider"
-    static let defaultASRProvider: ASRProvider = .hosted
+    static let defaultASRProvider: ASRProvider = .local
     static let onboardingCompleteKey = "onboardingComplete"
     static let hotkeyCodeKey = "hotkeyCode"
     static let hotkeyModifiersKey = "hotkeyModifiers"

@@ -2,7 +2,7 @@
 
 macOS menu bar dictation app. Press a hotkey, speak, and transcribed text is inserted into whatever app you're using.
 
-Hanzo captures audio via a global hotkey (default: Ctrl + Space), streams it to a hosted ASR service, and pastes the result into the active application.
+Hanzo captures audio via a global hotkey (default: Ctrl + Space), transcribes with local Whisper by default, and pastes the result into the active application.
 
 ## Requirements
 
@@ -44,6 +44,7 @@ Hanzo runs in the menu bar — there is no dock icon.
 |---|---|
 | `./dev-run.sh --reset-models` | Clear downloaded models before building |
 | `./dev-run.sh --reset-permissions` | Reset Microphone & Accessibility permissions (useful for testing onboarding) |
+| `./dev-run.sh --reset-settings` | Clear app UserDefaults (onboarding, provider/mode selections, hotkey, overrides) |
 | `./dev-run.sh --no-launch` | Build and assemble the app bundle without launching it |
 | `swift build` | Build without launching |
 | `swift test` | Run the test suite |
@@ -52,7 +53,7 @@ Hanzo runs in the menu bar — there is no dock icon.
 ## Configuration
 
 - **Hotkey** — Configurable in the app settings (default: Ctrl + Space)
-- **ASR provider** — `Hosted` (default), `Local (Whisper)`, or `Custom Server`
+- **ASR provider** — `Local (Whisper)` (default), `Hosted`, or `Custom Server`
 - **Custom server endpoint + password** — Configurable in Settings when `Custom Server` is selected
 - **App-specific behavior** — Configure per-app auto-submit and silence timeout overrides (global values remain fallback defaults)
 - **Local model** — Uses `base.en` from `argmaxinc/whisperkit-coreml`, downloaded on first use
