@@ -36,6 +36,11 @@ struct SettingsView: View {
     @State private var globalSilenceTimeout: Double = AppBehaviorSettings.globalSilenceTimeout()
     @State private var transcriptPostProcessingMode: TranscriptPostProcessingMode = AppBehaviorSettings.globalPostProcessingMode()
     @State private var llmPostProcessingPrompt: String = AppBehaviorSettings.globalLLMPostProcessingPrompt()
+    @State private var rewritePromptTemplate: String = TranscriptRewritePrompt.activeTemplate()
+    @State private var rewritePromptTemplateValidationError: String? = TranscriptRewritePrompt.validateTemplate(
+        TranscriptRewritePrompt.activeTemplate()
+    )
+    @State private var isPromptTemplateExpanded = false
     @State private var appBehaviorOverrides: [String: AppBehaviorOverride] = AppBehaviorSettings.loadOverrides()
     @State private var supportedApps: [SupportedAppBehavior] = AppBehaviorSettings.supportedApps
     @State private var selectedSection: SettingsSection = .general
@@ -47,11 +52,17 @@ struct SettingsView: View {
     @FocusState private var focusedField: Field?
     private let silenceTimeoutOptions: [Double] = [0, 1, 2, 3, 5]
     private let inputWidth: CGFloat = 300
+    private let postProcessingHelpText = "How Hanzo cleans up the transcript before insert."
+    private let userPromptHelpText = "Custom instructions inserted into the template as {{user_prompt}}."
+    private let rewriteTemplateHelpText = "Template used to build the rewrite request for the local model."
+    private let silenceTimeoutHelpText = "Stop recording after this much silence. Off disables it."
+    private let autoSubmitHelpText = "Send text automatically after insert."
 
     private enum Field { case endpoint, serverPassword }
 
     private enum SettingsSection: Hashable {
         case general
+        case transcription
         case app(String) // bundleIdentifier
     }
 
@@ -65,7 +76,13 @@ struct SettingsView: View {
                     .padding(.vertical, 8)
                     .padding(.horizontal, 12)
 
-                Text("APP OVERRIDES")
+                sidebarButton(label: "Transcription", icon: "waveform", section: .transcription)
+
+                Divider()
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 12)
+
+                Text("APPS")
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundStyle(.tertiary)
                     .padding(.horizontal, 12)
@@ -127,6 +144,8 @@ struct SettingsView: View {
                         switch selectedSection {
                         case .general:
                             generalContent
+                        case .transcription:
+                            transcriptionContent
                         case .app(let bundleIdentifier):
                             if let app = supportedApps.first(where: { $0.bundleIdentifier == bundleIdentifier }) {
                                 appBehaviorContent(for: app)
@@ -294,16 +313,6 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(isRecordingHotkey ? "Cancel hotkey recording" : "Set hotkey")
             }
-
-            Divider()
-                .padding(.vertical, 4)
-
-            transcriptionContent
-
-            Divider()
-                .padding(.vertical, 4)
-
-            appBehaviorDefaultsContent
         }
     }
 
@@ -352,6 +361,8 @@ struct SettingsView: View {
                     .focused($focusedField, equals: .serverPassword)
                     .onChange(of: serverPassword) { saveTranscriptionSettings() }
             }
+
+            appBehaviorDefaultsContent
         }
     }
 
@@ -359,12 +370,8 @@ struct SettingsView: View {
 
     private var appBehaviorDefaultsContent: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("App behavior")
-                .font(.system(.title3, design: .rounded, weight: .semibold))
-
             HStack {
-                Text("Post-processing")
-                    .font(.system(.body, design: .rounded))
+                settingLabel("Post-processing", helpText: postProcessingHelpText)
                 Spacer()
                 Picker("", selection: $transcriptPostProcessingMode) {
                     ForEach(TranscriptPostProcessingMode.allCases, id: \.rawValue) { mode in
@@ -380,9 +387,55 @@ struct SettingsView: View {
             }
 
             if transcriptPostProcessingMode == .llm {
+                DisclosureGroup(isExpanded: $isPromptTemplateExpanded) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        TextEditor(text: $rewritePromptTemplate)
+                            .font(.system(.callout, design: .monospaced))
+                            .scrollContentBackground(.hidden)
+                            .frame(height: 160)
+                            .padding(8)
+                            .background(.primary.opacity(0.08))
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                            .frame(width: 420)
+                            .accessibilityLabel("Prompt template")
+                            .onChange(of: rewritePromptTemplate) {
+                                validateAndPersistRewriteTemplate()
+                            }
+
+                        Text("Placeholders: {{transcript}}, {{user_prompt}}, {{target_app}}, {{#user_prompt}}...{{/user_prompt}}, {{#target_app}}...{{/target_app}}")
+                            .font(.system(.caption, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 420, alignment: .leading)
+
+                        if let rewritePromptTemplateValidationError {
+                            Text(rewritePromptTemplateValidationError)
+                                .font(.system(.caption, design: .rounded))
+                                .foregroundStyle(.red)
+                                .frame(width: 420, alignment: .leading)
+                        } else {
+                            Text("Template is valid.")
+                                .font(.system(.caption, design: .rounded))
+                                .foregroundStyle(.green)
+                                .frame(width: 420, alignment: .leading)
+                        }
+
+                        HStack {
+                            Spacer()
+                            Button("Reset to default template") {
+                                resetRewritePromptTemplate()
+                            }
+                            .font(.system(.caption, design: .rounded))
+                            .buttonStyle(.borderless)
+                        }
+                        .frame(width: 420)
+                    }
+                    .padding(.top, 6)
+                } label: {
+                    settingLabel("Prompt template", helpText: rewriteTemplateHelpText)
+                }
+
                 HStack(alignment: .top) {
-                    Text("LLM prompt")
-                        .font(.system(.body, design: .rounded))
+                    settingLabel("User prompt", helpText: userPromptHelpText)
                         .padding(.top, 8)
                     Spacer()
                     TextEditor(text: $llmPostProcessingPrompt)
@@ -393,7 +446,7 @@ struct SettingsView: View {
                         .background(.primary.opacity(0.08))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .frame(width: inputWidth)
-                        .accessibilityLabel("LLM prompt")
+                        .accessibilityLabel("User prompt")
                 }
                 .onChange(of: llmPostProcessingPrompt) {
                     AppBehaviorSettings.setGlobalLLMPostProcessingPrompt(llmPostProcessingPrompt)
@@ -402,8 +455,7 @@ struct SettingsView: View {
             }
 
             HStack {
-                Text("Silence timeout")
-                    .font(.system(.body, design: .rounded))
+                settingLabel("Silence timeout", helpText: silenceTimeoutHelpText)
                 Spacer()
                 Picker("", selection: $globalSilenceTimeout) {
                     ForEach(silenceTimeoutOptions, id: \.self) { timeout in
@@ -422,8 +474,7 @@ struct SettingsView: View {
             }
 
             HStack {
-                Text("Auto-submit")
-                    .font(.system(.body, design: .rounded))
+                settingLabel("Auto-submit", helpText: autoSubmitHelpText)
                 Spacer()
                 Picker("", selection: $globalAutoSubmitMode) {
                     ForEach(AutoSubmitMode.allCases, id: \.self) { mode in
@@ -448,8 +499,7 @@ struct SettingsView: View {
                 .font(.system(.title3, design: .rounded, weight: .semibold))
 
             HStack {
-                Text("Post-processing")
-                    .font(.system(.body, design: .rounded))
+                settingLabel("Post-processing", helpText: postProcessingHelpText)
                 Spacer()
                 Picker("", selection: postProcessingModeBinding(for: app)) {
                     Text("Default").tag(nil as TranscriptPostProcessingMode?)
@@ -463,8 +513,7 @@ struct SettingsView: View {
 
             if resolvedPostProcessingMode(for: app) == .llm {
                 HStack(alignment: .top) {
-                    Text("LLM prompt")
-                        .font(.system(.body, design: .rounded))
+                    settingLabel("User prompt", helpText: userPromptHelpText)
                         .padding(.top, 8)
                     Spacer()
                     VStack(alignment: .trailing, spacing: 4) {
@@ -476,7 +525,7 @@ struct SettingsView: View {
                             .background(.primary.opacity(0.08))
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                             .frame(width: inputWidth)
-                            .accessibilityLabel("LLM prompt for \(app.displayName)")
+                            .accessibilityLabel("User prompt for \(app.displayName)")
 
                         if appBehaviorOverrides[app.bundleIdentifier]?.llmPostProcessingPrompt != nil {
                             Button("Reset to default") {
@@ -492,8 +541,7 @@ struct SettingsView: View {
             }
 
             HStack {
-                Text("Silence timeout")
-                    .font(.system(.body, design: .rounded))
+                settingLabel("Silence timeout", helpText: silenceTimeoutHelpText)
                 Spacer()
                 Picker("", selection: silenceTimeoutBinding(for: app)) {
                     Text("Default").tag(nil as Double?)
@@ -506,8 +554,7 @@ struct SettingsView: View {
             }
 
             HStack {
-                Text("Auto-submit")
-                    .font(.system(.body, design: .rounded))
+                settingLabel("Auto-submit", helpText: autoSubmitHelpText)
                 Spacer()
                 Picker("", selection: autoSubmitBinding(for: app)) {
                     Text("Default").tag(nil as AutoSubmitMode?)
@@ -532,6 +579,25 @@ struct SettingsView: View {
                 }
             }
         }    }
+
+    @ViewBuilder
+    private func settingLabel(_ title: String, helpText: String?) -> some View {
+        if let helpText {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.system(.body, design: .rounded))
+                Image(systemName: "info.circle")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 14, height: 14)
+                    .accessibilityLabel("\(title) info")
+                    .instantTooltip(helpText)
+            }
+        } else {
+            Text(title)
+                .font(.system(.body, design: .rounded))
+        }
+    }
 
     private func resolvedPostProcessingMode(for app: SupportedAppBehavior) -> TranscriptPostProcessingMode {
         appBehaviorOverrides[app.bundleIdentifier]?.postProcessingMode ?? transcriptPostProcessingMode
@@ -587,6 +653,24 @@ struct SettingsView: View {
         }
 
         return "\(timeout)s"
+    }
+
+    private func validateAndPersistRewriteTemplate() {
+        rewritePromptTemplateValidationError = TranscriptRewritePrompt.validateTemplate(rewritePromptTemplate)
+
+        guard rewritePromptTemplateValidationError == nil else {
+            return
+        }
+
+        TranscriptRewritePrompt.setCustomTemplate(rewritePromptTemplate)
+        onSave?()
+    }
+
+    private func resetRewritePromptTemplate() {
+        rewritePromptTemplate = TranscriptRewritePrompt.defaultTemplate()
+        rewritePromptTemplateValidationError = nil
+        TranscriptRewritePrompt.setCustomTemplate(nil)
+        onSave?()
     }
 
     private func persistOverride(_ appOverride: AppBehaviorOverride, for bundleIdentifier: String) {
@@ -709,6 +793,49 @@ struct SettingsView: View {
         onHotkeyChanged?()
     }
 
+}
+
+// MARK: - Instant Tooltip
+
+private struct InstantTooltipModifier: ViewModifier {
+    let text: String
+    @State private var showTooltip = false
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.08)) {
+                    showTooltip = hovering
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if showTooltip {
+                    Text(text)
+                        .font(.system(.caption2, design: .rounded))
+                        .foregroundStyle(.primary.opacity(0.85))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(.primary.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(.primary.opacity(0.2), lineWidth: 0.5)
+                        )
+                        .allowsHitTesting(false)
+                        .frame(width: 220, alignment: .leading)
+                        .offset(x: 16, y: -10)
+                        .transition(.opacity)
+                        .zIndex(20)
+                }
+            }
+    }
+}
+
+private extension View {
+    func instantTooltip(_ text: String) -> some View {
+        modifier(InstantTooltipModifier(text: text))
+    }
 }
 
 // MARK: - Hotkey Recorder
