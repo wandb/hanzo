@@ -23,6 +23,7 @@ for arg in "$@"; do
 done
 
 # Kill running instance
+require_cmd pkill
 pkill -x Hanzo || true
 
 # Clear downloaded models (opt-in): Whisper + local rewrite LLM model.
@@ -35,6 +36,7 @@ fi
 
 # Reset permissions (opt-in)
 if [ "$RESET_PERMISSIONS" = true ]; then
+    require_cmd tccutil
     tccutil reset Microphone com.hanzo.app
     tccutil reset Accessibility com.hanzo.app
 fi
@@ -123,9 +125,13 @@ resolve_llama_runtime_dir() {
 require_cmd swift
 require_cmd plutil
 require_cmd rsync
+require_cmd curl
+require_cmd shasum
+require_cmd tar
+require_cmd find
 
-swift build
 BIN_DIR="$(swift build --show-bin-path)"
+swift build
 APP_EXECUTABLE="$BIN_DIR/HanzoApp"
 [ -x "$APP_EXECUTABLE" ] || die "Built executable not found at $APP_EXECUTABLE"
 [ -f "HanzoCore/Info.plist" ] || die "Missing HanzoCore/Info.plist"
@@ -156,6 +162,7 @@ plutil -replace HanzoHostedServerPassword -string "$HOSTED_PASSWORD" "$APP_DIR/I
 # Copy all SwiftPM resource bundles (including transitive dependency bundles).
 # Start from a clean bundle set so stale resources cannot survive between runs.
 find "$APP_ROOT" -maxdepth 1 -name "*.bundle" -type d -exec rm -rf {} +
+find "$APP_DIR/Resources" -maxdepth 1 -name "*.bundle" -type d -exec rm -rf {} +
 
 resource_bundle_count=0
 hanzo_bundle_name=""
@@ -176,6 +183,7 @@ echo "App bundle created at $HOME/.local/share/hanzo/Hanzo.app"
 if [ "$NO_LAUNCH" = true ]; then
     echo "Skipping launch (--no-launch)."
 else
+    require_cmd open
     echo "Launching..."
     open "$HOME/.local/share/hanzo/Hanzo.app"
 fi

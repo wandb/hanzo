@@ -2,7 +2,6 @@ import SwiftUI
 import Carbon
 import ServiceManagement
 import AppKit
-import UniformTypeIdentifiers
 
 struct SettingsView: View {
     var appState: AppState
@@ -36,9 +35,7 @@ struct SettingsView: View {
     @State private var globalAutoSubmitMode: AutoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode()
     @State private var globalSilenceTimeout: Double = AppBehaviorSettings.globalSilenceTimeout()
     @State private var transcriptPostProcessingMode: TranscriptPostProcessingMode = AppBehaviorSettings.globalPostProcessingMode()
-    @State private var llmPostProcessingPrompt: String = UserDefaults.standard.string(
-        forKey: Constants.llmPostProcessingPromptKey
-    ) ?? Constants.defaultLLMPostProcessingPrompt
+    @State private var llmPostProcessingPrompt: String = AppBehaviorSettings.globalLLMPostProcessingPrompt()
     @State private var appBehaviorOverrides: [String: AppBehaviorOverride] = AppBehaviorSettings.loadOverrides()
     @State private var supportedApps: [SupportedAppBehavior] = AppBehaviorSettings.supportedApps
     @State private var selectedSection: SettingsSection = .general
