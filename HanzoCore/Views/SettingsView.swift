@@ -52,7 +52,7 @@ struct SettingsView: View {
     @FocusState private var focusedField: Field?
     private let silenceTimeoutOptions: [Double] = [0, 1, 2, 3, 5]
     private let inputWidth: CGFloat = 300
-    private let postProcessingHelpText = "How Hanzo cleans up the transcript before insert."
+    private let postProcessingHelpText = "Default rewrite mode for all apps. Individual apps can override."
     private let userPromptHelpText = "Custom instructions inserted into the template as {{user_prompt}}."
     private let rewriteTemplateHelpText = "Template used to build the rewrite request for the local model."
     private let silenceTimeoutHelpText = "Stop recording after this much silence. Off disables it."
@@ -371,15 +371,17 @@ struct SettingsView: View {
     private var appBehaviorDefaultsContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                settingLabel("Post-processing", helpText: postProcessingHelpText)
+                settingLabel("Default post-processing", helpText: postProcessingHelpText)
                 Spacer()
-                Picker("", selection: $transcriptPostProcessingMode) {
-                    ForEach(TranscriptPostProcessingMode.allCases, id: \.rawValue) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
+                HStack(spacing: 8) {
+                    Text(transcriptPostProcessingMode == .llm ? "On (LLM)" : "Off")
+                        .font(.system(.caption, design: .rounded))
+                        .foregroundStyle(.secondary)
+                    Toggle("", isOn: llmPostProcessingEnabledBinding)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .labelsHidden()
                 }
-                .pickerStyle(.menu)
-                .frame(width: inputWidth, alignment: .trailing)
             }
             .onChange(of: transcriptPostProcessingMode) {
                 AppBehaviorSettings.setGlobalPostProcessingMode(transcriptPostProcessingMode)
@@ -499,17 +501,21 @@ struct SettingsView: View {
                 .font(.system(.title3, design: .rounded, weight: .semibold))
 
             HStack {
-                settingLabel("Post-processing", helpText: postProcessingHelpText)
+                settingLabel("Post-processing override", helpText: "Default follows the global setting. On and Off override for this app.")
                 Spacer()
                 Picker("", selection: postProcessingModeBinding(for: app)) {
                     Text("Default").tag(nil as TranscriptPostProcessingMode?)
-                    ForEach(TranscriptPostProcessingMode.allCases, id: \.rawValue) { mode in
-                        Text(mode.displayName).tag(Optional(mode))
-                    }
+                    Text("On (LLM)").tag(Optional(TranscriptPostProcessingMode.llm))
+                    Text("Off").tag(Optional(TranscriptPostProcessingMode.off))
                 }
                 .pickerStyle(.menu)
                 .frame(width: inputWidth, alignment: .trailing)
             }
+
+            Text("Effective: \(resolvedPostProcessingMode(for: app) == .llm ? "On (LLM)" : "Off")")
+                .font(.system(.caption, design: .rounded))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .trailing)
 
             if resolvedPostProcessingMode(for: app) == .llm {
                 HStack(alignment: .top) {
@@ -653,6 +659,14 @@ struct SettingsView: View {
         }
 
         return "\(timeout)s"
+    }
+
+    private var llmPostProcessingEnabledBinding: Binding<Bool> {
+        Binding {
+            transcriptPostProcessingMode == .llm
+        } set: { isEnabled in
+            transcriptPostProcessingMode = isEnabled ? .llm : .off
+        }
     }
 
     private func validateAndPersistRewriteTemplate() {
