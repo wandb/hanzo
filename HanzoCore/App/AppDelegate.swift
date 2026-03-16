@@ -68,7 +68,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // Show onboarding if not completed, or if permissions were revoked
         let permissions = PermissionService.shared
         let permissionsRevoked = !permissions.hasMicrophonePermission || !permissions.hasAccessibilityPermission
-        if !appState.isOnboardingComplete || permissionsRevoked {
+        let requiresModelPreparation = !hasRequiredLocalModelsForCurrentSettings()
+        if !appState.isOnboardingComplete || permissionsRevoked || requiresModelPreparation {
             showOnboarding()
         } else {
             registerLaunchAtLoginIfNeeded()
@@ -281,6 +282,76 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Onboarding
+
+    private func hasRequiredLocalModelsForCurrentSettings() -> Bool {
+        let provider: ASRProvider = {
+            if let raw = UserDefaults.standard.string(forKey: Constants.asrProviderKey),
+               let parsed = ASRProvider(rawValue: raw) {
+                return parsed
+            }
+            return Constants.defaultASRProvider
+        }()
+
+        let needsWhisper = provider == .local
+        let needsLLM = AppBehaviorSettings.globalPostProcessingMode() == .llm
+
+        if needsWhisper && !hasLocalWhisperModel() {
+            return false
+        }
+
+        if needsLLM && !hasLocalLLMModel() {
+            return false
+        }
+
+        return true
+    }
+
+    private func hasLocalWhisperModel() -> Bool {
+        let fileManager = FileManager.default
+        let root = LocalModelPaths.modelsRoot(fileManager: fileManager)
+        let maxDepth = 6
+        var queue: [(url: URL, depth: Int)] = [(root, 0)]
+        var queueIndex = 0
+
+        while queueIndex < queue.count {
+            let (url, depth) = queue[queueIndex]
+            queueIndex += 1
+
+            let encoderDirectory = url.appendingPathComponent("AudioEncoder.mlmodelc")
+            var isDirectory: ObjCBool = false
+            if fileManager.fileExists(atPath: encoderDirectory.path, isDirectory: &isDirectory),
+               isDirectory.boolValue {
+                return true
+            }
+
+            guard depth < maxDepth else {
+                continue
+            }
+
+            guard let children = try? fileManager.contentsOfDirectory(
+                at: url,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            ) else {
+                continue
+            }
+
+            for child in children {
+                guard let values = try? child.resourceValues(forKeys: [.isDirectoryKey]),
+                      values.isDirectory == true else {
+                    continue
+                }
+                queue.append((child, depth + 1))
+            }
+        }
+
+        return false
+    }
+
+    private func hasLocalLLMModel() -> Bool {
+        let modelFile = LocalModelPaths.llmModelFile()
+        return FileManager.default.fileExists(atPath: modelFile.path)
+    }
 
     private func showOnboarding() {
         let onboardingView = OnboardingContainerView(

@@ -263,10 +263,6 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
     }
 
     private func modelsDirectoryURL() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library")
-            .appendingPathComponent("Application Support")
-            .appendingPathComponent(Constants.bundleIdentifier)
-            .appendingPathComponent(Constants.localModelsFolderName)
+        LocalModelPaths.modelsRoot()
     }
 }
