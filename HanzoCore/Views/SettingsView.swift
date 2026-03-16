@@ -52,7 +52,6 @@ struct SettingsView: View {
 
     private enum SettingsSection: Hashable {
         case general
-        case defaultBehavior
         case app(String) // bundleIdentifier
     }
 
@@ -66,7 +65,7 @@ struct SettingsView: View {
                     .padding(.vertical, 8)
                     .padding(.horizontal, 12)
 
-                Text("APP BEHAVIOR")
+                Text("APP OVERRIDES")
                     .font(.system(size: 10, weight: .semibold, design: .rounded))
                     .foregroundStyle(.tertiary)
                     .padding(.horizontal, 12)
@@ -74,7 +73,6 @@ struct SettingsView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        sidebarButton(label: "Default", icon: "slider.horizontal.3", section: .defaultBehavior)
                         ForEach(supportedApps) { app in
                             appSidebarButton(for: app)
                         }
@@ -129,8 +127,6 @@ struct SettingsView: View {
                         switch selectedSection {
                         case .general:
                             generalContent
-                        case .defaultBehavior:
-                            defaultBehaviorContent
                         case .app(let bundleIdentifier):
                             if let app = supportedApps.first(where: { $0.bundleIdentifier == bundleIdentifier }) {
                                 appBehaviorContent(for: app)
@@ -303,6 +299,11 @@ struct SettingsView: View {
                 .padding(.vertical, 4)
 
             transcriptionContent
+
+            Divider()
+                .padding(.vertical, 4)
+
+            appBehaviorDefaultsContent
         }
     }
 
@@ -354,11 +355,11 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Default Behavior
+    // MARK: - App Behavior Defaults
 
-    private var defaultBehaviorContent: some View {
+    private var appBehaviorDefaultsContent: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Default")
+            Text("App behavior")
                 .font(.system(.title3, design: .rounded, weight: .semibold))
 
             HStack {
@@ -523,7 +524,7 @@ struct SettingsView: View {
                     Spacer()
                     Button("Remove App") {
                         removeCustomApp(app)
-                        selectedSection = .defaultBehavior
+                        selectedSection = .general
                     }
                     .font(.system(.caption, design: .rounded))
                     .foregroundStyle(.red)
