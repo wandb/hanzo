@@ -1,6 +1,6 @@
 # Hanzo
 
-macOS menu bar dictation app. Captures speech via global hotkey, streams to hosted ASR service, inserts transcribed text into the active app.
+macOS menu bar dictation app. Captures speech via global hotkey, transcribes locally by default, inserts transcribed text into the active app.
 
 ## Build & Run
 
@@ -54,9 +54,9 @@ Package split into two targets: `HanzoCore` (library) and `HanzoApp` (executable
 
 ## External Service
 
-- ASR server (configurable endpoint, default: `https://grunt.zain.aaronbatilo.dev`)
+- Optional custom ASR server (configurable endpoint in Settings)
 - Streaming API: `/v1/stream/start` → `/v1/stream/chunk` → `/v1/stream/finish`
-- Requires API key (stored in Keychain)
+- Optional API key/password for custom server mode
 
 ## Permissions
 

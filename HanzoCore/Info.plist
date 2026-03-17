@@ -20,10 +20,6 @@
     <string>15.0</string>
     <key>LSUIElement</key>
     <true/>
-    <key>HanzoHostedServerEndpoint</key>
-    <string></string>
-    <key>HanzoHostedServerPassword</key>
-    <string></string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Hanzo needs microphone access to capture your speech for transcription.</string>
 </dict>

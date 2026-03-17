@@ -14,12 +14,171 @@ enum TranscriptRewritePrompt {
     Transcript:
     {{transcript}}
     """
+    private static let allowedInterpolationKeys: Set<String> = [
+        "transcript",
+        "user_prompt",
+        "target_app"
+    ]
+    private static let allowedConditionalKeys: Set<String> = [
+        "user_prompt",
+        "target_app"
+    ]
+
+    static func defaultTemplate() -> String {
+        loadTemplate("rewrite")
+    }
+
+    static func activeTemplate(defaults: UserDefaults = .standard) -> String {
+        if let customTemplate = customTemplate(defaults: defaults) {
+            return customTemplate
+        }
+        return defaultTemplate()
+    }
+
+    static func customTemplate(defaults: UserDefaults = .standard) -> String? {
+        guard let stored = defaults.string(forKey: Constants.rewritePromptTemplateKey) else {
+            return nil
+        }
+
+        let trimmed = stored.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : stored
+    }
+
+    static func setCustomTemplate(_ template: String?, defaults: UserDefaults = .standard) {
+        guard let template else {
+            defaults.removeObject(forKey: Constants.rewritePromptTemplateKey)
+            return
+        }
+
+        let trimmed = template.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            defaults.removeObject(forKey: Constants.rewritePromptTemplateKey)
+            return
+        }
+
+        let normalizedTemplate = template.replacingOccurrences(of: "\r\n", with: "\n")
+        let normalizedDefault = defaultTemplate().replacingOccurrences(of: "\r\n", with: "\n")
+        if normalizedTemplate == normalizedDefault {
+            defaults.removeObject(forKey: Constants.rewritePromptTemplateKey)
+            return
+        }
+
+        defaults.set(template, forKey: Constants.rewritePromptTemplateKey)
+    }
+
+    static func validateTemplate(_ template: String) -> String? {
+        let trimmed = template.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return "Template cannot be empty."
+        }
+
+        let tokenPattern = #"\{\{([^{}]+)\}\}"#
+        guard let tokenRegex = try? NSRegularExpression(pattern: tokenPattern) else {
+            return "Failed to parse template placeholders."
+        }
+
+        let nsRange = NSRange(template.startIndex..., in: template)
+        let matches = tokenRegex.matches(in: template, range: nsRange)
+        var sectionStack: [String] = []
+        var hasTranscriptPlaceholder = false
+
+        for match in matches {
+            guard let tokenRange = Range(match.range(at: 1), in: template) else {
+                continue
+            }
+
+            let token = String(template[tokenRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if token.isEmpty {
+                return "Template contains an empty placeholder."
+            }
+
+            if token.hasPrefix("#") {
+                let key = String(token.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard allowedConditionalKeys.contains(key) else {
+                    return "Unsupported section '{{#\(key)}}'."
+                }
+                sectionStack.append(key)
+                continue
+            }
+
+            if token.hasPrefix("/") {
+                let key = String(token.dropFirst()).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let openKey = sectionStack.last else {
+                    return "Section '{{/\(key)}}' does not have a matching opener."
+                }
+                guard openKey == key else {
+                    return "Section '{{/\(key)}}' does not match '{{#\(openKey)}}'."
+                }
+                sectionStack.removeLast()
+                continue
+            }
+
+            guard allowedInterpolationKeys.contains(token) else {
+                return "Unsupported placeholder '{{\(token)}}'."
+            }
+
+            if token == "transcript" {
+                hasTranscriptPlaceholder = true
+            }
+        }
+
+        if let openSection = sectionStack.last {
+            return "Missing closing section tag for '{{#\(openSection)}}'."
+        }
+
+        guard hasTranscriptPlaceholder else {
+            return "Template must include '{{transcript}}'."
+        }
+
+        let withoutTokens = tokenRegex.stringByReplacingMatches(in: template, range: nsRange, withTemplate: "")
+        if withoutTokens.contains("{{") || withoutTokens.contains("}}") {
+            return "Template has malformed placeholder braces."
+        }
+
+        let sampleTranscript = "Sample transcript text."
+        let renderedWithAllVariables = renderTemplate(
+            template,
+            variables: [
+                "transcript": sampleTranscript,
+                "user_prompt": "Use a concise style.",
+                "target_app": "Slack"
+            ]
+        )
+        let renderedWithoutOptionalVariables = renderTemplate(
+            template,
+            variables: ["transcript": sampleTranscript]
+        )
+
+        if renderedWithAllVariables.contains("{{")
+            || renderedWithAllVariables.contains("}}")
+            || renderedWithoutOptionalVariables.contains("{{")
+            || renderedWithoutOptionalVariables.contains("}}") {
+            return "Template has unresolved placeholders after rendering."
+        }
+
+        if !renderedWithAllVariables.contains(sampleTranscript)
+            || !renderedWithoutOptionalVariables.contains(sampleTranscript) {
+            return "Template failed to insert transcript text."
+        }
+
+        let parts = renderedWithAllVariables.components(separatedBy: "\n\n")
+        let system = parts.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let user = parts.dropFirst().joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if system.isEmpty || user.isEmpty {
+            return "Template must include system and user sections separated by a blank line."
+        }
+
+        return nil
+    }
 
     /// Renders the rewrite prompt template, returning (systemMessage, userMessage).
     static func render(
         transcript: String,
         userPrompt: String? = nil,
-        targetApp: String? = nil
+        targetApp: String? = nil,
+        templateOverride: String? = nil,
+        defaults: UserDefaults = .standard
     ) -> (system: String, user: String) {
         let promptInstruction = (userPrompt ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -33,7 +192,9 @@ enum TranscriptRewritePrompt {
             vars["target_app"] = targetApp
         }
 
-        let rendered = renderTemplate(loadTemplate("rewrite"), variables: vars)
+        let candidateTemplate = templateOverride ?? activeTemplate(defaults: defaults)
+        let template = validateTemplate(candidateTemplate) == nil ? candidateTemplate : defaultTemplate()
+        let rendered = renderTemplate(template, variables: vars)
 
         // Split on the first blank line — everything before is the system message,
         // everything after is the user message.

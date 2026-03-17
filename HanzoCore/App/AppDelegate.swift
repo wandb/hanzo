@@ -65,6 +65,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // Observe state changes for icon and popover updates
         startStateObservation()
 
+        // Ensure prewarm starts at app launch instead of first dictation toggle.
+        _ = orchestrator
+
         // Show onboarding if not completed, or if permissions were revoked
         let permissions = PermissionService.shared
         let permissionsRevoked = !permissions.hasMicrophonePermission || !permissions.hasAccessibilityPermission

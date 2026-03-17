@@ -59,7 +59,7 @@ enum ASRError: Error, LocalizedError {
         case .serverError(let code, let detail):
             return "Server error (HTTP \(code))\(detail.map { ": \($0)" } ?? "")"
         case .authenticationFailed:
-            return "Authentication failed. Check hosted/custom server password."
+            return "Authentication failed. Check custom server password."
         case .sessionNotFound:
             return "Streaming session not found"
         case .networkError(let err):

@@ -59,9 +59,6 @@ if [ "$RESET_PERMISSIONS" = true ]; then
     tccutil reset Accessibility com.hanzo.app
 fi
 
-# Hosted ASR build-time injection (env vars loaded by direnv via .envrc)
-HOSTED_ENDPOINT="${HANZO_HOSTED_SERVER_ENDPOINT:-https://grunt.zain.aaronbatilo.dev}"
-HOSTED_PASSWORD="${HANZO_HOSTED_SERVER_PASSWORD:-}"
 LLAMA_RELEASE_TAG_DEFAULT="b8355"
 LLAMA_RELEASE_SHA256_DEFAULT="43e831c4ccf785dfd4c4197e00fbba309823d4088a5c40def5d4d934d6aa6f9b"
 LLAMA_RELEASE_TAG="${HANZO_LLAMA_RELEASE_TAG:-$LLAMA_RELEASE_TAG_DEFAULT}"
@@ -141,7 +138,6 @@ resolve_llama_runtime_dir() {
 
 # Build and discover canonical SwiftPM artifact directory.
 require_cmd swift
-require_cmd plutil
 require_cmd rsync
 require_cmd curl
 require_cmd shasum
@@ -187,10 +183,6 @@ chmod +x "$APP_DIR/MacOS/llama-runtime/llama-server"
 
 # Copy Info.plist
 install -m 644 HanzoCore/Info.plist "$APP_DIR/Info.plist"
-
-# Inject hosted server settings into the app bundle at build time.
-plutil -replace HanzoHostedServerEndpoint -string "$HOSTED_ENDPOINT" "$APP_DIR/Info.plist"
-plutil -replace HanzoHostedServerPassword -string "$HOSTED_PASSWORD" "$APP_DIR/Info.plist"
 
 # Copy all SwiftPM resource bundles (including transitive dependency bundles).
 # Start from a clean bundle set so stale resources cannot survive between runs.
