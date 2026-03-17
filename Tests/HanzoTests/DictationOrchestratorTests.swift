@@ -100,8 +100,19 @@ struct DictationOrchestratorTests {
         #expect(sut.appState.dictationState == .idle)
     }
 
-    @Test("Init skips LLM prewarm while onboarding is incomplete")
-    @MainActor func initSkipsLLMPrewarmWhenOnboardingIncomplete() async throws {
+    @Test("Init prewarms LLM while onboarding is incomplete when permissions are granted")
+    @MainActor func initPrewarmsLLMWhenOnboardingIncomplete() async throws {
+        let defaults = UserDefaults.standard
+        let priorProvider = defaults.string(forKey: Constants.asrProviderKey)
+        defer {
+            if let priorProvider {
+                defaults.set(priorProvider, forKey: Constants.asrProviderKey)
+            } else {
+                defaults.removeObject(forKey: Constants.asrProviderKey)
+            }
+        }
+        defaults.set(ASRProvider.server.rawValue, forKey: Constants.asrProviderKey)
+
         let mockLLM = MockLocalLLMRuntimeManager()
         _ = makeSUT(
             onboardingComplete: false,
@@ -109,8 +120,11 @@ struct DictationOrchestratorTests {
             postProcessingMode: .llm
         )
 
-        try await Task.sleep(nanoseconds: 50_000_000)
-        #expect(mockLLM.prepareModelCallCount == 0)
+        let didPrewarm = await waitUntil {
+            mockLLM.prepareModelCallCount == 1
+        }
+        #expect(didPrewarm)
+        #expect(mockLLM.prepareModelCallCount == 1)
     }
 
     // MARK: - toggle() from idle → listening

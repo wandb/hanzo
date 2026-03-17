@@ -92,7 +92,7 @@ final class DictationOrchestrator {
 
         let hasRequiredPermissions = permissionService.hasMicrophonePermission
             && permissionService.hasAccessibilityPermission
-        if appState.isOnboardingComplete && hasRequiredPermissions {
+        if hasRequiredPermissions {
             prewarmConfiguredRuntimes(
                 asrProvider: configuredASRProvider,
                 postProcessingMode: transcriptPostProcessingMode
