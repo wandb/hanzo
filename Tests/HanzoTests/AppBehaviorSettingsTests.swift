@@ -198,6 +198,13 @@ struct AppBehaviorSettingsTests {
         }
     }
 
+    @Test("Conductor bundle identifier is supported")
+    func conductorBundleIdentifierIsSupported() {
+        withDefaults { defaults in
+            #expect(AppBehaviorSettings.isSupported(bundleIdentifier: "com.conductor.app", defaults: defaults))
+        }
+    }
+
     @Test("removeCustomApp removes custom app and its override")
     func removeCustomAppRemovesOverride() {
         withDefaults { defaults in
