@@ -31,7 +31,7 @@ direnv allow
 ./scripts/dev-run.sh
 ```
 
-This builds the project, assembles the `.app` bundle at `~/.local/share/hanzo/Hanzo.app`, and launches it. The fixed bundle path ensures macOS retains permissions across git worktrees. An onboarding wizard will guide you through granting permissions and preparing the on-device Whisper model on first launch.
+This builds the project, assembles the `.app` bundle at `~/.local/share/hanzo/Hanzo Dev.app`, and launches it. Dev builds use app name `Hanzo Dev` and bundle identifier `com.hanzo.app.dev` (override with `HANZO_DEV_APP_NAME`, `HANZO_DEV_APP_ROOT`, and `HANZO_DEV_BUNDLE_IDENTIFIER`) so they can run alongside the distributed app with separate macOS permissions and settings. The fixed bundle path ensures macOS retains permissions across git worktrees. An onboarding wizard will guide you through granting permissions and preparing the on-device Whisper model on first launch.
 
 `scripts/dev-run.sh` also bundles the local LLM runtime (`llama-server` + dylibs). If no local runtime is found, it auto-downloads a pinned llama.cpp macOS arm64 release into `~/.cache/hanzo/llama.cpp/` and reuses it on subsequent runs.
 
