@@ -20,7 +20,9 @@ struct AudioWaveformView: View {
     private let normalizeThreshold: Float = 0.08
     private let size: CGFloat = 66
     private let forgingRetractDuration: Double = 0.9
-    private let forgingPulseSpeed: Double = 0.78
+    private let forgingPulseSpeed: Double = 0.46
+    private let forgingPulseScaleAmplitude: CGFloat = 0.20
+    private let forgingPulseOpacityAmplitude: Double = 0.24
     private let forgingTargetRadius: CGFloat = 6.2
 
     private let harmonics: [(freq: Double, speed: Double, amp: Double)] = [
@@ -158,7 +160,7 @@ struct AudioWaveformView: View {
 
         let sphereReveal = smoothstep(max(0, (forgingProgress - 0.35) / 0.45))
         let whitening = smoothstep(max(0, (forgingProgress - 0.72) / 0.28))
-        let pulseScale = 1 + 0.05 * whitening * CGFloat(pulse)
+        let pulseScale = 1 + forgingPulseScaleAmplitude * whitening * CGFloat(pulse)
         let sphereDiameter = forgingTargetRadius * 2 * pulseScale
         let sphereRect = CGRect(
             x: center.x - sphereDiameter / 2,
@@ -176,7 +178,11 @@ struct AudioWaveformView: View {
         ctx.fill(
             spherePath,
             with: .color(
-                Color.white.opacity((0.08 + 0.42 * whitening) * sphereReveal * (0.88 + 0.12 * pulse))
+                Color.white.opacity(
+                    (0.08 + 0.42 * whitening)
+                    * sphereReveal
+                    * ((1 - forgingPulseOpacityAmplitude) + forgingPulseOpacityAmplitude * pulse)
+                )
             )
         )
         ctx.stroke(
