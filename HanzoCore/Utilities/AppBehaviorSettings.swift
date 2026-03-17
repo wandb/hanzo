@@ -56,7 +56,7 @@ enum AppBehaviorSettings {
         SupportedAppBehavior(bundleIdentifier: "com.tinyspeck.slackmacgap", displayName: "Slack", isBuiltIn: true),
         SupportedAppBehavior(bundleIdentifier: "com.openai.chat", displayName: "ChatGPT", isBuiltIn: true),
         SupportedAppBehavior(bundleIdentifier: "com.anthropic.claudefordesktop", displayName: "Claude", isBuiltIn: true),
-        SupportedAppBehavior(bundleIdentifier: "build.conductor.Conductor", displayName: "Conductor", isBuiltIn: true),
+        SupportedAppBehavior(bundleIdentifier: "com.conductor.app", displayName: "Conductor", isBuiltIn: true),
         SupportedAppBehavior(bundleIdentifier: "com.microsoft.VSCode", displayName: "VS Code", isBuiltIn: true),
         SupportedAppBehavior(bundleIdentifier: "com.todesktop.230313mzl4w4u92", displayName: "Cursor", isBuiltIn: true),
         SupportedAppBehavior(bundleIdentifier: "com.apple.dt.Xcode", displayName: "Xcode", isBuiltIn: true),
@@ -64,7 +64,6 @@ enum AppBehaviorSettings {
         SupportedAppBehavior(bundleIdentifier: "com.googlecode.iterm2", displayName: "iTerm2", isBuiltIn: true),
         SupportedAppBehavior(bundleIdentifier: "dev.warp.Warp-Stable", displayName: "Warp", isBuiltIn: true)
     ]
-
     private static let encoder = JSONEncoder()
     private static let decoder = JSONDecoder()
 
