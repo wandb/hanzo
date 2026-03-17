@@ -16,6 +16,7 @@ struct DictationOrchestratorTests {
         let mockText: MockTextInsertionService
         let mockPerms: MockPermissionService
         let mockLogger: MockLogger
+        let mockLocalRuntime: MockLocalASRRuntimeManager
         let mockLLM: MockLocalLLMRuntimeManager
     }
 
@@ -31,6 +32,7 @@ struct DictationOrchestratorTests {
             ASRFinishResponse(text: "final transcript", language: "en")
         ),
         audioThrowOnStart: Error? = nil,
+        localRuntimeManager: MockLocalASRRuntimeManager = MockLocalASRRuntimeManager(),
         localLLMRuntimeManager: MockLocalLLMRuntimeManager = MockLocalLLMRuntimeManager(),
         postProcessingMode: TranscriptPostProcessingMode = .off,
         llmPostProcessingPrompt: String = "",
@@ -62,6 +64,7 @@ struct DictationOrchestratorTests {
             audioService: mockAudio,
             textInsertion: mockText,
             permissionService: mockPerms,
+            localRuntimeManager: localRuntimeManager,
             localLLMRuntimeManager: localLLMRuntimeManager,
             logger: mockLogger,
             frontmostApplicationProvider: frontmostApplicationProvider
@@ -74,6 +77,7 @@ struct DictationOrchestratorTests {
             mockText: mockText,
             mockPerms: mockPerms,
             mockLogger: mockLogger,
+            mockLocalRuntime: localRuntimeManager,
             mockLLM: localLLMRuntimeManager
         )
     }
@@ -125,6 +129,33 @@ struct DictationOrchestratorTests {
         }
         #expect(didPrewarm)
         #expect(mockLLM.prepareModelCallCount == 1)
+    }
+
+    // MARK: - Shutdown
+
+    @Test("shutdown() stops local runtimes asynchronously")
+    @MainActor func shutdownStopsLocalRuntimes() async {
+        let sut = makeSUT()
+        sut.orchestrator.shutdown()
+
+        let localStopped = await waitUntil {
+            sut.mockLocalRuntime.stopCallCount == 1
+        }
+        let llmStopped = await waitUntil {
+            sut.mockLLM.stopCallCount == 1
+        }
+
+        #expect(localStopped)
+        #expect(llmStopped)
+    }
+
+    @Test("shutdownAndWait() stops local runtimes synchronously")
+    @MainActor func shutdownAndWaitStopsLocalRuntimes() {
+        let sut = makeSUT()
+        sut.orchestrator.shutdownAndWait(timeoutSeconds: 0.5)
+
+        #expect(sut.mockLocalRuntime.stopCallCount == 1)
+        #expect(sut.mockLLM.stopCallCount == 1)
     }
 
     // MARK: - toggle() from idle → listening
