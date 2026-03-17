@@ -485,13 +485,6 @@ final class DictationOrchestrator {
         let provider = currentASRProvider()
 
         switch provider {
-        case .hosted:
-            return ASRClient(
-                baseURL: Constants.hostedServerEndpoint,
-                apiKey: Constants.hostedServerPassword,
-                requestTimeout: 15,
-                requiresCapabilitiesHandshake: false
-            )
         case .server:
             let baseURL = UserDefaults.standard.string(forKey: Constants.serverEndpointKey)
                 ?? Constants.defaultServerEndpoint

@@ -1,5 +1,5 @@
 """
-Reference hosted-compatible Hanzo streaming server.
+Reference Hanzo streaming server.
 
 Implements the unified contract:
   - GET  /v1/capabilities

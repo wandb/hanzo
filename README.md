@@ -22,8 +22,7 @@ brew install direnv
 # 2. Set up build secrets (shared across git worktrees)
 mkdir -p ~/.config/hanzo
 cp .env.build.example ~/.config/hanzo/.env.build
-# Edit ~/.config/hanzo/.env.build with your values
-# Optional: set HANZO_LLAMA_SERVER_PATH if you want to use a specific local llama-server
+# Optional: set overrides in ~/.config/hanzo/.env.build (for example HANZO_LLAMA_SERVER_PATH)
 
 # 3. Allow direnv in this worktree (run once per worktree)
 direnv allow
@@ -53,7 +52,7 @@ Hanzo runs in the menu bar — there is no dock icon.
 ## Configuration
 
 - **Hotkey** — Configurable in the app settings (default: Ctrl + Space)
-- **ASR provider** — `Local (Whisper)` (default), `Hosted`, or `Custom Server`
+- **ASR provider** — `Local (Whisper)` (default) or `Custom Server`
 - **Custom server endpoint + password** — Configurable in Settings when `Custom Server` is selected
 - **App-specific behavior** — Configure per-app auto-submit and silence timeout overrides (global values remain fallback defaults)
 - **Local model** — Uses `base.en` from `argmaxinc/whisperkit-coreml`, downloaded on first use
@@ -61,5 +60,5 @@ Hanzo runs in the menu bar — there is no dock icon.
 
 ## Example Servers
 
-- `reference/` includes the hosted-compatible Qwen3 reference server for Custom Server mode
+- `reference/` includes the Qwen3 reference server for Custom Server mode
 - `LocalASRHelper/` remains an example local Qwen3 server helper for users who want to run their own runtime

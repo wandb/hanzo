@@ -333,7 +333,7 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 300)
+                .frame(width: inputWidth, alignment: .trailing)
                 .onChange(of: asrProvider) {
                     appState.asrProvider = asrProvider
                     saveTranscriptionSettings()
@@ -370,6 +370,48 @@ struct SettingsView: View {
 
     private var appBehaviorDefaultsContent: some View {
         VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                settingLabel("Silence timeout", helpText: silenceTimeoutHelpText)
+                Spacer()
+                Picker("", selection: $globalSilenceTimeout) {
+                    ForEach(silenceTimeoutOptions, id: \.self) { timeout in
+                        Text(silenceTimeoutLabel(timeout)).tag(timeout)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: inputWidth, alignment: .trailing)
+            }
+            .onChange(of: globalSilenceTimeout) {
+                AppBehaviorSettings.setGlobalSilenceTimeout(globalSilenceTimeout)
+                if appState.activeTargetBundleIdentifier == nil {
+                    appState.silenceTimeout = globalSilenceTimeout
+                }
+                onSave?()
+            }
+
+            HStack {
+                settingLabel("Auto-submit", helpText: autoSubmitHelpText)
+                Spacer()
+                Picker("", selection: $globalAutoSubmitMode) {
+                    ForEach(AutoSubmitMode.allCases, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: inputWidth, alignment: .trailing)
+            }
+            .onChange(of: globalAutoSubmitMode) {
+                AppBehaviorSettings.setGlobalAutoSubmitMode(globalAutoSubmitMode)
+                if appState.activeTargetBundleIdentifier == nil {
+                    appState.autoSubmitMode = globalAutoSubmitMode
+                }
+                onSave?()
+            }
+
+            Text("Post-processing")
+                .font(.system(.title3, design: .rounded, weight: .semibold))
+                .padding(.top, 2)
+
             HStack {
                 settingLabel("Default post-processing", helpText: postProcessingHelpText)
                 Spacer()
@@ -455,50 +497,42 @@ struct SettingsView: View {
                     onSave?()
                 }
             }
-
-            HStack {
-                settingLabel("Silence timeout", helpText: silenceTimeoutHelpText)
-                Spacer()
-                Picker("", selection: $globalSilenceTimeout) {
-                    ForEach(silenceTimeoutOptions, id: \.self) { timeout in
-                        Text(silenceTimeoutLabel(timeout)).tag(timeout)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(width: inputWidth, alignment: .trailing)
-            }
-            .onChange(of: globalSilenceTimeout) {
-                AppBehaviorSettings.setGlobalSilenceTimeout(globalSilenceTimeout)
-                if appState.activeTargetBundleIdentifier == nil {
-                    appState.silenceTimeout = globalSilenceTimeout
-                }
-                onSave?()
-            }
-
-            HStack {
-                settingLabel("Auto-submit", helpText: autoSubmitHelpText)
-                Spacer()
-                Picker("", selection: $globalAutoSubmitMode) {
-                    ForEach(AutoSubmitMode.allCases, id: \.self) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(width: inputWidth, alignment: .trailing)
-            }
-            .onChange(of: globalAutoSubmitMode) {
-                AppBehaviorSettings.setGlobalAutoSubmitMode(globalAutoSubmitMode)
-                if appState.activeTargetBundleIdentifier == nil {
-                    appState.autoSubmitMode = globalAutoSubmitMode
-                }
-                onSave?()
-            }
         }    }
 
     private func appBehaviorContent(for app: SupportedAppBehavior) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(app.displayName)
                 .font(.system(.title3, design: .rounded, weight: .semibold))
+
+            HStack {
+                settingLabel("Silence timeout", helpText: silenceTimeoutHelpText)
+                Spacer()
+                Picker("", selection: silenceTimeoutBinding(for: app)) {
+                    Text("Default").tag(nil as Double?)
+                    ForEach(silenceTimeoutOptions, id: \.self) { timeout in
+                        Text(silenceTimeoutLabel(timeout)).tag(Optional(timeout))
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: inputWidth, alignment: .trailing)
+            }
+
+            HStack {
+                settingLabel("Auto-submit", helpText: autoSubmitHelpText)
+                Spacer()
+                Picker("", selection: autoSubmitBinding(for: app)) {
+                    Text("Default").tag(nil as AutoSubmitMode?)
+                    ForEach(AutoSubmitMode.allCases, id: \.self) { mode in
+                        Text(mode.displayName).tag(Optional(mode))
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: inputWidth, alignment: .trailing)
+            }
+
+            Text("Post-processing")
+                .font(.system(.title3, design: .rounded, weight: .semibold))
+                .padding(.top, 2)
 
             HStack {
                 settingLabel("Post-processing override", helpText: "Default follows the global setting. On and Off override for this app.")
@@ -544,32 +578,6 @@ struct SettingsView: View {
                         }
                     }
                 }
-            }
-
-            HStack {
-                settingLabel("Silence timeout", helpText: silenceTimeoutHelpText)
-                Spacer()
-                Picker("", selection: silenceTimeoutBinding(for: app)) {
-                    Text("Default").tag(nil as Double?)
-                    ForEach(silenceTimeoutOptions, id: \.self) { timeout in
-                        Text(silenceTimeoutLabel(timeout)).tag(Optional(timeout))
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(width: inputWidth, alignment: .trailing)
-            }
-
-            HStack {
-                settingLabel("Auto-submit", helpText: autoSubmitHelpText)
-                Spacer()
-                Picker("", selection: autoSubmitBinding(for: app)) {
-                    Text("Default").tag(nil as AutoSubmitMode?)
-                    ForEach(AutoSubmitMode.allCases, id: \.self) { mode in
-                        Text(mode.displayName).tag(Optional(mode))
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(width: inputWidth, alignment: .trailing)
             }
 
             if !app.isBuiltIn {

@@ -4,13 +4,13 @@
 
 Hanzo is a system-wide dictation tool for macOS.
 
-It captures speech and sends audio to a dedicated Qwen3-ASR service for transcription.
+It captures speech and transcribes locally by default, with optional custom server support.
 
 You press.
 You speak.
 Hanzo forges clean text into whatever app you’re using.
 
-Transcription is handled by a hosted ASR service operated by us. See the Privacy section below for details on data handling.
+Transcription is local-first. A custom ASR server can be configured when needed. See the Privacy section below for details on data handling.
 
 ---
 
@@ -44,7 +44,7 @@ We want a fast, reliable dictation system that works anywhere text can be entere
 Hanzo should:
 
 1. Enable fast, reliable dictation anywhere on macOS via a global hotkey.
-2. Deliver secure, reliable speech-to-text via a dedicated hosted ASR service.
+2. Deliver secure, reliable speech-to-text locally by default, with optional custom server support.
 3. Provide a focused, interruption-free writing experience.
 4. Insert finalized transcription directly into the user’s active context.
 5. Feel lightweight, responsive, and trustworthy on Apple Silicon.
@@ -130,7 +130,7 @@ The UI should remain minimal and unobtrusive.
 
 ## Model & Engine
 
-Hanzo uses a hosted ASR service built on **Qwen3-ASR** with a vLLM-backed runtime for low-latency transcription and streaming preview.
+Hanzo can use a custom ASR service built on **Qwen3-ASR** with a vLLM-backed runtime for low-latency transcription and streaming preview.
 
 * Model: `Qwen/Qwen3-ASR-1.7B`
 * Server framework: FastAPI
@@ -161,7 +161,7 @@ v1 is **English-only** for the product experience.
 
 * High transcription quality
 * Supports real-time preview via streaming sessions
-* Centralized hosted inference for simplified deployment and updates
+* Optional custom-server inference for advanced setups
 
 ---
 

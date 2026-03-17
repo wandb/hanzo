@@ -25,16 +25,6 @@ enum AppearanceMode: String {
 
 enum Constants {
     static let bundleIdentifier = "com.hanzo.app"
-    static let defaultHostedServerEndpoint = "https://grunt.zain.aaronbatilo.dev"
-    static let defaultHostedServerPassword = ""
-    static let hostedServerEndpointInfoKey = "HanzoHostedServerEndpoint"
-    static let hostedServerPasswordInfoKey = "HanzoHostedServerPassword"
-    static var hostedServerEndpoint: String {
-        bundleString(for: hostedServerEndpointInfoKey) ?? defaultHostedServerEndpoint
-    }
-    static var hostedServerPassword: String {
-        bundleString(for: hostedServerPasswordInfoKey) ?? defaultHostedServerPassword
-    }
     static let defaultServerEndpoint = ""
     static let localModelsFolderName = "models"
     static let localWhisperModel = "base.en"
@@ -102,13 +92,4 @@ enum Constants {
     // App-specific behavior overrides
     static let appBehaviorOverridesKey = "appBehaviorOverrides"
     static let appBehaviorCustomAppsKey = "appBehaviorCustomApps"
-
-    private static func bundleString(for key: String) -> String? {
-        guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String else {
-            return nil
-        }
-
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
 }

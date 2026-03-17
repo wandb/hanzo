@@ -1,6 +1,6 @@
 # Hanzo Reference Server
 
-This folder contains a hosted-compatible reference implementation of Hanzo's unified streaming contract and a conformance test runner.
+This folder contains a reference implementation of Hanzo's unified streaming contract and a conformance test runner.
 
 ## Contract
 
