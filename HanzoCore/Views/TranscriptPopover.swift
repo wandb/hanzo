@@ -1,6 +1,16 @@
 import AppKit
 import SwiftUI
 
+private enum TranscriptPopoverLayout {
+    static let width: CGFloat = 480
+    static let fallbackMaxHeight: CGFloat = 560
+
+    static var maxHeight: CGFloat {
+        guard let screen = NSScreen.main else { return fallbackMaxHeight }
+        return max(480, min(screen.visibleFrame.height * 0.72, 760))
+    }
+}
+
 struct TranscriptPopover: View {
     let appState: AppState
     var onSettingsChanged: (() -> Void)?
@@ -30,9 +40,9 @@ struct TranscriptPopover: View {
         .padding(.top, appState.partialTranscript.isEmpty ? 16 : 24)
         .padding(.horizontal, 24)
         .padding(.bottom, 16)
-        .frame(width: 480)
+        .frame(width: TranscriptPopoverLayout.width)
         .fixedSize(horizontal: false, vertical: true)
-        .frame(maxHeight: 400)
+        .frame(maxHeight: TranscriptPopoverLayout.maxHeight)
         .background(
             VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
                 .clipShape(RoundedRectangle(cornerRadius: 22))
