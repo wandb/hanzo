@@ -24,9 +24,16 @@ enum AppearanceMode: String {
 }
 
 enum Constants {
+    static let releaseBundleIdentifier = "com.hanzo.app"
+
     static var bundleIdentifier: String {
-        Bundle.main.bundleIdentifier ?? "com.hanzo.app"
+        Bundle.main.bundleIdentifier ?? releaseBundleIdentifier
     }
+
+    static var isDevBuild: Bool {
+        bundleIdentifier != releaseBundleIdentifier
+    }
+
     static let defaultServerEndpoint = ""
     static let localModelsFolderName = "models"
     static let localWhisperModel = "base.en"

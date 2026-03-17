@@ -14,7 +14,15 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isStateObservationActive = false
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
-    private let statusBarImage = MenuBarIcon.radialWaveform()
+    private let statusBarImage: NSImage = {
+        if Constants.isDevBuild {
+            return MenuBarIcon.radialWaveform(
+                strokeColor: .systemGreen,
+                isTemplate: false
+            )
+        }
+        return MenuBarIcon.radialWaveform()
+    }()
     private var updaterController: SPUStandardUpdaterController?
 
     let appState = AppState()

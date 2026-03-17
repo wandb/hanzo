@@ -39,6 +39,7 @@ EOF
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INFO_PLIST="$ROOT_DIR/HanzoCore/Info.plist"
 ENTITLEMENTS="$ROOT_DIR/HanzoCore/Hanzo.entitlements"
+APP_ICON_SOURCE="$ROOT_DIR/assets/icons/Hanzo.icns"
 
 VERSION=""
 BUILD_NUMBER=""
@@ -109,6 +110,7 @@ require_cmd /usr/libexec/PlistBuddy
 
 [ -f "$INFO_PLIST" ] || die "Missing Info.plist at $INFO_PLIST"
 [ -f "$ENTITLEMENTS" ] || die "Missing entitlements at $ENTITLEMENTS"
+[ -f "$APP_ICON_SOURCE" ] || die "Missing app icon at $APP_ICON_SOURCE"
 
 if [ "$SIGN_ARTIFACTS" = true ]; then
     require_cmd codesign
@@ -229,9 +231,11 @@ APP_RESOURCES="$APP_CONTENTS/Resources"
 
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 install -m 755 "$APP_EXECUTABLE" "$APP_MACOS/Hanzo"
+install -m 644 "$APP_ICON_SOURCE" "$APP_RESOURCES/Hanzo.icns"
 install -m 644 "$INFO_PLIST" "$APP_CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP_CONTENTS/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIconFile Hanzo" "$APP_CONTENTS/Info.plist"
 
 # Copy dynamic runtime artifacts produced by SwiftPM so the app can load
 # frameworks and dylibs resolved relative to the executable.

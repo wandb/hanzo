@@ -2,19 +2,22 @@ import AppKit
 
 enum MenuBarIcon {
     /// Creates a radial waveform icon matching the app's visualization style.
-    /// Returns a template NSImage suitable for the menu bar.
-    static func radialWaveform(size: CGFloat = 18) -> NSImage {
+    static func radialWaveform(
+        size: CGFloat = 18,
+        strokeColor: NSColor = .black,
+        isTemplate: Bool = true
+    ) -> NSImage {
         let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
             guard let context = NSGraphicsContext.current?.cgContext else { return false }
 
             let center = CGPoint(x: rect.midX, y: rect.midY)
             let totalBars = 24
-            let innerRadius: CGFloat = 4.5
-            let minBarLength: CGFloat = 1.0
-            let maxBarLength: CGFloat = 3.5
-            let barWidth: CGFloat = 1.2
+            let innerRadius: CGFloat = size * 0.23
+            let minBarLength: CGFloat = size * 0.08
+            let maxBarLength: CGFloat = size * 0.24
+            let barWidth: CGFloat = size * 0.085
 
-            context.setStrokeColor(NSColor.black.cgColor)
+            context.setStrokeColor(strokeColor.cgColor)
             context.setLineCap(.round)
             context.setLineWidth(barWidth)
 
@@ -53,7 +56,7 @@ enum MenuBarIcon {
             return true
         }
 
-        image.isTemplate = true
+        image.isTemplate = isTemplate
         return image
     }
 }

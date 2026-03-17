@@ -38,6 +38,7 @@ APP_ROOT="${HANZO_DEV_APP_ROOT:-$HOME/.local/share/hanzo/Hanzo Dev.app}"
 APP_DIR="$APP_ROOT/Contents"
 APP_EXECUTABLE_TARGET="$APP_DIR/MacOS/Hanzo"
 APP_LLAMA_SERVER_TARGET="$APP_DIR/MacOS/llama-runtime/llama-server"
+DEV_APP_ICON_SOURCE="assets/icons/HanzoDev.icns"
 
 cleanup_signed_executable_temp() {
     if [ -n "${SIGNED_EXECUTABLE_TEMP:-}" ] && [ -f "$SIGNED_EXECUTABLE_TEMP" ]; then
@@ -175,6 +176,7 @@ swift build --disable-keychain
 APP_EXECUTABLE="$BIN_DIR/HanzoApp"
 [ -x "$APP_EXECUTABLE" ] || die "Built executable not found at $APP_EXECUTABLE"
 [ -f "HanzoCore/Info.plist" ] || die "Missing HanzoCore/Info.plist"
+[ -f "$DEV_APP_ICON_SOURCE" ] || die "Missing dev app icon at $DEV_APP_ICON_SOURCE"
 
 # Create .app bundle at a fixed location so macOS retains permissions across worktrees
 mkdir -p "$APP_DIR/MacOS"
@@ -220,11 +222,13 @@ LLAMA_RUNTIME_DIR="$(resolve_llama_runtime_dir)"
 mkdir -p "$APP_DIR/MacOS/llama-runtime"
 rsync -a --delete "$LLAMA_RUNTIME_DIR/" "$APP_DIR/MacOS/llama-runtime/"
 chmod +x "$APP_DIR/MacOS/llama-runtime/llama-server"
+install -m 644 "$DEV_APP_ICON_SOURCE" "$APP_DIR/Resources/HanzoDev.icns"
 
 # Copy Info.plist
 install -m 644 HanzoCore/Info.plist "$APP_DIR/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $APP_BUNDLE_IDENTIFIER" "$APP_DIR/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_DISPLAY_NAME" "$APP_DIR/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIconFile HanzoDev" "$APP_DIR/Info.plist"
 if /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$APP_DIR/Info.plist" >/dev/null 2>&1; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_DISPLAY_NAME" "$APP_DIR/Info.plist"
 else
