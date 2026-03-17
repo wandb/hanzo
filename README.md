@@ -45,9 +45,14 @@ Hanzo runs in the menu bar — there is no dock icon.
 | `./dev-run.sh --reset-permissions` | Reset Microphone & Accessibility permissions (useful for testing onboarding) |
 | `./dev-run.sh --reset-settings` | Clear app UserDefaults (onboarding, provider/mode selections, hotkey, overrides) |
 | `./dev-run.sh --no-launch` | Build and assemble the app bundle without launching it |
-| `swift build` | Build without launching |
-| `swift test` | Run the test suite |
+| `./scripts/release-unsigned.sh` | One-command unsigned DMG/ZIP build into `dist/` |
+| `swift build --disable-keychain` | Build without launching |
+| `swift test --disable-keychain` | Run the test suite |
 | `pkill -x Hanzo` | Kill the running app |
+
+## Distribution
+
+- Release process, signing, notarization, and Sparkle update setup are documented in `docs/RELEASING.md`.
 
 ## Configuration
 

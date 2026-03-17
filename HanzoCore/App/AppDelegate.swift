@@ -2,6 +2,7 @@ import AppKit
 import Observation
 import SwiftUI
 import ServiceManagement
+import Sparkle
 
 @MainActor
 public final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -13,6 +14,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
     private let statusBarImage = MenuBarIcon.radialWaveform()
+    private var updaterController: SPUStandardUpdaterController?
 
     let appState = AppState()
     private lazy var orchestrator = DictationOrchestrator(appState: appState)
@@ -28,6 +30,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             button.action = #selector(statusItemClicked)
             button.target = self
         }
+
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
 
         // Setup transcript panel
         transcriptPanel = makeTranscriptPanel()
@@ -187,6 +195,18 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(withTitle: "Settings...",
                      action: #selector(openSettings), keyEquivalent: ",")
+
+        if let updaterController {
+            let checkForUpdatesMenuItem = NSMenuItem(
+                title: "Check for Updates...",
+                action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+                keyEquivalent: ""
+            )
+            checkForUpdatesMenuItem.target = updaterController
+            checkForUpdatesMenuItem.isEnabled = updaterController.updater.canCheckForUpdates
+            menu.addItem(checkForUpdatesMenuItem)
+        }
+
         menu.addItem(withTitle: "Quit Hanzo",
                      action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
