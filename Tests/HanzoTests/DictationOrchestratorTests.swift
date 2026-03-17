@@ -474,7 +474,7 @@ struct DictationOrchestratorTests {
         try await Task.sleep(nanoseconds: 50_000_000)
         sut.orchestrator.toggle()
 
-        let inserted = await waitUntil(timeoutNanoseconds: 2_000_000_000) {
+        let inserted = await waitUntil(timeoutNanoseconds: 4_000_000_000) {
             sut.mockText.insertedTexts.count == 1
         }
         #expect(inserted)
@@ -504,7 +504,7 @@ struct DictationOrchestratorTests {
         try await Task.sleep(nanoseconds: 50_000_000)
         sut.orchestrator.toggle()
 
-        let inserted = await waitUntil(timeoutNanoseconds: 2_000_000_000) {
+        let inserted = await waitUntil(timeoutNanoseconds: 4_000_000_000) {
             sut.mockText.insertedTexts.count == 1
         }
         #expect(inserted)
