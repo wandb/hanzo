@@ -36,6 +36,28 @@ Signed + notarized:
   --notary-profile hanzo-notary
 ```
 
+## Versioning workflow
+
+`release.sh` already supports `--version` and `--build-number`, and if those flags are omitted it reads both values from `HanzoCore/Info.plist`.
+
+Use `./scripts/version.sh` to track and bump versions in `Info.plist`:
+
+```sh
+./scripts/version.sh show
+./scripts/version.sh bump-build
+./scripts/version.sh bump-patch
+./scripts/version.sh set --version 1.2.0 --build-number 1
+```
+
+Typical local distribution loop:
+
+```sh
+./scripts/version.sh bump-build
+./scripts/release-unsigned.sh
+```
+
+For GitHub tag releases, keep tags aligned with `CFBundleShortVersionString` (e.g. tag `v1.2.0` when app version is `1.2.0`).
+
 ## GitHub Actions release workflow
 
 Workflow file: `.github/workflows/release.yml`
