@@ -2,6 +2,8 @@ import AppKit
 import Observation
 import SwiftUI
 import ServiceManagement
+import Sparkle
+import Foundation
 
 @MainActor
 public final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -13,6 +15,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
     private let statusBarImage = MenuBarIcon.radialWaveform()
+    private var updaterController: SPUStandardUpdaterController?
 
     let appState = AppState()
     private lazy var orchestrator = DictationOrchestrator(appState: appState)
@@ -27,6 +30,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem.button {
             button.action = #selector(statusItemClicked)
             button.target = self
+        }
+
+        if isSparkleReadyForUserChecks() {
+            updaterController = SPUStandardUpdaterController(
+                startingUpdater: true,
+                updaterDelegate: nil,
+                userDriverDelegate: nil
+            )
         }
 
         // Setup transcript panel
@@ -187,6 +198,24 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(withTitle: "Settings...",
                      action: #selector(openSettings), keyEquivalent: ",")
+
+        if let updaterController {
+            let checkForUpdatesMenuItem = NSMenuItem(
+                title: "Check for Updates...",
+                action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+                keyEquivalent: ""
+            )
+            if let updateIcon = NSImage(
+                systemSymbolName: "arrow.triangle.2.circlepath",
+                accessibilityDescription: "Check for Updates"
+            ) {
+                checkForUpdatesMenuItem.image = updateIcon
+            }
+            checkForUpdatesMenuItem.target = updaterController
+            checkForUpdatesMenuItem.isEnabled = updaterController.updater.canCheckForUpdates
+            menu.addItem(checkForUpdatesMenuItem)
+        }
+
         menu.addItem(withTitle: "Quit Hanzo",
                      action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
@@ -282,6 +311,21 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if !appState.isPopoverPresented && panelVisible {
             hidePanel()
         }
+    }
+
+    private func isSparkleReadyForUserChecks() -> Bool {
+        guard
+            let info = Bundle.main.infoDictionary,
+            let feedURLString = info["SUFeedURL"] as? String,
+            let feedURL = URL(string: feedURLString),
+            feedURL.scheme?.lowercased() == "https",
+            let publicKey = info["SUPublicEDKey"] as? String,
+            !publicKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return false
+        }
+
+        return true
     }
 
     // MARK: - Launch at Login

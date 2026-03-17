@@ -28,12 +28,12 @@ cp .env.build.example ~/.config/hanzo/.env.build
 direnv allow
 
 # 4. Build and run
-./dev-run.sh
+./scripts/dev-run.sh
 ```
 
 This builds the project, assembles the `.app` bundle at `~/.local/share/hanzo/Hanzo.app`, and launches it. The fixed bundle path ensures macOS retains permissions across git worktrees. An onboarding wizard will guide you through granting permissions and preparing the on-device Whisper model on first launch.
 
-`dev-run.sh` also bundles the local LLM runtime (`llama-server` + dylibs). If no local runtime is found, it auto-downloads a pinned llama.cpp macOS arm64 release into `~/.cache/hanzo/llama.cpp/` and reuses it on subsequent runs.
+`scripts/dev-run.sh` also bundles the local LLM runtime (`llama-server` + dylibs). If no local runtime is found, it auto-downloads a pinned llama.cpp macOS arm64 release into `~/.cache/hanzo/llama.cpp/` and reuses it on subsequent runs.
 
 Hanzo runs in the menu bar — there is no dock icon.
 
@@ -41,13 +41,18 @@ Hanzo runs in the menu bar — there is no dock icon.
 
 | Command | Description |
 |---|---|
-| `./dev-run.sh --reset-models` | Clear downloaded models before building |
-| `./dev-run.sh --reset-permissions` | Reset Microphone & Accessibility permissions (useful for testing onboarding) |
-| `./dev-run.sh --reset-settings` | Clear app UserDefaults (onboarding, provider/mode selections, hotkey, overrides) |
-| `./dev-run.sh --no-launch` | Build and assemble the app bundle without launching it |
-| `swift build` | Build without launching |
-| `swift test` | Run the test suite |
+| `./scripts/dev-run.sh --reset-models` | Clear downloaded models before building |
+| `./scripts/dev-run.sh --reset-permissions` | Reset Microphone & Accessibility permissions (useful for testing onboarding) |
+| `./scripts/dev-run.sh --reset-settings` | Clear app UserDefaults (onboarding, provider/mode selections, hotkey, overrides) |
+| `./scripts/dev-run.sh --no-launch` | Build and assemble the app bundle without launching it |
+| `./scripts/release-unsigned.sh` | One-command unsigned DMG/ZIP build into `dist/` |
+| `swift build --disable-keychain` | Build without launching |
+| `swift test --disable-keychain` | Run the test suite |
 | `pkill -x Hanzo` | Kill the running app |
+
+## Distribution
+
+- Release process, signing, notarization, and Sparkle update setup are documented in `docs/RELEASING.md`.
 
 ## Configuration
 

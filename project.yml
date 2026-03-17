@@ -10,6 +10,9 @@ packages:
   HotKey:
     url: https://github.com/soffes/HotKey
     from: "0.2.1"
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle.git
+    from: "2.6.4"
   KeychainAccess:
     url: https://github.com/kishikawakatsumi/KeychainAccess
     from: "4.2.2"
@@ -35,4 +38,5 @@ targets:
         SWIFT_STRICT_CONCURRENCY: minimal
     dependencies:
       - package: HotKey
+      - package: Sparkle
       - package: KeychainAccess

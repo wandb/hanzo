@@ -1,0 +1,142 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "App version (CFBundleShortVersionString)"
+        required: true
+        type: string
+      build_number:
+        description: "Build number (CFBundleVersion)"
+        required: true
+        type: string
+      unsigned:
+        description: "Build unsigned artifacts (no signing/notarization)"
+        required: true
+        default: true
+        type: boolean
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve release metadata
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            version="${{ inputs.version }}"
+            build_number="${{ inputs.build_number }}"
+            unsigned="${{ inputs.unsigned }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+            build_number="${GITHUB_RUN_NUMBER}"
+            unsigned="false"
+          fi
+
+          if [ -z "$version" ]; then
+            echo "::error::version is required"
+            exit 1
+          fi
+
+          if [ -z "$build_number" ]; then
+            echo "::error::build_number is required"
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
+          echo "unsigned=$unsigned" >> "$GITHUB_OUTPUT"
+
+      - name: Import signing certificate
+        if: steps.meta.outputs.unsigned != 'true'
+        env:
+          CERT_B64: ${{ secrets.MACOS_SIGNING_CERT_B64 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_SIGNING_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          for required in CERT_B64 CERT_PASSWORD KEYCHAIN_PASSWORD; do
+            if [ -z "${!required}" ]; then
+              echo "::error::Missing required secret for signing: $required"
+              exit 1
+            fi
+          done
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -lut 21600 build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          echo "$CERT_B64" | base64 --decode > signing-cert.p12
+          security import signing-cert.p12 \
+            -k build.keychain \
+            -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security list-keychains -d user -s build.keychain login.keychain-db
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+
+      - name: Configure notary profile
+        if: steps.meta.outputs.unsigned != 'true'
+        env:
+          NOTARY_API_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
+          NOTARY_API_ISSUER_ID: ${{ secrets.NOTARY_API_ISSUER_ID }}
+          NOTARY_API_PRIVATE_KEY_B64: ${{ secrets.NOTARY_API_PRIVATE_KEY_B64 }}
+        run: |
+          for required in NOTARY_API_KEY_ID NOTARY_API_ISSUER_ID NOTARY_API_PRIVATE_KEY_B64; do
+            if [ -z "${!required}" ]; then
+              echo "::error::Missing required secret for notarization: $required"
+              exit 1
+            fi
+          done
+
+          key_file="AuthKey_${NOTARY_API_KEY_ID}.p8"
+          echo "$NOTARY_API_PRIVATE_KEY_B64" | base64 --decode > "$key_file"
+          xcrun notarytool store-credentials hanzo-notary \
+            --key "$key_file" \
+            --key-id "$NOTARY_API_KEY_ID" \
+            --issuer "$NOTARY_API_ISSUER_ID"
+
+      - name: Build release artifacts
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          BUILD_NUMBER: ${{ steps.meta.outputs.build_number }}
+          UNSIGNED: ${{ steps.meta.outputs.unsigned }}
+          SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          chmod +x ./scripts/release.sh
+
+          cmd=(./scripts/release.sh --version "$VERSION" --build-number "$BUILD_NUMBER" --output-dir dist)
+          if [ "$UNSIGNED" = "true" ]; then
+            cmd+=(--unsigned)
+          else
+            if [ -z "$SIGN_IDENTITY" ]; then
+              echo "::error::Missing required secret for signed release: MACOS_SIGN_IDENTITY"
+              exit 1
+            fi
+            cmd+=(--sign-identity "$SIGN_IDENTITY" --notary-profile hanzo-notary)
+          fi
+          "${cmd[@]}"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hanzo-release-${{ steps.meta.outputs.version }}-${{ steps.meta.outputs.build_number }}
+          path: dist/*
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.sha256
+          generate_release_notes: true
