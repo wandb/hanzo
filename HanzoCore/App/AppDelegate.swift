@@ -269,7 +269,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             updateMenuBarIcon()
             syncPanelVisibility()
         } onChange: { [weak self] in
-            DispatchQueue.main.async {
+            Task { @MainActor [weak self] in
                 self?.observeStateChanges()
             }
         }
