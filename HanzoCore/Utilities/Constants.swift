@@ -39,7 +39,7 @@ enum Constants {
     static let localLLMModelRepository = "Qwen/Qwen3-4B-GGUF"
     static let localLLMModelFileName = "Qwen3-4B-Q4_K_M.gguf"
     static let localLLMModelExpectedDownloadBytes: Int64 = 2_497_280_256
-    static let localLLMModelContextSize = 8192
+    static let localLLMModelContextSize = 2048
     static let localLLMServerPort = 39281
     static let localLLMServerHost = "127.0.0.1"
     static let localLLMServerExecutableName = "llama-server"
