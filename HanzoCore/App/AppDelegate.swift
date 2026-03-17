@@ -3,6 +3,7 @@ import Observation
 import SwiftUI
 import ServiceManagement
 import Sparkle
+import Foundation
 
 @MainActor
 public final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -31,11 +32,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             button.target = self
         }
 
-        updaterController = SPUStandardUpdaterController(
-            startingUpdater: true,
-            updaterDelegate: nil,
-            userDriverDelegate: nil
-        )
+        if isSparkleReadyForUserChecks() {
+            updaterController = SPUStandardUpdaterController(
+                startingUpdater: true,
+                updaterDelegate: nil,
+                userDriverDelegate: nil
+            )
+        }
 
         // Setup transcript panel
         transcriptPanel = makeTranscriptPanel()
@@ -308,6 +311,21 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if !appState.isPopoverPresented && panelVisible {
             hidePanel()
         }
+    }
+
+    private func isSparkleReadyForUserChecks() -> Bool {
+        guard
+            let info = Bundle.main.infoDictionary,
+            let feedURLString = info["SUFeedURL"] as? String,
+            let feedURL = URL(string: feedURLString),
+            feedURL.scheme?.lowercased() == "https",
+            let publicKey = info["SUPublicEDKey"] as? String,
+            !publicKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return false
+        }
+
+        return true
     }
 
     // MARK: - Launch at Login

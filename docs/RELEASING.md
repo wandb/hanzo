@@ -55,7 +55,7 @@ Required repository secrets for signed releases:
 
 ## Sparkle auto-update setup
 
-The app now includes Sparkle and shows `Check for Updates...` in the menu.
+The app includes Sparkle and will show `Check for Updates...` only after `SUPublicEDKey` is configured.
 
 Remaining production setup:
 
