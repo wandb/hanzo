@@ -10,6 +10,17 @@ require_cmd() {
     command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
 }
 
+escape_regex() {
+    printf '%s' "$1" | sed -e 's/[][(){}.^$+*?|\\]/\\&/g'
+}
+
+plist_escape_string() {
+    local value="$1"
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    printf '%s' "$value"
+}
+
 reset_tcc_permission() {
     local service="$1"
     local bundle_identifier="$2"
@@ -39,6 +50,9 @@ APP_DIR="$APP_ROOT/Contents"
 APP_EXECUTABLE_TARGET="$APP_DIR/MacOS/Hanzo"
 APP_LLAMA_SERVER_TARGET="$APP_DIR/MacOS/llama-runtime/llama-server"
 DEV_APP_ICON_SOURCE="assets/icons/HanzoDev.icns"
+APP_EXECUTABLE_REGEX="$(escape_regex "$APP_EXECUTABLE_TARGET")"
+APP_LLAMA_SERVER_REGEX="$(escape_regex "$APP_LLAMA_SERVER_TARGET")"
+APP_DISPLAY_NAME_PLIST="$(plist_escape_string "$APP_DISPLAY_NAME")"
 
 cleanup_signed_executable_temp() {
     if [ -n "${SIGNED_EXECUTABLE_TEMP:-}" ] && [ -f "$SIGNED_EXECUTABLE_TEMP" ]; then
@@ -60,9 +74,10 @@ done
 
 # Kill running instance
 require_cmd pkill
-pkill -f "$APP_EXECUTABLE_TARGET" || true
+pkill -f "^${APP_EXECUTABLE_REGEX}$" || true
 # Also kill orphaned bundled llama runtimes from previous app exits.
-pkill -f "$APP_LLAMA_SERVER_TARGET" || true
+pkill -f "^${APP_LLAMA_SERVER_REGEX}$" || true
+pkill -f "^${APP_LLAMA_SERVER_REGEX} " || true
 
 # Reset app UserDefaults (opt-in)
 if [ "$RESET_SETTINGS" = true ]; then
@@ -227,12 +242,12 @@ install -m 644 "$DEV_APP_ICON_SOURCE" "$APP_DIR/Resources/HanzoDev.icns"
 # Copy Info.plist
 install -m 644 HanzoCore/Info.plist "$APP_DIR/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $APP_BUNDLE_IDENTIFIER" "$APP_DIR/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_DISPLAY_NAME" "$APP_DIR/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName \"$APP_DISPLAY_NAME_PLIST\"" "$APP_DIR/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile HanzoDev" "$APP_DIR/Info.plist"
 if /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$APP_DIR/Info.plist" >/dev/null 2>&1; then
-    /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_DISPLAY_NAME" "$APP_DIR/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName \"$APP_DISPLAY_NAME_PLIST\"" "$APP_DIR/Info.plist"
 else
-    /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $APP_DISPLAY_NAME" "$APP_DIR/Info.plist"
+    /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string \"$APP_DISPLAY_NAME_PLIST\"" "$APP_DIR/Info.plist"
 fi
 
 # Copy all SwiftPM resource bundles (including transitive dependency bundles).
