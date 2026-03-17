@@ -75,23 +75,8 @@ struct AudioWaveformView: View {
         let amp = maxBarExtension + vol * volumeBoost
         let radius = innerRadius * (1 + smoothedRadiusVolume * radiusGrow)
 
-        // Cycle through hues + white; desaturate in blue/purple range
-        let cycle = (time * colorSpeed).truncatingRemainder(dividingBy: 1.0)
-        let whitePortion = 0.12
-        let saturation: Double
-        let hue: Double
-        if cycle < whitePortion {
-            // Fade from color into white and back
-            let whiteT = (0.5 - abs(cycle / whitePortion - 0.5)) * 2
-            hue = 0.0
-            saturation = 0.85 * (1 - whiteT)
-        } else {
-            hue = (cycle - whitePortion) / (1 - whitePortion)
-            let blueDist = min(abs(hue - 0.67), abs(hue - 0.67 + 1), abs(hue - 0.67 - 1))
-            let brightBoost = max(0, 1 - blueDist / 0.15)
-            saturation = 0.85 - brightBoost * 0.45
-        }
-        let color = Color(hue: hue, saturation: saturation, brightness: 1.0)
+        let colorPhase = (time * colorSpeed).truncatingRemainder(dividingBy: 1.0)
+        let color = listeningColor(atPhase: colorPhase)
 
         for i in 0..<totalBars {
             let angle = (CGFloat(i) / CGFloat(totalBars)) * 2 * .pi - .pi / 2
@@ -129,7 +114,8 @@ struct AudioWaveformView: View {
 
     private func drawForgingState(context ctx: GraphicsContext, center: CGPoint, time: TimeInterval) {
         let retract = smoothstep(forgingProgress)
-        let pulse = 0.5 + 0.5 * sin(time * forgingPulseSpeed * 2 * .pi)
+        let sessionElapsed = max(0, time - (forgingStartTime ?? time))
+        let pulse = 0.5 + 0.5 * sin(sessionElapsed * forgingPulseSpeed * 2 * .pi)
         let vol = frozenForgingVolume
         let amp = maxBarExtension + vol * volumeBoost
         let baseRadius = innerRadius * (1 + frozenForgingRadiusVolume * radiusGrow)
@@ -237,7 +223,7 @@ struct AudioWaveformView: View {
     }
 
     private func beginForgingTransition() {
-        forgingStartTime = nil
+        forgingStartTime = lastTime > 0 ? lastTime : nil
         forgingProgress = 0
         frozenForgingVolume = smoothedVolume
         frozenForgingRadiusVolume = smoothedRadiusVolume
