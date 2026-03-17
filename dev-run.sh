@@ -146,8 +146,8 @@ require_cmd shasum
 require_cmd tar
 require_cmd find
 
-BIN_DIR="$(swift build --show-bin-path)"
-swift build
+BIN_DIR="$(swift build --disable-keychain --show-bin-path)"
+swift build --disable-keychain
 APP_EXECUTABLE="$BIN_DIR/HanzoApp"
 [ -x "$APP_EXECUTABLE" ] || die "Built executable not found at $APP_EXECUTABLE"
 [ -f "HanzoCore/Info.plist" ] || die "Missing HanzoCore/Info.plist"
@@ -175,6 +175,21 @@ if command -v codesign >/dev/null 2>&1; then
         "$SIGNED_EXECUTABLE"
 fi
 install -m 755 "$SIGNED_EXECUTABLE" "$APP_DIR/MacOS/Hanzo"
+
+# Copy dynamic runtime artifacts produced by SwiftPM.
+# `swift build` places dynamic frameworks next to the executable and this
+# binary resolves them via @loader_path, so mirror that layout inside MacOS.
+find "$APP_DIR/MacOS" -maxdepth 1 -name "*.framework" -type d -exec rm -rf {} +
+find "$APP_DIR/MacOS" -maxdepth 1 -name "*.dylib" -type f -exec rm -f {} +
+
+while IFS= read -r artifact_path; do
+    artifact_name="$(basename "$artifact_path")"
+    if [ -d "$artifact_path" ]; then
+        rsync -a --delete "$artifact_path/" "$APP_DIR/MacOS/$artifact_name/"
+    else
+        install -m 755 "$artifact_path" "$APP_DIR/MacOS/$artifact_name"
+    fi
+done < <(find "$BIN_DIR" -maxdepth 1 \( -name "*.framework" -type d -o -name "*.dylib" -type f \) | sort)
 
 # Copy bundled llama.cpp runtime (llama-server + required dylibs)
 LLAMA_RUNTIME_DIR="$(resolve_llama_runtime_dir)"
