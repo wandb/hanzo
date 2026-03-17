@@ -171,7 +171,11 @@ enum AppBehaviorSettings {
 
     static func globalPostProcessingMode(defaults: UserDefaults = .standard) -> TranscriptPostProcessingMode {
         if let raw = defaults.string(forKey: Constants.transcriptPostProcessingModeKey) {
-            if let mode = TranscriptPostProcessingMode(rawValue: raw) {
+            if let mode = TranscriptPostProcessingMode.fromStoredRawValue(raw) {
+                if mode.rawValue != raw {
+                    // Normalize legacy persisted values once read.
+                    defaults.set(mode.rawValue, forKey: Constants.transcriptPostProcessingModeKey)
+                }
                 return mode
             }
         }

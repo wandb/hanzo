@@ -47,6 +47,7 @@ struct SettingsView: View {
     @State private var isDetectingApp = false
     @State private var detectCountdown: Int?
     @State private var detectCurrentAppTask: Task<Void, Never>?
+    @State private var rewriteTemplateValidationTask: Task<Void, Never>?
 
     @State private var isRecordingHotkey = false
     @FocusState private var focusedField: Field?
@@ -168,6 +169,7 @@ struct SettingsView: View {
         }) .frame(width: 0, height: 0) : nil)
         .onDisappear {
             cancelDetectCurrentAppTask()
+            rewriteTemplateValidationTask?.cancel()
         }
     }
 
@@ -443,7 +445,7 @@ struct SettingsView: View {
                             .frame(width: 420)
                             .accessibilityLabel("Prompt template")
                             .onChange(of: rewritePromptTemplate) {
-                                validateAndPersistRewriteTemplate()
+                                scheduleRewriteTemplateValidation()
                             }
 
                         Text("Placeholders: {{transcript}}, {{user_prompt}}, {{target_app}}, {{#user_prompt}}...{{/user_prompt}}, {{#target_app}}...{{/target_app}}")
@@ -497,7 +499,8 @@ struct SettingsView: View {
                     onSave?()
                 }
             }
-        }    }
+        }
+    }
 
     private func appBehaviorContent(for app: SupportedAppBehavior) -> some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -592,7 +595,8 @@ struct SettingsView: View {
                     .buttonStyle(.borderless)
                 }
             }
-        }    }
+        }
+    }
 
     @ViewBuilder
     private func settingLabel(_ title: String, helpText: String?) -> some View {
@@ -677,6 +681,16 @@ struct SettingsView: View {
         }
     }
 
+    private func scheduleRewriteTemplateValidation() {
+        rewriteTemplateValidationTask?.cancel()
+
+        rewriteTemplateValidationTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            validateAndPersistRewriteTemplate()
+        }
+    }
+
     private func validateAndPersistRewriteTemplate() {
         rewritePromptTemplateValidationError = TranscriptRewritePrompt.validateTemplate(rewritePromptTemplate)
 
@@ -689,6 +703,7 @@ struct SettingsView: View {
     }
 
     private func resetRewritePromptTemplate() {
+        rewriteTemplateValidationTask?.cancel()
         rewritePromptTemplate = TranscriptRewritePrompt.defaultTemplate()
         rewritePromptTemplateValidationError = nil
         TranscriptRewritePrompt.setCustomTemplate(nil)

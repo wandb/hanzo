@@ -154,6 +154,36 @@ struct AppBehaviorSettingsTests {
         }
     }
 
+    @Test("global post-processing mode migrates legacy removeVerbalPauses to off")
+    func globalPostProcessingModeMigratesLegacyValue() {
+        withDefaults { defaults in
+            defaults.set("removeVerbalPauses", forKey: Constants.transcriptPostProcessingModeKey)
+
+            let mode = AppBehaviorSettings.globalPostProcessingMode(defaults: defaults)
+
+            #expect(mode == .off)
+            #expect(defaults.string(forKey: Constants.transcriptPostProcessingModeKey) == TranscriptPostProcessingMode.off.rawValue)
+        }
+    }
+
+    @Test("loadOverrides preserves entries with legacy post-processing values")
+    func loadOverridesPreservesLegacyPostProcessingValues() {
+        withDefaults { defaults in
+            let json = """
+            {
+              "com.tinyspeck.slackmacgap": {
+                "postProcessingMode": "removeVerbalPauses"
+              }
+            }
+            """
+            defaults.set(Data(json.utf8), forKey: Constants.appBehaviorOverridesKey)
+
+            let overrides = AppBehaviorSettings.loadOverrides(defaults: defaults)
+
+            #expect(overrides["com.tinyspeck.slackmacgap"]?.postProcessingMode == .off)
+        }
+    }
+
     @Test("hasOverrides returns true when only postProcessingMode is set")
     func hasOverridesWithOnlyPostProcessingMode() {
         let override = AppBehaviorOverride(postProcessingMode: .off)
