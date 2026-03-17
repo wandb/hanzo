@@ -233,6 +233,17 @@ install -m 644 "$INFO_PLIST" "$APP_CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP_CONTENTS/Info.plist"
 
+# Copy dynamic runtime artifacts produced by SwiftPM so the app can load
+# frameworks and dylibs resolved relative to the executable.
+while IFS= read -r artifact_path; do
+    artifact_name="$(basename "$artifact_path")"
+    if [ -d "$artifact_path" ]; then
+        rsync -a --delete "$artifact_path/" "$APP_MACOS/$artifact_name/"
+    else
+        install -m 755 "$artifact_path" "$APP_MACOS/$artifact_name"
+    fi
+done < <(find "$BIN_DIR" -maxdepth 1 \( -name "*.framework" -type d -o -name "*.dylib" -type f \) | sort)
+
 LLAMA_RUNTIME_DIR="$(resolve_llama_runtime_dir)"
 [ -x "$LLAMA_RUNTIME_DIR/llama-server" ] || die "llama-server not found in $LLAMA_RUNTIME_DIR"
 mkdir -p "$APP_MACOS/llama-runtime"
@@ -266,8 +277,15 @@ sign_macho_tree() {
     done < <(find "$tree_root" -type f -print0)
 }
 
+sign_swiftpm_dynamic_artifacts() {
+    while IFS= read -r artifact_path; do
+        codesign --force --sign "$SIGN_IDENTITY" --timestamp --options runtime "$artifact_path"
+    done < <(find "$APP_MACOS" -maxdepth 1 \( -name "*.framework" -type d -o -name "*.dylib" -type f \) | sort)
+}
+
 if [ "$SIGN_ARTIFACTS" = true ]; then
     echo "Signing app with identity: $SIGN_IDENTITY"
+    sign_swiftpm_dynamic_artifacts
     sign_macho_tree "$APP_MACOS/llama-runtime"
     codesign --force --sign "$SIGN_IDENTITY" --timestamp --options runtime "$APP_MACOS/Hanzo"
     codesign --force --sign "$SIGN_IDENTITY" \

@@ -202,6 +202,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
                 keyEquivalent: ""
             )
+            if let updateIcon = NSImage(
+                systemSymbolName: "arrow.triangle.2.circlepath",
+                accessibilityDescription: "Check for Updates"
+            ) {
+                checkForUpdatesMenuItem.image = updateIcon
+            }
             checkForUpdatesMenuItem.target = updaterController
             checkForUpdatesMenuItem.isEnabled = updaterController.updater.canCheckForUpdates
             menu.addItem(checkForUpdatesMenuItem)
