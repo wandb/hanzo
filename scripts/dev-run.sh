@@ -10,11 +10,34 @@ require_cmd() {
     command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
 }
 
+reset_tcc_permission() {
+    local service="$1"
+    local bundle_identifier="$2"
+    local output=""
+
+    if ! output="$(tccutil reset "$service" "$bundle_identifier" 2>&1)"; then
+        if [[ "$output" == *"No such bundle identifier"* ]]; then
+            echo "No existing $service permission record for $bundle_identifier; continuing."
+            return 0
+        fi
+
+        echo "$output" >&2
+        return 1
+    fi
+}
+
 RESET_MODELS=false
 RESET_PERMISSIONS=false
 RESET_SETTINGS=false
 NO_LAUNCH=false
 SIGNED_EXECUTABLE_TEMP=""
+DEV_BUNDLE_IDENTIFIER_DEFAULT="com.hanzo.app.dev"
+APP_BUNDLE_IDENTIFIER="${HANZO_DEV_BUNDLE_IDENTIFIER:-$DEV_BUNDLE_IDENTIFIER_DEFAULT}"
+APP_DISPLAY_NAME="${HANZO_DEV_APP_NAME:-Hanzo Dev}"
+APP_ROOT="${HANZO_DEV_APP_ROOT:-$HOME/.local/share/hanzo/Hanzo Dev.app}"
+APP_DIR="$APP_ROOT/Contents"
+APP_EXECUTABLE_TARGET="$APP_DIR/MacOS/Hanzo"
+APP_LLAMA_SERVER_TARGET="$APP_DIR/MacOS/llama-runtime/llama-server"
 
 cleanup_signed_executable_temp() {
     if [ -n "${SIGNED_EXECUTABLE_TEMP:-}" ] && [ -f "$SIGNED_EXECUTABLE_TEMP" ]; then
@@ -36,20 +59,20 @@ done
 
 # Kill running instance
 require_cmd pkill
-pkill -x Hanzo || true
+pkill -f "$APP_EXECUTABLE_TARGET" || true
 # Also kill orphaned bundled llama runtimes from previous app exits.
-pkill -f "$HOME/.local/share/hanzo/Hanzo.app/Contents/MacOS/llama-runtime/llama-server" || true
+pkill -f "$APP_LLAMA_SERVER_TARGET" || true
 
 # Reset app UserDefaults (opt-in)
 if [ "$RESET_SETTINGS" = true ]; then
     require_cmd defaults
-    defaults delete com.hanzo.app >/dev/null 2>&1 || true
+    defaults delete "$APP_BUNDLE_IDENTIFIER" >/dev/null 2>&1 || true
 fi
 
 # Clear downloaded models (opt-in): Whisper + local rewrite LLM model.
 if [ "$RESET_MODELS" = true ]; then
-    MODELS_ROOT="$HOME/Library/Application Support/com.hanzo.app/models"
-    LEGACY_LLM_ROOT="$HOME/Library/Application Support/com.hanzo.app/llm"
+    MODELS_ROOT="$HOME/Library/Application Support/$APP_BUNDLE_IDENTIFIER/models"
+    LEGACY_LLM_ROOT="$HOME/Library/Application Support/$APP_BUNDLE_IDENTIFIER/llm"
     rm -rf "$MODELS_ROOT"
     rm -rf "$LEGACY_LLM_ROOT"
 fi
@@ -57,8 +80,8 @@ fi
 # Reset permissions (opt-in)
 if [ "$RESET_PERMISSIONS" = true ]; then
     require_cmd tccutil
-    tccutil reset Microphone com.hanzo.app
-    tccutil reset Accessibility com.hanzo.app
+    reset_tcc_permission Microphone "$APP_BUNDLE_IDENTIFIER"
+    reset_tcc_permission Accessibility "$APP_BUNDLE_IDENTIFIER"
 fi
 
 LLAMA_RELEASE_TAG_DEFAULT="b8355"
@@ -145,6 +168,7 @@ require_cmd curl
 require_cmd shasum
 require_cmd tar
 require_cmd find
+require_cmd /usr/libexec/PlistBuddy
 
 BIN_DIR="$(swift build --disable-keychain --show-bin-path)"
 swift build --disable-keychain
@@ -153,10 +177,9 @@ APP_EXECUTABLE="$BIN_DIR/HanzoApp"
 [ -f "HanzoCore/Info.plist" ] || die "Missing HanzoCore/Info.plist"
 
 # Create .app bundle at a fixed location so macOS retains permissions across worktrees
-APP_DIR="$HOME/.local/share/hanzo/Hanzo.app/Contents"
-APP_ROOT="$HOME/.local/share/hanzo/Hanzo.app"
 mkdir -p "$APP_DIR/MacOS"
 mkdir -p "$APP_DIR/Resources"
+rm -rf "$APP_DIR/_CodeSignature"
 
 # Copy executable.
 #
@@ -170,8 +193,8 @@ if command -v codesign >/dev/null 2>&1; then
     SIGNED_EXECUTABLE="$SIGNED_EXECUTABLE_TEMP"
     cp "$APP_EXECUTABLE" "$SIGNED_EXECUTABLE"
     codesign --force --sign - \
-        --identifier com.hanzo.app \
-        -r='designated => identifier "com.hanzo.app"' \
+        --identifier "$APP_BUNDLE_IDENTIFIER" \
+        -r="designated => identifier \"$APP_BUNDLE_IDENTIFIER\"" \
         "$SIGNED_EXECUTABLE"
 fi
 install -m 755 "$SIGNED_EXECUTABLE" "$APP_DIR/MacOS/Hanzo"
@@ -200,6 +223,13 @@ chmod +x "$APP_DIR/MacOS/llama-runtime/llama-server"
 
 # Copy Info.plist
 install -m 644 HanzoCore/Info.plist "$APP_DIR/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $APP_BUNDLE_IDENTIFIER" "$APP_DIR/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_DISPLAY_NAME" "$APP_DIR/Info.plist"
+if /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$APP_DIR/Info.plist" >/dev/null 2>&1; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_DISPLAY_NAME" "$APP_DIR/Info.plist"
+else
+    /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $APP_DISPLAY_NAME" "$APP_DIR/Info.plist"
+fi
 
 # Copy all SwiftPM resource bundles (including transitive dependency bundles).
 # Start from a clean bundle set so stale resources cannot survive between runs.
@@ -221,11 +251,11 @@ done < <(find "$BIN_DIR" -maxdepth 1 -name "*.bundle" -type d | sort)
 [ -n "$hanzo_bundle_name" ] || die "HanzoCore resource bundle was not copied"
 [ -f "$APP_ROOT/$hanzo_bundle_name/rewrite.txt" ] || die "rewrite.txt missing from $hanzo_bundle_name"
 
-echo "App bundle created at $HOME/.local/share/hanzo/Hanzo.app"
+echo "App bundle created at $APP_ROOT"
 if [ "$NO_LAUNCH" = true ]; then
     echo "Skipping launch (--no-launch)."
 else
     require_cmd open
     echo "Launching..."
-    open "$HOME/.local/share/hanzo/Hanzo.app"
+    open "$APP_ROOT"
 fi
