@@ -202,8 +202,20 @@ final class DictationOrchestrator {
 
     func shutdown() {
         Task {
-            await localRuntimeManager.stop()
-            await localLLMRuntimeManager.stop()
+            await stopRuntimesForShutdown()
+        }
+    }
+
+    func shutdownAndWait(timeoutSeconds: TimeInterval = 3.0) {
+        let semaphore = DispatchSemaphore(value: 0)
+        Task {
+            await stopRuntimesForShutdown()
+            semaphore.signal()
+        }
+
+        let didFinishBeforeTimeout = semaphore.wait(timeout: .now() + timeoutSeconds) == .success
+        if !didFinishBeforeTimeout {
+            logger.warn("Timed out waiting for runtime shutdown during app termination")
         }
     }
 
@@ -254,6 +266,11 @@ final class DictationOrchestrator {
                 }
             }
         }
+    }
+
+    private func stopRuntimesForShutdown() async {
+        await localRuntimeManager.stop()
+        await localLLMRuntimeManager.stop()
     }
 
     private func stopRecording() {

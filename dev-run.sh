@@ -37,6 +37,8 @@ done
 # Kill running instance
 require_cmd pkill
 pkill -x Hanzo || true
+# Also kill orphaned bundled llama runtimes from previous app exits.
+pkill -f "$HOME/.local/share/hanzo/Hanzo.app/Contents/MacOS/llama-runtime/llama-server" || true
 
 # Reset app UserDefaults (opt-in)
 if [ "$RESET_SETTINGS" = true ]; then

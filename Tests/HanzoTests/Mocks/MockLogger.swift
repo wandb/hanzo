@@ -1,11 +1,39 @@
 @testable import HanzoCore
+import Foundation
 
 final class MockLogger: LoggingServiceProtocol {
-    var infoMessages: [String] = []
-    var warnMessages: [String] = []
-    var errorMessages: [String] = []
+    private let lock = NSLock()
+    private var _infoMessages: [String] = []
+    private var _warnMessages: [String] = []
+    private var _errorMessages: [String] = []
 
-    func info(_ message: String) { infoMessages.append(message) }
-    func warn(_ message: String) { warnMessages.append(message) }
-    func error(_ message: String) { errorMessages.append(message) }
+    var infoMessages: [String] {
+        withLock { _infoMessages }
+    }
+
+    var warnMessages: [String] {
+        withLock { _warnMessages }
+    }
+
+    var errorMessages: [String] {
+        withLock { _errorMessages }
+    }
+
+    func info(_ message: String) {
+        withLock { _infoMessages.append(message) }
+    }
+
+    func warn(_ message: String) {
+        withLock { _warnMessages.append(message) }
+    }
+
+    func error(_ message: String) {
+        withLock { _errorMessages.append(message) }
+    }
+
+    private func withLock<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
 }

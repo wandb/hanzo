@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 private final class DownloadTaskState: @unchecked Sendable {
@@ -44,6 +45,7 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
     private var isDownloadingModel = false
     private var isPrimingInference = false
     private var hasPrimedInference = false
+    private var hasPrunedOrphanedServerProcesses = false
 
     init(
         logger: LoggingServiceProtocol = LoggingService.shared,
@@ -68,6 +70,11 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
     }
 
     func ensureRunning(progressHandler: ((Double) -> Void)?) async throws {
+        if !hasPrunedOrphanedServerProcesses {
+            await pruneOrphanedServerProcesses()
+            hasPrunedOrphanedServerProcesses = true
+        }
+
         if let serverProcess, serverProcess.isRunning {
             if await isServerReady() {
                 progressHandler?(1.0)
@@ -126,16 +133,22 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
 
         if serverProcess.isRunning {
             serverProcess.terminate()
-            for _ in 0..<20 {
-                if !serverProcess.isRunning {
-                    break
-                }
-                try? await Task.sleep(nanoseconds: 100_000_000)
-            }
+            _ = await waitForProcessExit(serverProcess, timeoutNanoseconds: 2_000_000_000)
         }
 
         if serverProcess.isRunning {
             serverProcess.interrupt()
+            _ = await waitForProcessExit(serverProcess, timeoutNanoseconds: 1_000_000_000)
+        }
+
+        if serverProcess.isRunning {
+            let pid = serverProcess.processIdentifier
+            if kill(pid, SIGKILL) == 0 {
+                logger.warn("Force-killed local LLM runtime (pid: \(pid))")
+            } else {
+                logger.warn("Failed to force-kill local LLM runtime (pid: \(pid), errno: \(errno))")
+            }
+            _ = await waitForProcessExit(serverProcess, timeoutNanoseconds: 500_000_000)
         }
 
         self.serverProcess = nil
@@ -145,6 +158,123 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
     }
 
     // MARK: - Runtime Launch
+
+    private func waitForProcessExit(
+        _ process: Process,
+        timeoutNanoseconds: UInt64,
+        pollNanoseconds: UInt64 = 100_000_000
+    ) async -> Bool {
+        var waited: UInt64 = 0
+        while process.isRunning, waited < timeoutNanoseconds {
+            try? await Task.sleep(nanoseconds: pollNanoseconds)
+            waited += pollNanoseconds
+        }
+        return !process.isRunning
+    }
+
+    private func pruneOrphanedServerProcesses() async {
+        let runtimePathSegment = "Hanzo.app/Contents/MacOS/llama-runtime/llama-server"
+        let portArgument = "--port \(Constants.localLLMServerPort)"
+        let orphanParentPID = Int32(1)
+
+        guard let output = runCommandAndCaptureOutput(
+            executablePath: "/bin/ps",
+            arguments: ["-axo", "pid=,ppid=,args="]
+        ) else {
+            return
+        }
+
+        let orphanedPIDs: [Int32] = output
+            .split(whereSeparator: \.isNewline)
+            .compactMap { parseProcessLine(String($0)) }
+            .filter { snapshot in
+                snapshot.parentPID == orphanParentPID
+                    && snapshot.arguments.contains(runtimePathSegment)
+                    && snapshot.arguments.contains(portArgument)
+            }
+            .map { $0.pid }
+
+        guard !orphanedPIDs.isEmpty else { return }
+
+        logger.warn("Found \(orphanedPIDs.count) orphaned local LLM runtime process(es); terminating")
+
+        for pid in orphanedPIDs {
+            _ = kill(pid, SIGTERM)
+        }
+
+        try? await Task.sleep(nanoseconds: 500_000_000)
+
+        var forceKilledCount = 0
+        for pid in orphanedPIDs where processExists(pid: pid) {
+            if kill(pid, SIGKILL) == 0 {
+                forceKilledCount += 1
+            }
+        }
+
+        if forceKilledCount > 0 {
+            logger.warn("Force-killed \(forceKilledCount) orphaned local LLM runtime process(es)")
+        }
+    }
+
+    private func processExists(pid: Int32) -> Bool {
+        guard pid > 0 else { return false }
+        if kill(pid, 0) == 0 {
+            return true
+        }
+        return errno == EPERM
+    }
+
+    private func runCommandAndCaptureOutput(
+        executablePath: String,
+        arguments: [String]
+    ) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executablePath)
+        process.arguments = arguments
+
+        let outputPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = outputPipe
+
+        do {
+            try process.run()
+        } catch {
+            logger.warn("Failed to inspect running processes: \(error)")
+            return nil
+        }
+
+        // Drain process output before waiting; otherwise large output can fill the
+        // pipe buffer and deadlock waitUntilExit().
+        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        let outputText = String(data: outputData, encoding: .utf8) ?? ""
+
+        guard process.terminationStatus == 0 else {
+            let errorText = outputText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !errorText.isEmpty {
+                logger.warn("Process inspection failed: \(errorText)")
+            } else {
+                logger.warn("Process inspection failed with status \(process.terminationStatus)")
+            }
+            return nil
+        }
+
+        return outputText
+    }
+
+    private func parseProcessLine(_ line: String) -> (pid: Int32, parentPID: Int32, arguments: String)? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let components = trimmed.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+        guard components.count == 3,
+              let pid = Int32(components[0]),
+              let parentPID = Int32(components[1]) else {
+            return nil
+        }
+
+        return (pid, parentPID, String(components[2]))
+    }
 
     private func resolveLlamaServerExecutableURL() throws -> URL {
         var candidates: [String] = []

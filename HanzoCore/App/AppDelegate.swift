@@ -1,16 +1,18 @@
 import AppKit
+import Observation
 import SwiftUI
 import ServiceManagement
 
+@MainActor
 public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var transcriptPanel: NSPanel?
     private var onboardingWindow: NSWindow?
     private var settingsWindow: NSWindow?
-    private var stateObservationTask: Task<Void, Never>?
-    private var stateObservationTimer: Timer?
+    private var isStateObservationActive = false
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
+    private let statusBarImage = MenuBarIcon.radialWaveform()
 
     let appState = AppState()
     private lazy var orchestrator = DictationOrchestrator(appState: appState)
@@ -86,9 +88,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
-        orchestrator.shutdown()
-        stateObservationTask?.cancel()
-        stateObservationTimer?.invalidate()
+        stopStateObservation()
+        orchestrator.shutdownAndWait()
         if let localEventMonitor { NSEvent.removeMonitor(localEventMonitor) }
         if let globalEventMonitor { NSEvent.removeMonitor(globalEventMonitor) }
         hotkeyService.unregister()
@@ -98,8 +99,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Status Item
 
     func updateMenuBarIcon() {
-        statusItem?.button?.image = MenuBarIcon.radialWaveform()
-        statusItem?.button?.alphaValue = appState.dictationState == .idle ? 0.35 : 1.0
+        guard let button = statusItem?.button else { return }
+        if button.image == nil {
+            button.image = statusBarImage
+        }
+        button.alphaValue = appState.dictationState == .idle ? 0.35 : 1.0
     }
 
     @objc private func statusItemClicked() {
@@ -247,18 +251,36 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - State Observation
 
     private func startStateObservation() {
-        // Poll state changes to update icon and panel visibility
-        // Using a timer since @Observable observation from NSObject is complex
-        stateObservationTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            self.updateMenuBarIcon()
+        guard !isStateObservationActive else { return }
+        isStateObservationActive = true
+        observeStateChanges()
+    }
 
-            let panelVisible = self.transcriptPanel?.isVisible ?? false
-            if self.appState.isPopoverPresented && !panelVisible {
-                self.showPanel()
-            } else if !self.appState.isPopoverPresented && panelVisible {
-                self.hidePanel()
+    private func stopStateObservation() {
+        isStateObservationActive = false
+    }
+
+    private func observeStateChanges() {
+        guard isStateObservationActive else { return }
+
+        withObservationTracking {
+            _ = appState.dictationState
+            _ = appState.isPopoverPresented
+            updateMenuBarIcon()
+            syncPanelVisibility()
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.observeStateChanges()
             }
+        }
+    }
+
+    private func syncPanelVisibility() {
+        let panelVisible = transcriptPanel?.isVisible ?? false
+        if appState.isPopoverPresented && !panelVisible {
+            showPanel()
+        } else if !appState.isPopoverPresented && panelVisible {
+            hidePanel()
         }
     }
 
