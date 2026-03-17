@@ -69,8 +69,11 @@ set_values() {
 }
 
 show_values() {
-    echo "CFBundleShortVersionString=$(read_version)"
-    echo "CFBundleVersion=$(read_build_number)"
+    local version build_number
+    version="$(read_version)"
+    build_number="$(read_build_number)"
+    echo "CFBundleShortVersionString=$version"
+    echo "CFBundleVersion=$build_number"
 }
 
 bump_build() {
