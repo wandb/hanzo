@@ -8,6 +8,9 @@ macOS menu bar dictation app. Captures speech via global hotkey, transcribes loc
 - `./scripts/dev-run.sh --reset-models` — clear downloaded models before building
 - `./scripts/dev-run.sh --reset-permissions` — reset Microphone & Accessibility permissions (useful for testing onboarding)
 - `./scripts/dev-run.sh --reset-settings` — clear app UserDefaults (onboarding + preferences)
+- `./scripts/release-unsigned.sh` — build unsigned distribution artifacts into `dist/`
+- `./scripts/version.sh show` — print current app version/build from `HanzoCore/Info.plist`
+- `./scripts/version.sh bump-build` — increment app build number
 - `swift build` — build only
 - `swift test` — run all tests
 - XcodeGen (`project.yml`) exists for Xcode workflows but SPM via `scripts/dev-run.sh` is primary

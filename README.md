@@ -45,6 +45,8 @@ Hanzo runs in the menu bar — there is no dock icon.
 | `./scripts/dev-run.sh --reset-permissions` | Reset Microphone & Accessibility permissions (useful for testing onboarding) |
 | `./scripts/dev-run.sh --reset-settings` | Clear app UserDefaults (onboarding, provider/mode selections, hotkey, overrides) |
 | `./scripts/dev-run.sh --no-launch` | Build and assemble the app bundle without launching it |
+| `./scripts/version.sh show` | Print `CFBundleShortVersionString` and `CFBundleVersion` |
+| `./scripts/version.sh bump-build` | Increment `CFBundleVersion` in `HanzoCore/Info.plist` |
 | `./scripts/release-unsigned.sh` | One-command unsigned DMG/ZIP build into `dist/` |
 | `swift build --disable-keychain` | Build without launching |
 | `swift test --disable-keychain` | Run the test suite |
@@ -53,6 +55,9 @@ Hanzo runs in the menu bar — there is no dock icon.
 ## Distribution
 
 - Release process, signing, notarization, and Sparkle update setup are documented in `docs/RELEASING.md`.
+- Typical unsigned local release loop:
+  - `./scripts/version.sh bump-build`
+  - `./scripts/release-unsigned.sh`
 
 ## Configuration
 
