@@ -25,6 +25,7 @@ final class DictationOrchestrator {
     private var activeSessionTargetBundleIdentifier: String?
     private var pendingRestartAfterForging = false
     private var configuredASRProvider: ASRProvider
+    private var configuredLocalLLMContextSize: Int
     private var transcriptPostProcessingMode: TranscriptPostProcessingMode
     private var llmPostProcessingPrompt: String
 
@@ -70,6 +71,7 @@ final class DictationOrchestrator {
         }
 
         self.configuredASRProvider = DictationOrchestrator.currentASRProvider()
+        self.configuredLocalLLMContextSize = Constants.localLLMContextSize()
         self.transcriptPostProcessingMode = AppBehaviorSettings.globalPostProcessingMode()
         self.llmPostProcessingPrompt = AppBehaviorSettings.globalLLMPostProcessingPrompt()
 
@@ -103,6 +105,7 @@ final class DictationOrchestrator {
     func reloadSettings() {
         let previousProvider = configuredASRProvider
         let previousPostProcessingMode = transcriptPostProcessingMode
+        let previousLocalLLMContextSize = configuredLocalLLMContextSize
 
         if let activeSessionTargetBundleIdentifier {
             applyEffectiveBehavior(for: activeSessionTargetBundleIdentifier)
@@ -111,6 +114,7 @@ final class DictationOrchestrator {
         }
 
         configuredASRProvider = DictationOrchestrator.currentASRProvider()
+        configuredLocalLLMContextSize = Constants.localLLMContextSize()
         appState.asrProvider = configuredASRProvider
 
         if !isASRClientInjected {
@@ -123,17 +127,21 @@ final class DictationOrchestrator {
             && previousProvider != .local
         let shouldStopLocalLLMRuntime = previousPostProcessingMode == .llm
             && transcriptPostProcessingMode != .llm
+        let shouldRestartLocalLLMRuntimeForContextChange = previousPostProcessingMode == .llm
+            && transcriptPostProcessingMode == .llm
+            && previousLocalLLMContextSize != configuredLocalLLMContextSize
         let shouldWarmLocalLLMRuntime = transcriptPostProcessingMode == .llm
-            && previousPostProcessingMode != .llm
+            && (previousPostProcessingMode != .llm || shouldRestartLocalLLMRuntimeForContextChange)
 
         if shouldRestartLocalRuntime || shouldWarmLocalRuntime
-            || shouldStopLocalLLMRuntime || shouldWarmLocalLLMRuntime {
+            || shouldStopLocalLLMRuntime || shouldWarmLocalLLMRuntime
+            || shouldRestartLocalLLMRuntimeForContextChange {
             Task {
                 if shouldRestartLocalRuntime {
                     await localRuntimeManager.stop()
                 }
 
-                if shouldStopLocalLLMRuntime {
+                if shouldStopLocalLLMRuntime || shouldRestartLocalLLMRuntimeForContextChange {
                     await localLLMRuntimeManager.stop()
                 }
 

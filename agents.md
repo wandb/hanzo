@@ -2,6 +2,13 @@
 
 macOS menu bar dictation app. Captures speech via global hotkey, transcribes locally by default, inserts transcribed text into the active app.
 
+## Audience & Product Direction
+
+- Primary audience is technical developers.
+- Local-first operation is a core value: default to local transcription and local rewrite when possible.
+- Users may run their own models and tune runtime parameters (for example, model/context settings) to trade off memory, latency, and quality.
+- External ASR is optional and should be treated as an explicit opt-in.
+
 ## Build & Run
 
 - `./scripts/dev-run.sh` — kill running instance, rebuild and launch
