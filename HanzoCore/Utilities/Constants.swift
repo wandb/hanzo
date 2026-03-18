@@ -48,7 +48,9 @@ enum Constants {
     static let localLLMModelRepository = "Qwen/Qwen3-4B-GGUF"
     static let localLLMModelFileName = "Qwen3-4B-Q4_K_M.gguf"
     static let localLLMModelExpectedDownloadBytes: Int64 = 2_497_280_256
-    static let localLLMModelContextSize = 2048
+    static let localLLMContextSizeKey = "localLLMContextSize"
+    static let supportedLocalLLMContextSizes = [1024, 2048]
+    static let defaultLocalLLMContextSize = 2048
     static let localLLMServerPort = 39281
     static let localLLMServerHost = "127.0.0.1"
     static let localLLMServerExecutableName = "llama-server"
@@ -101,4 +103,12 @@ enum Constants {
     // App-specific behavior overrides
     static let appBehaviorOverridesKey = "appBehaviorOverrides"
     static let appBehaviorCustomAppsKey = "appBehaviorCustomApps"
+
+    static func localLLMContextSize(defaults: UserDefaults = .standard) -> Int {
+        let configured = defaults.integer(forKey: Constants.localLLMContextSizeKey)
+        if Constants.supportedLocalLLMContextSizes.contains(configured) {
+            return configured
+        }
+        return Constants.defaultLocalLLMContextSize
+    }
 }

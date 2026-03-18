@@ -40,6 +40,7 @@ struct SettingsView: View {
     @State private var rewritePromptTemplateValidationError: String? = TranscriptRewritePrompt.validateTemplate(
         TranscriptRewritePrompt.activeTemplate()
     )
+    @State private var localLLMContextSize: Int = Constants.localLLMContextSize()
     @State private var isPromptTemplateExpanded = false
     @State private var appBehaviorOverrides: [String: AppBehaviorOverride] = AppBehaviorSettings.loadOverrides()
     @State private var supportedApps: [SupportedAppBehavior] = AppBehaviorSettings.supportedApps
@@ -56,6 +57,7 @@ struct SettingsView: View {
     private let postProcessingHelpText = "Default rewrite mode for all apps. Individual apps can override."
     private let userPromptHelpText = "Custom instructions inserted into the template as {{user_prompt}}."
     private let rewriteTemplateHelpText = "Template used to build the rewrite request for the local model."
+    private let localLLMContextHelpText = "Maximum context window for local rewrite inference."
     private let silenceTimeoutHelpText = "Stop recording after this much silence. Off disables it."
     private let autoSubmitHelpText = "Send text automatically after insert."
 
@@ -362,6 +364,23 @@ struct SettingsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                     .focused($focusedField, equals: .serverPassword)
                     .onChange(of: serverPassword) { saveTranscriptionSettings() }
+            }
+
+            if asrProvider == .local {
+                HStack {
+                    settingLabel("Rewrite context", helpText: localLLMContextHelpText)
+                    Spacer()
+                    Picker("", selection: $localLLMContextSize) {
+                        ForEach(Constants.supportedLocalLLMContextSizes, id: \.self) { size in
+                            Text("\(size) tokens").tag(size)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: inputWidth, alignment: .trailing)
+                }
+                .onChange(of: localLLMContextSize) {
+                    saveTranscriptionSettings()
+                }
             }
 
             appBehaviorDefaultsContent
@@ -820,6 +839,7 @@ struct SettingsView: View {
         UserDefaults.standard.set(asrProvider.rawValue, forKey: Constants.asrProviderKey)
         UserDefaults.standard.set(serverEndpoint, forKey: Constants.serverEndpointKey)
         UserDefaults.standard.set(serverPassword, forKey: Constants.customServerPasswordKey)
+        UserDefaults.standard.set(localLLMContextSize, forKey: Constants.localLLMContextSizeKey)
         appState.asrProvider = asrProvider
         onSave?()
     }

@@ -318,6 +318,7 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
 
     private func launchServer(executableURL: URL, modelURL: URL) throws {
         let threadCount = max(1, ProcessInfo.processInfo.activeProcessorCount - 1)
+        let contextSize = Constants.localLLMContextSize()
 
         let process = Process()
         process.executableURL = executableURL
@@ -325,7 +326,7 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
             "-m", modelURL.path,
             "--host", Constants.localLLMServerHost,
             "--port", String(Constants.localLLMServerPort),
-            "-c", String(Constants.localLLMModelContextSize),
+            "-c", String(contextSize),
             "-ngl", String(Constants.localLLMServerGPULayers),
             "--threads", String(threadCount),
             "--threads-batch", String(threadCount)
@@ -641,13 +642,18 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
             userPrompt: userPrompt
         )
 
-        let maxTokens = rewriteMaxTokens(for: transcript)
+        let userMessage = "/no_think\n" + prompt.user
+        let maxTokens = rewriteMaxTokens(
+            transcript: transcript,
+            systemPrompt: prompt.system,
+            userPrompt: userMessage
+        )
 
         let requestBody = ChatCompletionRequest(
             model: "qwen3-4b",
             messages: [
                 ChatMessage(role: "system", content: prompt.system),
-                ChatMessage(role: "user", content: "/no_think\n" + prompt.user)
+                ChatMessage(role: "user", content: userMessage)
             ],
             temperature: 0.2,
             maxTokens: maxTokens,
@@ -687,10 +693,25 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
         return withoutControlTokens.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func rewriteMaxTokens(for transcript: String) -> Int {
-        let estimatedInputTokens = max(16, transcript.count / 4)
-        let budget = estimatedInputTokens + 64
-        return min(256, max(96, budget))
+    private func rewriteMaxTokens(transcript: String, systemPrompt: String, userPrompt: String) -> Int {
+        let contextSize = Constants.localLLMContextSize()
+        let transcriptTokens = estimateTokenCount(transcript)
+        let promptTokens = estimateTokenCount(systemPrompt) + estimateTokenCount(userPrompt)
+
+        // Reserve room for chat framing tokens and small tokenization mismatch.
+        let safetyMargin = 48
+        let availableForOutput = max(32, contextSize - promptTokens - safetyMargin)
+        let contextCap = contextSize >= 2048 ? 768 : 384
+
+        // Rewrites are usually similar length to the transcript and occasionally longer.
+        let desired = max(128, Int(Double(transcriptTokens) * 1.2))
+        let hardLimit = min(contextCap, availableForOutput)
+
+        return min(hardLimit, desired)
+    }
+
+    private func estimateTokenCount(_ text: String) -> Int {
+        max(1, (text.count + 3) / 4)
     }
 
     private func ensureInferencePrimed() async {
