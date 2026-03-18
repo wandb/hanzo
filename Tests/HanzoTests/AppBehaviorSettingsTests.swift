@@ -250,11 +250,11 @@ struct AppBehaviorSettingsTests {
         }
     }
 
-    @Test("shouldPersistHUDSettingsToAppOverride is false for supported app without override")
+    @Test("shouldPersistHUDSettingsToAppOverride is true for supported app without override")
     func shouldPersistHUDSettingsToAppOverrideForSupportedAppWithoutOverride() {
         withDefaults { defaults in
             #expect(
-                !AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(
+                AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(
                     for: "com.tinyspeck.slackmacgap",
                     defaults: defaults
                 )
@@ -275,6 +275,18 @@ struct AppBehaviorSettingsTests {
             #expect(
                 !AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(
                     for: bundleIdentifier,
+                    defaults: defaults
+                )
+            )
+        }
+    }
+
+    @Test("shouldPersistHUDSettingsToAppOverride is false when bundle identifier is nil")
+    func shouldPersistHUDSettingsToAppOverrideForNilBundleIdentifier() {
+        withDefaults { defaults in
+            #expect(
+                !AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(
+                    for: nil,
                     defaults: defaults
                 )
             )

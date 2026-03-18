@@ -221,12 +221,11 @@ enum AppBehaviorSettings {
         defaults: UserDefaults = .standard
     ) -> Bool {
         guard let bundleIdentifier,
-              isSupported(bundleIdentifier: bundleIdentifier, defaults: defaults),
-              let appOverride = override(for: bundleIdentifier, defaults: defaults) else {
+              isSupported(bundleIdentifier: bundleIdentifier, defaults: defaults) else {
             return false
         }
 
-        return appOverride.hasOverrides
+        return true
     }
 
     static func saveOverride(
