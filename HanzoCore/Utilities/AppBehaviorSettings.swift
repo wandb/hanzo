@@ -216,6 +216,19 @@ enum AppBehaviorSettings {
         loadOverrides(defaults: defaults)[bundleIdentifier]
     }
 
+    static func shouldPersistHUDSettingsToAppOverride(
+        for bundleIdentifier: String?,
+        defaults: UserDefaults = .standard
+    ) -> Bool {
+        guard let bundleIdentifier,
+              isSupported(bundleIdentifier: bundleIdentifier, defaults: defaults),
+              let appOverride = override(for: bundleIdentifier, defaults: defaults) else {
+            return false
+        }
+
+        return appOverride.hasOverrides
+    }
+
     static func saveOverride(
         _ appOverride: AppBehaviorOverride?,
         for bundleIdentifier: String,

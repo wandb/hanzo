@@ -165,8 +165,8 @@ private struct StatusFooterView: View {
         let newValue = silenceSteps[nextIndex]
         appState.silenceTimeout = newValue
         if let bundleIdentifier = appState.activeTargetBundleIdentifier,
-           AppBehaviorSettings.isSupported(bundleIdentifier: bundleIdentifier) {
-            var appOverride = AppBehaviorSettings.override(for: bundleIdentifier) ?? AppBehaviorOverride()
+           AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(for: bundleIdentifier),
+           var appOverride = AppBehaviorSettings.override(for: bundleIdentifier) {
             appOverride.silenceTimeout = newValue
             AppBehaviorSettings.saveOverride(appOverride, for: bundleIdentifier)
         } else {
@@ -182,8 +182,8 @@ private struct StatusFooterView: View {
         let newMode = modes[nextIndex]
         appState.autoSubmitMode = newMode
         if let bundleIdentifier = appState.activeTargetBundleIdentifier,
-           AppBehaviorSettings.isSupported(bundleIdentifier: bundleIdentifier) {
-            var appOverride = AppBehaviorSettings.override(for: bundleIdentifier) ?? AppBehaviorOverride()
+           AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(for: bundleIdentifier),
+           var appOverride = AppBehaviorSettings.override(for: bundleIdentifier) {
             appOverride.autoSubmitMode = newMode
             AppBehaviorSettings.saveOverride(appOverride, for: bundleIdentifier)
         } else {
