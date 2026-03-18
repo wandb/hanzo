@@ -111,7 +111,6 @@ private struct StatusFooterView: View {
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
-            .pillTooltip("Silence timeout")
             .accessibilityLabel("Silence timeout")
 
             Text(" · ")
@@ -128,7 +127,6 @@ private struct StatusFooterView: View {
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
-            .pillTooltip("Submit after insert", alignment: .topTrailing)
             .accessibilityLabel("Submit after insert")
         }
     }
@@ -190,51 +188,6 @@ private struct StatusFooterView: View {
             AppBehaviorSettings.setGlobalAutoSubmitMode(newMode)
         }
         onSettingsChanged?()
-    }
-}
-
-// MARK: - Pill Tooltip
-
-private struct PillTooltipModifier: ViewModifier {
-    let text: String
-    let alignment: Alignment
-    @State private var isHovering = false
-    @State private var showTooltip = false
-
-    func body(content: Content) -> some View {
-        content
-            .onHover { hovering in
-                isHovering = hovering
-                if hovering {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        if isHovering { showTooltip = true }
-                    }
-                } else {
-                    showTooltip = false
-                }
-            }
-            .overlay(alignment: alignment) {
-                if showTooltip {
-                    Text(text)
-                        .font(.system(.caption2, design: .rounded))
-                        .foregroundStyle(.primary.opacity(0.7))
-                        .fixedSize()
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(.primary.opacity(0.1))
-                        .clipShape(Capsule())
-                        .allowsHitTesting(false)
-                        .offset(y: -22)
-                        .transition(.opacity)
-                        .animation(.easeInOut(duration: 0.15), value: showTooltip)
-                }
-            }
-    }
-}
-
-private extension View {
-    func pillTooltip(_ text: String, alignment: Alignment = .top) -> some View {
-        modifier(PillTooltipModifier(text: text, alignment: alignment))
     }
 }
 
