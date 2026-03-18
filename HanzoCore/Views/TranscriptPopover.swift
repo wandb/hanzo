@@ -111,14 +111,14 @@ private struct StatusFooterView: View {
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
-            .pillTooltip("Silence timer")
-            .accessibilityLabel("Silence timer")
+            .pillTooltip("Silence timeout")
+            .accessibilityLabel("Silence timeout")
 
             Text(" · ")
                 .font(.system(.caption2, design: .rounded))
                 .foregroundStyle(.primary.opacity(0.2))
 
-            // Auto-submit control
+            // Submit-after-insert control
             Button {
                 cycleAutoSubmit()
             } label: {
@@ -128,8 +128,8 @@ private struct StatusFooterView: View {
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
-            .pillTooltip("Auto submit")
-            .accessibilityLabel("Auto submit")
+            .pillTooltip("Submit after insert", alignment: .topTrailing)
+            .accessibilityLabel("Submit after insert")
         }
     }
 
@@ -197,6 +197,7 @@ private struct StatusFooterView: View {
 
 private struct PillTooltipModifier: ViewModifier {
     let text: String
+    let alignment: Alignment
     @State private var isHovering = false
     @State private var showTooltip = false
 
@@ -212,7 +213,7 @@ private struct PillTooltipModifier: ViewModifier {
                     showTooltip = false
                 }
             }
-            .overlay(alignment: .top) {
+            .overlay(alignment: alignment) {
                 if showTooltip {
                     Text(text)
                         .font(.system(.caption2, design: .rounded))
@@ -232,8 +233,8 @@ private struct PillTooltipModifier: ViewModifier {
 }
 
 private extension View {
-    func pillTooltip(_ text: String) -> some View {
-        modifier(PillTooltipModifier(text: text))
+    func pillTooltip(_ text: String, alignment: Alignment = .top) -> some View {
+        modifier(PillTooltipModifier(text: text, alignment: alignment))
     }
 }
 
