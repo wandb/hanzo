@@ -16,6 +16,13 @@ enum PartialTranscriptMerger {
             return previousTrimmed
         }
 
+        if let mergedFromOverlap = mergeUsingSuffixPrefixOverlap(
+            previous: previousTrimmed,
+            incoming: incomingTrimmed
+        ) {
+            return mergedFromOverlap
+        }
+
         let prefixLength = longestCommonPrefixLength(previousTrimmed, incomingTrimmed)
         if prefixLength == 0 {
             // Some decoders occasionally emit a very short first fragment ("I.", "So")
@@ -51,8 +58,37 @@ enum PartialTranscriptMerger {
         return false
     }
 
+    private static func mergeUsingSuffixPrefixOverlap(previous: String, incoming: String) -> String? {
+        let overlapLength = longestSuffixPrefixOverlapLength(previous, incoming)
+        guard overlapLength >= 12 else {
+            return nil
+        }
+
+        if overlapLength == incoming.count {
+            return previous
+        }
+
+        let incomingTail = String(incoming.dropFirst(overlapLength))
+        return previous + incomingTail
+    }
+
     private static func wordCount(_ text: String) -> Int {
         text.split(whereSeparator: \.isWhitespace).count
+    }
+
+    private static func longestSuffixPrefixOverlapLength(_ left: String, _ right: String) -> Int {
+        let maxLength = min(left.count, right.count)
+        guard maxLength > 0 else { return 0 }
+
+        for length in stride(from: maxLength, through: 1, by: -1) {
+            let leftStart = left.index(left.endIndex, offsetBy: -length)
+            let rightEnd = right.index(right.startIndex, offsetBy: length)
+            if left[leftStart...] == right[..<rightEnd] {
+                return length
+            }
+        }
+
+        return 0
     }
 
     private static func longestCommonPrefixLength(_ left: String, _ right: String) -> Int {

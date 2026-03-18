@@ -3,11 +3,11 @@ import SwiftUI
 
 private enum TranscriptPopoverLayout {
     static let width: CGFloat = 480
-    static let fallbackMaxHeight: CGFloat = 560
+    static let fallbackMaxHeight: CGFloat = 760
 
     static var maxHeight: CGFloat {
         guard let screen = NSScreen.main else { return fallbackMaxHeight }
-        return max(480, min(screen.visibleFrame.height * 0.72, 760))
+        return max(480, screen.visibleFrame.height * 0.9)
     }
 }
 

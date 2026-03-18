@@ -39,4 +39,20 @@ struct PartialTranscriptMergerTests {
         let merged = PartialTranscriptMerger.merge(previous: "I.", incoming: "This is a complete sentence")
         #expect(merged == "This is a complete sentence")
     }
+
+    @Test("rolling partial window appends new tail using suffix overlap")
+    func rollingPartialWindowAppendsNewTailUsingSuffixOverlap() {
+        let previous = "one two three four five six seven eight nine ten"
+        let incoming = "five six seven eight nine ten eleven twelve"
+        let merged = PartialTranscriptMerger.merge(previous: previous, incoming: incoming)
+        #expect(merged == "one two three four five six seven eight nine ten eleven twelve")
+    }
+
+    @Test("small accidental suffix-prefix overlap does not merge unrelated text")
+    func smallAccidentalOverlapDoesNotMergeUnrelatedText() {
+        let previous = "I think"
+        let incoming = "k now"
+        let merged = PartialTranscriptMerger.merge(previous: previous, incoming: incoming)
+        #expect(merged == previous)
+    }
 }
