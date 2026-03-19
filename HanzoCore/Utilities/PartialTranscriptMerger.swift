@@ -122,7 +122,8 @@ enum PartialTranscriptMerger {
                 guard incomingSlice == previousSuffix else { continue }
                 guard incomingEnd < incomingWords.count else { continue }
 
-                let mergedWords = keptPrefixWords + incomingWords[incomingEnd...]
+                let stablePrefixWords = Array(keptPrefixWords.dropLast(overlap))
+                let mergedWords = stablePrefixWords + Array(incomingWords[incomingStart...])
                 let merged = mergedWords.joined(separator: " ")
                 if merged.isEmpty || merged == previous {
                     continue
@@ -194,13 +195,10 @@ enum PartialTranscriptMerger {
                     continue
                 }
 
-                if incomingEnd >= incomingWords.count {
-                    return previous
-                }
-
-                let tail = incomingWords[incomingEnd...].joined(separator: " ")
-                guard !tail.isEmpty else { return previous }
-                return previous + " " + tail
+                let mergedWords = Array(previousWords[..<previousStart]) + Array(incomingWords[incomingStart...])
+                let merged = mergedWords.joined(separator: " ")
+                guard !merged.isEmpty else { return previous }
+                return merged
             }
         }
 
@@ -269,20 +267,15 @@ enum PartialTranscriptMerger {
             return nil
         }
 
-        let previousEnd = bestMatch.previousStart + bestMatch.length
         let incomingEnd = bestMatch.incomingStart + bestMatch.length
         guard incomingEnd < incomingWords.count else {
             return previous
         }
 
-        let mergedPrefix = previousWords[..<previousEnd].joined(separator: " ")
-        let mergedTail = incomingWords[incomingEnd...].joined(separator: " ")
-        guard !mergedTail.isEmpty else { return mergedPrefix }
-
-        if mergedPrefix.isEmpty {
-            return mergedTail
-        }
-        return mergedPrefix + " " + mergedTail
+        let mergedWords = Array(previousWords[..<bestMatch.previousStart]) + Array(incomingWords[bestMatch.incomingStart...])
+        let merged = mergedWords.joined(separator: " ")
+        guard !merged.isEmpty else { return previous }
+        return merged
     }
 
     private static func normalizedWord(_ value: String) -> String {
