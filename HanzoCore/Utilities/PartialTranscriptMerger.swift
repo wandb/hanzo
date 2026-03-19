@@ -122,14 +122,18 @@ enum PartialTranscriptMerger {
                 guard incomingSlice == previousSuffix else { continue }
                 guard incomingEnd < incomingWords.count else { continue }
 
-                let mergedWords = keptPrefixWords + incomingWords[incomingEnd...]
+                let stablePrefixWords = Array(keptPrefixWords.dropLast(overlap))
+                let mergedWords = stablePrefixWords + Array(incomingWords[incomingStart...])
                 let merged = mergedWords.joined(separator: " ")
                 if merged.isEmpty || merged == previous {
                     continue
                 }
 
                 let mergedWordsArray = Array(mergedWords)
-                let commonPrefixWords = longestCommonPrefixWordCount(previousWords, mergedWordsArray)
+                let commonPrefixWords = longestCommonNormalizedPrefixWordCount(
+                    previousWords,
+                    mergedWordsArray
+                )
                 let rewrittenWords = previousWords.count - commonPrefixWords
                 let shrinkWords = max(0, previousWords.count - mergedWordsArray.count)
                 if rewrittenWords > maximumCorrectionRewriteWords || shrinkWords > maximumCorrectionShrinkWords {
@@ -147,6 +151,16 @@ enum PartialTranscriptMerger {
         let limit = min(left.count, right.count)
         var index = 0
         while index < limit, left[index] == right[index] {
+            index += 1
+        }
+        return index
+    }
+
+    private static func longestCommonNormalizedPrefixWordCount(_ left: [String], _ right: [String]) -> Int {
+        let limit = min(left.count, right.count)
+        var index = 0
+        while index < limit,
+              normalizedWord(left[index]) == normalizedWord(right[index]) {
             index += 1
         }
         return index
@@ -194,13 +208,12 @@ enum PartialTranscriptMerger {
                     continue
                 }
 
-                if incomingEnd >= incomingWords.count {
-                    return previous
-                }
-
-                let tail = incomingWords[incomingEnd...].joined(separator: " ")
-                guard !tail.isEmpty else { return previous }
-                return previous + " " + tail
+                let merged = mergeWordSlices(
+                    prefix: previousWords[..<previousStart],
+                    suffix: incomingWords[incomingStart...],
+                    fallback: previous
+                )
+                return merged
             }
         }
 
@@ -269,20 +282,33 @@ enum PartialTranscriptMerger {
             return nil
         }
 
-        let previousEnd = bestMatch.previousStart + bestMatch.length
         let incomingEnd = bestMatch.incomingStart + bestMatch.length
         guard incomingEnd < incomingWords.count else {
             return previous
         }
 
-        let mergedPrefix = previousWords[..<previousEnd].joined(separator: " ")
-        let mergedTail = incomingWords[incomingEnd...].joined(separator: " ")
-        guard !mergedTail.isEmpty else { return mergedPrefix }
+        return mergeWordSlices(
+            prefix: previousWords[..<bestMatch.previousStart],
+            suffix: incomingWords[bestMatch.incomingStart...],
+            fallback: previous
+        )
+    }
 
-        if mergedPrefix.isEmpty {
-            return mergedTail
+    private static func mergeWordSlices(
+        prefix: ArraySlice<String>,
+        suffix: ArraySlice<String>,
+        fallback: String
+    ) -> String {
+        let prefixText = prefix.joined(separator: " ")
+        let suffixText = suffix.joined(separator: " ")
+
+        if prefixText.isEmpty {
+            return suffixText.isEmpty ? fallback : suffixText
         }
-        return mergedPrefix + " " + mergedTail
+        if suffixText.isEmpty {
+            return prefixText
+        }
+        return prefixText + " " + suffixText
     }
 
     private static func normalizedWord(_ value: String) -> String {

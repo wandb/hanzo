@@ -64,12 +64,12 @@ struct PartialTranscriptMergerTests {
         #expect(merged == previous)
     }
 
-    @Test("word overlap tolerates punctuation re-edits")
-    func wordOverlapToleratesPunctuationReEdits() {
+    @Test("word overlap adopts incoming punctuation re-edits")
+    func wordOverlapAdoptsIncomingPunctuationReEdits() {
         let previous = "we are testing world, this is a test"
         let incoming = "world this is a test and then more words"
         let merged = PartialTranscriptMerger.merge(previous: previous, incoming: incoming)
-        #expect(merged == "we are testing world, this is a test and then more words")
+        #expect(merged == "we are testing world this is a test and then more words")
     }
 
     @Test("word overlap can recover when incoming window starts with rewritten lead words")
@@ -114,6 +114,24 @@ struct PartialTranscriptMergerTests {
         let incoming = "one two three four five six seven eight right now words here"
         let merged = PartialTranscriptMerger.merge(previous: previous, incoming: incoming)
         #expect(merged == "a b c d e f g h i j k l m n o p q r s t u v w x y z one two three four five six seven eight right now words here")
+    }
+
+    @Test("recent tail rewrite adopts incoming punctuation edits")
+    func recentTailRewriteAdoptsIncomingPunctuationEdits() {
+        var previousWords = (1...60).map { "w\($0)" }
+        previousWords[9] = "w10."
+        let incomingWords = (8...61).map { "w\($0)" }
+
+        let previous = previousWords.joined(separator: " ")
+        let incoming = incomingWords.joined(separator: " ")
+        let merged = PartialTranscriptMerger.merge(
+            previous: previous,
+            incoming: incoming,
+            allowAggressiveRecovery: false
+        )
+
+        let expectedWords = (1...7).map { "w\($0)" } + incomingWords
+        #expect(merged == expectedWords.joined(separator: " "))
     }
 
     @Test("recent tail rewrite does not drop words in smooth mode")
