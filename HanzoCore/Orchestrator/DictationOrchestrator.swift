@@ -36,6 +36,7 @@ final class DictationOrchestrator {
     var silenceTimeout: Double
     private var silenceStartTime: Date?
     private var peakSpeechLevel: Float = 0
+    private var ambientNoiseLevel: Float = Constants.silenceAbsoluteFloor
     private var lastSilenceEvaluationAt: Date?
     private var lastObservedPartialTranscript: String = ""
     private var lastPartialTranscriptUpdateAt: Date?
@@ -201,6 +202,7 @@ final class DictationOrchestrator {
         pendingRestartAfterForging = false
         silenceStartTime = nil
         peakSpeechLevel = 0
+        ambientNoiseLevel = Constants.silenceAbsoluteFloor
         lastSilenceEvaluationAt = nil
         lastObservedPartialTranscript = ""
         lastPartialTranscriptUpdateAt = nil
@@ -264,6 +266,7 @@ final class DictationOrchestrator {
         }
         silenceStartTime = nil
         peakSpeechLevel = 0
+        ambientNoiseLevel = Constants.silenceAbsoluteFloor
         lastSilenceEvaluationAt = nil
         lastObservedPartialTranscript = ""
         lastPartialTranscriptUpdateAt = nil
@@ -459,6 +462,7 @@ final class DictationOrchestrator {
         pendingRestartAfterForging = false
         silenceStartTime = nil
         peakSpeechLevel = 0
+        ambientNoiseLevel = Constants.silenceAbsoluteFloor
         lastSilenceEvaluationAt = nil
         lastObservedPartialTranscript = ""
         lastPartialTranscriptUpdateAt = nil
@@ -707,19 +711,48 @@ final class DictationOrchestrator {
         }
 
         let averageLevel = levels.isEmpty ? 0 : levels.reduce(0, +) / Float(levels.count)
+        let elapsedSinceLastEvaluation: TimeInterval
         if let lastEvaluation = lastSilenceEvaluationAt {
             let elapsed = max(0, now.timeIntervalSince(lastEvaluation))
+            elapsedSinceLastEvaluation = elapsed
             let decayBase = Double(Constants.silencePeakDecayPerSecond)
             let decayedPeak = peakSpeechLevel * Float(pow(decayBase, elapsed))
             peakSpeechLevel = max(decayedPeak, averageLevel)
         } else {
+            elapsedSinceLastEvaluation = 0
             peakSpeechLevel = max(peakSpeechLevel, averageLevel)
         }
         lastSilenceEvaluationAt = now
 
-        let threshold = max(
+        let ambientSampleCap = max(
+            Constants.silenceAbsoluteFloor * 2,
+            peakSpeechLevel * Constants.silenceAmbientTrackingPeakFraction
+        )
+        if averageLevel <= ambientSampleCap {
+            let riseAlpha = exponentialSmoothingAlpha(
+                ratePerSecond: Constants.silenceAmbientTrackingRisePerSecond,
+                elapsed: elapsedSinceLastEvaluation
+            )
+            let fallAlpha = exponentialSmoothingAlpha(
+                ratePerSecond: Constants.silenceAmbientTrackingFallPerSecond,
+                elapsed: elapsedSinceLastEvaluation
+            )
+            let alpha = averageLevel > ambientNoiseLevel ? riseAlpha : fallAlpha
+            ambientNoiseLevel += (averageLevel - ambientNoiseLevel) * alpha
+        }
+        ambientNoiseLevel = max(Constants.silenceAbsoluteFloor, ambientNoiseLevel)
+
+        let rawThreshold = max(
             peakSpeechLevel * Constants.silenceRelativeThreshold,
             Constants.silenceAbsoluteFloor
+        )
+        let ambientThreshold = max(
+            ambientNoiseLevel * Constants.silenceAmbientThresholdMultiplier,
+            ambientNoiseLevel + Constants.silenceAmbientThresholdOffset
+        )
+        let threshold = max(
+            rawThreshold,
+            ambientThreshold
         )
 
         if averageLevel >= threshold {
@@ -752,11 +785,19 @@ final class DictationOrchestrator {
             logger.info(
                 "Silence auto-close after \(silenceTimeout)s " +
                 "(avg \(String(format: "%.4f", averageLevel)), " +
+                "ambient \(String(format: "%.4f", ambientNoiseLevel)), " +
                 "threshold \(String(format: "%.4f", threshold)), " +
                 "transcriptAge \(transcriptAge)s)"
             )
             silenceStartTime = nil
             stopRecording()
         }
+    }
+
+    private func exponentialSmoothingAlpha(ratePerSecond: Float, elapsed: TimeInterval) -> Float {
+        guard elapsed > 0 else { return 0 }
+        let clampedRate = min(max(ratePerSecond, 0), 1)
+        guard clampedRate < 1 else { return 1 }
+        return 1 - Float(pow(Double(1 - clampedRate), elapsed))
     }
 }

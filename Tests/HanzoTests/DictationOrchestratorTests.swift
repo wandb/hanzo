@@ -668,6 +668,62 @@ struct DictationOrchestratorTests {
         #expect(sut.mockAudio.stopCaptureCalled == true)
     }
 
+    @Test("Silence auto-close triggers despite steady ambient noise")
+    @MainActor func silenceAutoCloseTriggersWithAmbientNoise() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.silenceTimeout = 0.2
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // Capture a modest speech peak so the raw threshold can fall to the floor.
+        sut.mockAudio.simulateLevels([0.028, 0.031, 0.03, 0.027, 0.029, 0.03, 0.028])
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.appState.partialTranscript = "hello"
+
+        // Ambient room noise stays above absolute floor and previously held the timer open.
+        let ambientLevels: [Float] = [0.007, 0.0072, 0.0068, 0.0071, 0.007, 0.0072, 0.0069]
+        for _ in 0..<24 {
+            sut.mockAudio.simulateLevels(ambientLevels)
+            try await Task.sleep(nanoseconds: 50_000_000)
+            if sut.appState.dictationState != .listening {
+                break
+            }
+        }
+
+        #expect(sut.appState.dictationState != .listening)
+        #expect(sut.mockAudio.stopCaptureCalled == true)
+    }
+
+    @Test("Silence auto-close is not excessively delayed by ambient jitter")
+    @MainActor func silenceAutoCloseIsNotDelayedByAmbientJitter() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.silenceTimeout = 0.2
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        sut.mockAudio.simulateLevels([0.03, 0.031, 0.029, 0.03, 0.03, 0.031, 0.029])
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.appState.partialTranscript = "hello"
+
+        let jitterA: [Float] = [0.0072, 0.007, 0.0068, 0.0073, 0.0071, 0.007, 0.0069]
+        let jitterB: [Float] = [0.0108, 0.0112, 0.0106, 0.011, 0.0109, 0.0111, 0.0107]
+        var stopIteration: Int?
+
+        for i in 0..<24 {
+            let levels = (i % 2 == 0) ? jitterA : jitterB
+            sut.mockAudio.simulateLevels(levels)
+            try await Task.sleep(nanoseconds: 50_000_000)
+            if sut.appState.dictationState != .listening {
+                stopIteration = i
+                break
+            }
+        }
+
+        #expect(sut.appState.dictationState != .listening)
+        #expect(stopIteration != nil)
+        #expect((stopIteration ?? Int.max) <= 16)
+    }
+
     @Test("Silence auto-close does not trigger before speech")
     @MainActor func silenceAutoCloseWaitsForSpeech() async throws {
         let sut = makeSUT()

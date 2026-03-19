@@ -105,6 +105,11 @@ enum Constants {
     static let silenceRelativeThreshold: Float = 0.15  // fraction of peak speech level
     static let silenceAbsoluteFloor: Float = 0.005  // minimum silence threshold
     static let silencePeakDecayPerSecond: Float = 0.70
+    static let silenceAmbientThresholdMultiplier: Float = 1.85
+    static let silenceAmbientThresholdOffset: Float = 0.0022
+    static let silenceAmbientTrackingRisePerSecond: Float = 0.35
+    static let silenceAmbientTrackingFallPerSecond: Float = 0.85
+    static let silenceAmbientTrackingPeakFraction: Float = 0.65
     static let silenceTranscriptActivityGraceMultiplier: Double = 0.9
     static let silenceTranscriptActivityGraceMinimumSeconds: Double = 0.15
 
