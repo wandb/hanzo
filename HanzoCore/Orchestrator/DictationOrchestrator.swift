@@ -796,7 +796,8 @@ final class DictationOrchestrator {
 
     private func exponentialSmoothingAlpha(ratePerSecond: Float, elapsed: TimeInterval) -> Float {
         guard elapsed > 0 else { return 0 }
-        let clampedRate = min(max(ratePerSecond, 0), 0.999)
+        let clampedRate = min(max(ratePerSecond, 0), 1)
+        guard clampedRate < 1 else { return 1 }
         return 1 - Float(pow(Double(1 - clampedRate), elapsed))
     }
 }

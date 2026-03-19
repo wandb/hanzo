@@ -685,6 +685,9 @@ struct DictationOrchestratorTests {
         for _ in 0..<24 {
             sut.mockAudio.simulateLevels(ambientLevels)
             try await Task.sleep(nanoseconds: 50_000_000)
+            if sut.appState.dictationState != .listening {
+                break
+            }
         }
 
         #expect(sut.appState.dictationState != .listening)
@@ -704,20 +707,21 @@ struct DictationOrchestratorTests {
 
         let jitterA: [Float] = [0.0072, 0.007, 0.0068, 0.0073, 0.0071, 0.007, 0.0069]
         let jitterB: [Float] = [0.0108, 0.0112, 0.0106, 0.011, 0.0109, 0.0111, 0.0107]
-        let waitStart = Date()
+        var stopIteration: Int?
 
         for i in 0..<24 {
             let levels = (i % 2 == 0) ? jitterA : jitterB
             sut.mockAudio.simulateLevels(levels)
             try await Task.sleep(nanoseconds: 50_000_000)
             if sut.appState.dictationState != .listening {
+                stopIteration = i
                 break
             }
         }
 
-        let elapsed = Date().timeIntervalSince(waitStart)
         #expect(sut.appState.dictationState != .listening)
-        #expect(elapsed < 0.9)
+        #expect(stopIteration != nil)
+        #expect((stopIteration ?? Int.max) <= 16)
     }
 
     @Test("Silence auto-close does not trigger before speech")
