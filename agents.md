@@ -62,6 +62,13 @@ Package split into two targets: `HanzoCore` (library) and `HanzoApp` (executable
 - No hardware/permission dependencies in tests — all system boundaries are mocked
 - CI: GitHub Actions runs `swift build` + `swift test` on PRs and pushes to main (`.github/workflows/test.yml`)
 
+## Instruction Maintenance
+
+- Keep Copilot/custom instruction files stable by default.
+- Do not update instruction files on every feature or bugfix.
+- Update instruction files only when there is a durable repo-wide policy change (for example: required test patterns, architecture constraints, PR/review standards) or when explicitly requested.
+- When changing silence/auto-close logic in `DictationOrchestrator`, update or add regression coverage in `Tests/HanzoTests/DictationOrchestratorTests.swift` for ambient-noise behavior and timing robustness.
+
 ## External Service
 
 - Optional custom ASR server (configurable endpoint in Settings)
