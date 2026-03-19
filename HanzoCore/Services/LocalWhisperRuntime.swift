@@ -8,13 +8,19 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
         var audioSamples: [Float] = []
         var partialText = ""
         var language = "unknown"
+        var partialWindowSeconds = Constants.localWhisperPartialWindowSeconds
         var lastSeenAt = Date()
         var lastPartialDecodeAt = Date.distantPast
         var lastDecodedSampleCount = 0
     }
 
+    private let logger: LoggingServiceProtocol
     private var whisperKit: WhisperKit?
     private var sessions: [String: Session] = [:]
+
+    private init(logger: LoggingServiceProtocol = LoggingService.shared) {
+        self.logger = logger
+    }
 
     func prepare() async throws {
         try await prepare(progressHandler: nil)
@@ -87,14 +93,48 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
         session.audioSamples.append(contentsOf: chunkSamples)
 
         if shouldDecodePartial(session: session) {
+            let decodeWindowSeconds = session.partialWindowSeconds
+            let partialInput = partialDecodeInput(
+                session.audioSamples,
+                windowSeconds: decodeWindowSeconds
+            )
+            let decodeStartedAt = Date()
             let partial = try await transcribe(
-                audioSamples: partialDecodeInput(session.audioSamples),
+                audioSamples: partialInput,
                 isFinal: false
             )
+            let decodeDuration = Date().timeIntervalSince(decodeStartedAt)
+            let bufferedAudioSeconds = Double(session.audioSamples.count) / Constants.audioSampleRate
+            let partialInputSeconds = Double(partialInput.count) / Constants.audioSampleRate
+
+            logger.info(
+                "Local partial decode \(String(format: "%.2f", decodeDuration))s " +
+                "(window \(String(format: "%.1f", decodeWindowSeconds))s, " +
+                "input \(String(format: "%.1f", partialInputSeconds))s, " +
+                "buffered \(String(format: "%.1f", bufferedAudioSeconds))s)"
+            )
+
             session.partialText = partial.text
             session.language = partial.language
             session.lastPartialDecodeAt = Date()
             session.lastDecodedSampleCount = session.audioSamples.count
+
+            let adjustedWindowSeconds = adjustedPartialWindowSeconds(
+                currentWindowSeconds: decodeWindowSeconds,
+                decodeDuration: decodeDuration
+            )
+            if adjustedWindowSeconds != decodeWindowSeconds {
+                session.partialWindowSeconds = adjustedWindowSeconds
+                logger.info(
+                    "Adjusted local partial decode window to \(String(format: "%.1f", adjustedWindowSeconds))s " +
+                    "(decode \(String(format: "%.2f", decodeDuration))s)"
+                )
+            } else if decodeDuration > Constants.localWhisperPartialTargetDecodeSeconds * 2 {
+                logger.warn(
+                    "Local partial decode is slow (\(String(format: "%.2f", decodeDuration))s) " +
+                    "at \(String(format: "%.1f", decodeWindowSeconds))s window"
+                )
+            }
         }
 
         sessions[sessionId] = session
@@ -143,14 +183,37 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
         min(max(value, 0.0), 1.0)
     }
 
-    private func partialDecodeInput(_ audioSamples: [Float]) -> [Float] {
-        let windowSamples = Int(
-            Constants.localWhisperPartialWindowSeconds * Constants.audioSampleRate
-        )
+    private func partialDecodeInput(_ audioSamples: [Float], windowSeconds: Double) -> [Float] {
+        let windowSamples = Int(windowSeconds * Constants.audioSampleRate)
         guard windowSamples > 0, audioSamples.count > windowSamples else {
             return audioSamples
         }
         return Array(audioSamples.suffix(windowSamples))
+    }
+
+    private func adjustedPartialWindowSeconds(
+        currentWindowSeconds: Double,
+        decodeDuration: TimeInterval
+    ) -> Double {
+        let targetDecodeSeconds = Constants.localWhisperPartialTargetDecodeSeconds
+
+        if decodeDuration > targetDecodeSeconds * 1.35 {
+            return normalizedPartialWindowSeconds(currentWindowSeconds * 0.8)
+        }
+
+        if decodeDuration < targetDecodeSeconds * 0.65 {
+            return normalizedPartialWindowSeconds(currentWindowSeconds * 1.1)
+        }
+
+        return normalizedPartialWindowSeconds(currentWindowSeconds)
+    }
+
+    private func normalizedPartialWindowSeconds(_ seconds: Double) -> Double {
+        let clamped = min(
+            max(seconds, Constants.localWhisperPartialMinWindowSeconds),
+            Constants.localWhisperPartialWindowSeconds
+        )
+        return (clamped * 2).rounded() / 2
     }
 
     private func transcribe(

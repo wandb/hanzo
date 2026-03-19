@@ -398,6 +398,32 @@ struct DictationOrchestratorTests {
         #expect(sut.appState.partialTranscript == "hello world")
     }
 
+    @Test("Stopping merges trailing buffered chunk response into partialTranscript")
+    @MainActor func stopMergesTrailingBufferedChunkIntoTranscript() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(
+                ASRChunkResponse(text: "base transcript with trailing words", language: "en")
+            )
+        )
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        sut.appState.partialTranscript = "base transcript"
+
+        // Keep this below the send threshold so stop() flushes it as the trailing buffer.
+        let smallChunk = Data(repeating: 0x01, count: 256)
+        sut.mockAudio.simulateChunk(smallChunk)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(sut.mockASR.sendChunkCalls.isEmpty)
+
+        sut.orchestrator.toggle()
+
+        let didMergeTrailingText = await waitUntil {
+            sut.appState.partialTranscript == "base transcript with trailing words"
+        }
+        #expect(didMergeTrailingText)
+    }
+
     @Test("Late chunk response from previous session is ignored")
     @MainActor func lateChunkResponseFromPreviousSessionIgnored() async throws {
         let appState = AppState()
@@ -687,6 +713,41 @@ struct DictationOrchestratorTests {
 
         // Should still be listening
         #expect(sut.appState.dictationState == .listening)
+    }
+
+    @Test("Silence timer resets when transcript continues growing")
+    @MainActor func silenceAutoCloseResetsOnTranscriptGrowth() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.silenceTimeout = 0.25
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // Initial speech and words.
+        sut.mockAudio.simulateLevels([0.1, 0.15, 0.12, 0.08, 0.1, 0.09, 0.11])
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.appState.partialTranscript = "hello"
+
+        // Low-volume stretch that would start the silence timer.
+        let quietLevels: [Float] = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]
+        for _ in 0..<3 {
+            sut.mockAudio.simulateLevels(quietLevels)
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        // Fresh transcript growth should reset/hold silence closure.
+        sut.appState.partialTranscript = "hello world"
+        for _ in 0..<4 {
+            sut.mockAudio.simulateLevels(quietLevels)
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        #expect(sut.appState.dictationState == .listening)
+
+        // If quiet persists without new words, auto-close should still happen.
+        for _ in 0..<10 {
+            sut.mockAudio.simulateLevels(quietLevels)
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        #expect(sut.appState.dictationState != .listening)
     }
 
     @Test("Silence auto-close does not trigger with audio but no transcription")

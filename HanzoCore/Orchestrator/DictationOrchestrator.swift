@@ -36,6 +36,9 @@ final class DictationOrchestrator {
     var silenceTimeout: Double
     private var silenceStartTime: Date?
     private var peakSpeechLevel: Float = 0
+    private var lastSilenceEvaluationAt: Date?
+    private var lastObservedPartialTranscript: String = ""
+    private var lastPartialTranscriptUpdateAt: Date?
 
     init(
         appState: AppState,
@@ -198,6 +201,9 @@ final class DictationOrchestrator {
         pendingRestartAfterForging = false
         silenceStartTime = nil
         peakSpeechLevel = 0
+        lastSilenceEvaluationAt = nil
+        lastObservedPartialTranscript = ""
+        lastPartialTranscriptUpdateAt = nil
         applyEffectiveBehavior(for: nil)
 
         Task { @MainActor in
@@ -258,6 +264,9 @@ final class DictationOrchestrator {
         }
         silenceStartTime = nil
         peakSpeechLevel = 0
+        lastSilenceEvaluationAt = nil
+        lastObservedPartialTranscript = ""
+        lastPartialTranscriptUpdateAt = nil
 
         Task {
             do {
@@ -304,7 +313,25 @@ final class DictationOrchestrator {
             do {
                 // Send any remaining buffered audio
                 if !remainingBuffer.isEmpty, let sid = sessionId {
-                    _ = try await asrClient.sendChunk(sessionId: sid, pcmData: remainingBuffer)
+                    let trailingResponse = try await asrClient.sendChunk(sessionId: sid, pcmData: remainingBuffer)
+                    await MainActor.run {
+                        guard self.sessionId == sid else { return }
+                        let now = Date()
+                        let previousPartial = appState.partialTranscript
+                        let transcriptStaleness = lastPartialTranscriptUpdateAt
+                            .map { now.timeIntervalSince($0) } ?? .greatestFiniteMagnitude
+                        let allowAggressiveRecovery = transcriptStaleness
+                            >= Constants.partialTranscriptAggressiveRecoveryAfterSeconds
+                        let mergedPartial = PartialTranscriptMerger.merge(
+                            previous: previousPartial,
+                            incoming: trailingResponse.text,
+                            allowAggressiveRecovery: allowAggressiveRecovery
+                        )
+                        guard mergedPartial != previousPartial else { return }
+                        appState.partialTranscript = mergedPartial
+                        lastPartialTranscriptUpdateAt = now
+                        lastObservedPartialTranscript = mergedPartial
+                    }
                 }
 
                 // Finish the stream
@@ -432,6 +459,9 @@ final class DictationOrchestrator {
         pendingRestartAfterForging = false
         silenceStartTime = nil
         peakSpeechLevel = 0
+        lastSilenceEvaluationAt = nil
+        lastObservedPartialTranscript = ""
+        lastPartialTranscriptUpdateAt = nil
         activeSessionTargetBundleIdentifier = nil
         applyEffectiveBehavior(for: nil)
     }
@@ -463,14 +493,34 @@ final class DictationOrchestrator {
 
     private func sendChunkAndContinue(sessionId sid: String, pcmData: Data) async {
         do {
+            let sentAt = Date()
             let response = try await asrClient.sendChunk(sessionId: sid, pcmData: pcmData)
+            let roundTripSeconds = Date().timeIntervalSince(sentAt)
+            if roundTripSeconds > 1.0 {
+                let bufferedSeconds = Double(pcmData.count) / (Constants.audioSampleRate * Double(MemoryLayout<Float>.size))
+                logger.warn(
+                    "Chunk round-trip slow (\(String(format: "%.2f", roundTripSeconds))s) " +
+                    "for \(String(format: "%.2f", bufferedSeconds))s audio"
+                )
+            }
             await MainActor.run {
                 guard self.sessionId == sid else { return }
                 guard appState.dictationState == .listening else { return }
-                appState.partialTranscript = PartialTranscriptMerger.merge(
-                    previous: appState.partialTranscript,
-                    incoming: response.text
+                let now = Date()
+                let previousPartial = appState.partialTranscript
+                let transcriptStaleness = lastPartialTranscriptUpdateAt
+                    .map { now.timeIntervalSince($0) } ?? .greatestFiniteMagnitude
+                let allowAggressiveRecovery = transcriptStaleness
+                    >= Constants.partialTranscriptAggressiveRecoveryAfterSeconds
+                let mergedPartial = PartialTranscriptMerger.merge(
+                    previous: previousPartial,
+                    incoming: response.text,
+                    allowAggressiveRecovery: allowAggressiveRecovery
                 )
+                guard mergedPartial != previousPartial else { return }
+                appState.partialTranscript = mergedPartial
+                lastPartialTranscriptUpdateAt = now
+                lastObservedPartialTranscript = mergedPartial
             }
         } catch {
             if !Task.isCancelled {
@@ -639,22 +689,41 @@ final class DictationOrchestrator {
 
     private func evaluateSilence(levels: [Float]) {
         guard silenceTimeout > 0 else { return }
+        let now = Date()
+
         guard appState.dictationState == .listening else {
             silenceStartTime = nil
+            lastSilenceEvaluationAt = nil
             return
         }
 
+        if appState.partialTranscript != lastObservedPartialTranscript {
+            lastObservedPartialTranscript = appState.partialTranscript
+            if !appState.partialTranscript.isEmpty {
+                lastPartialTranscriptUpdateAt = now
+                // Growing transcript is strong evidence speech is still active.
+                silenceStartTime = nil
+            }
+        }
+
         let averageLevel = levels.isEmpty ? 0 : levels.reduce(0, +) / Float(levels.count)
+        if let lastEvaluation = lastSilenceEvaluationAt {
+            let elapsed = max(0, now.timeIntervalSince(lastEvaluation))
+            let decayBase = Double(Constants.silencePeakDecayPerSecond)
+            let decayedPeak = peakSpeechLevel * Float(pow(decayBase, elapsed))
+            peakSpeechLevel = max(decayedPeak, averageLevel)
+        } else {
+            peakSpeechLevel = max(peakSpeechLevel, averageLevel)
+        }
+        lastSilenceEvaluationAt = now
+
         let threshold = max(
             peakSpeechLevel * Constants.silenceRelativeThreshold,
             Constants.silenceAbsoluteFloor
         )
 
         if averageLevel >= threshold {
-            // Speech detected — update peak and reset silence timer
-            if averageLevel > peakSpeechLevel {
-                peakSpeechLevel = averageLevel
-            }
+            // Audio above the adaptive threshold counts as active speech.
             silenceStartTime = nil
             return
         }
@@ -662,13 +731,30 @@ final class DictationOrchestrator {
         // Audio is below threshold — only start timer after words have been transcribed
         guard !appState.partialTranscript.isEmpty else { return }
 
+        let transcriptGrace = max(
+            Constants.silenceTranscriptActivityGraceMinimumSeconds,
+            silenceTimeout * Constants.silenceTranscriptActivityGraceMultiplier
+        )
+        if let lastTranscriptUpdateAt = lastPartialTranscriptUpdateAt,
+           now.timeIntervalSince(lastTranscriptUpdateAt) < transcriptGrace {
+            silenceStartTime = nil
+            return
+        }
+
         if silenceStartTime == nil {
-            silenceStartTime = Date()
+            silenceStartTime = now
         }
 
         if let start = silenceStartTime,
-           Date().timeIntervalSince(start) >= silenceTimeout {
-            logger.info("Silence auto-close after \(silenceTimeout)s")
+           now.timeIntervalSince(start) >= silenceTimeout {
+            let transcriptAge = lastPartialTranscriptUpdateAt
+                .map { String(format: "%.2f", now.timeIntervalSince($0)) } ?? "n/a"
+            logger.info(
+                "Silence auto-close after \(silenceTimeout)s " +
+                "(avg \(String(format: "%.4f", averageLevel)), " +
+                "threshold \(String(format: "%.4f", threshold)), " +
+                "transcriptAge \(transcriptAge)s)"
+            )
             silenceStartTime = nil
             stopRecording()
         }
