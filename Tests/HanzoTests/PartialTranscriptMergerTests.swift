@@ -124,7 +124,11 @@ struct PartialTranscriptMergerTests {
 
         let previous = previousWords.joined(separator: " ")
         let incoming = incomingWords.joined(separator: " ")
-        let merged = PartialTranscriptMerger.merge(previous: previous, incoming: incoming)
+        let merged = PartialTranscriptMerger.merge(
+            previous: previous,
+            incoming: incoming,
+            allowAggressiveRecovery: false
+        )
 
         let expectedWords = (1...7).map { "w\($0)" } + incomingWords
         #expect(merged == expectedWords.joined(separator: " "))
