@@ -40,6 +40,14 @@ struct PartialTranscriptMergerTests {
         #expect(merged == "This is a complete sentence")
     }
 
+    @Test("long no-prefix incoming does not replace established transcript")
+    func longNoPrefixIncomingDoesNotReplaceEstablishedTranscript() {
+        let previous = "alpha beta gamma delta epsilon zeta eta theta"
+        let incoming = "one two three four five six seven eight nine ten"
+        let merged = PartialTranscriptMerger.merge(previous: previous, incoming: incoming, allowAggressiveRecovery: false)
+        #expect(merged == previous)
+    }
+
     @Test("rolling partial window appends new tail using suffix overlap")
     func rollingPartialWindowAppendsNewTailUsingSuffixOverlap() {
         let previous = "one two three four five six seven eight nine ten"
@@ -106,5 +114,29 @@ struct PartialTranscriptMergerTests {
         let incoming = "one two three four five six seven eight right now words here"
         let merged = PartialTranscriptMerger.merge(previous: previous, incoming: incoming)
         #expect(merged == "a b c d e f g h i j k l m n o p q r s t u v w x y z one two three four five six seven eight right now words here")
+    }
+
+    @Test("recent tail rewrite does not drop words in smooth mode")
+    func recentTailRewriteDoesNotDropWordsInSmoothMode() {
+        let previous = "a b c d e f g h i j k l m n o p q r s t u v w x y z one two three four five six seven eight maybe later words here extra"
+        let incoming = "one two three four five six seven eight right words here"
+        let merged = PartialTranscriptMerger.merge(
+            previous: previous,
+            incoming: incoming,
+            allowAggressiveRecovery: false
+        )
+        #expect(merged == previous)
+    }
+
+    @Test("smooth merge preserves early boundary words when window shifts")
+    func smoothMergePreservesBoundaryWords() {
+        let previous = "a b c d e f g h i j k l m n o p q r s t u v w x y z one two three four five six seven eight nine ten"
+        let incoming = "three four five six seven eight nine ten eleven"
+        let merged = PartialTranscriptMerger.merge(
+            previous: previous,
+            incoming: incoming,
+            allowAggressiveRecovery: false
+        )
+        #expect(merged == "a b c d e f g h i j k l m n o p q r s t u v w x y z one two three four five six seven eight nine ten eleven")
     }
 }

@@ -71,13 +71,16 @@ enum PartialTranscriptMerger {
     }
 
     private static func shouldPreferIncomingWithoutPrefix(previous: String, incoming: String) -> Bool {
-        if previous.count <= 8, incoming.count > previous.count {
-            return true
-        }
-
         let previousWords = wordCount(previous)
         let incomingWords = wordCount(incoming)
-        if incomingWords >= previousWords + 3, incoming.count >= previous.count + 10 {
+
+        // Only allow full replacement for tiny startup fragments.
+        // Once the HUD has real context, dropping the full prefix is worse
+        // than waiting for an overlap-based merge on the next chunk.
+        if previous.count <= 8, previousWords <= 3, incoming.count > previous.count {
+            return true
+        }
+        if previousWords <= 3, incomingWords > previousWords {
             return true
         }
 
@@ -86,10 +89,10 @@ enum PartialTranscriptMerger {
 
     private static func mergeUsingRecentTailRewrite(previous: String, incoming: String) -> String? {
         let correctionWindowWords = 48
-        let minimumOverlapWords = 3
-        let maximumIncomingOffsetWords = 12
+        let minimumOverlapWords = 5
+        let maximumIncomingOffsetWords = 0
         let maximumCorrectionRewriteWords = 16
-        let maximumCorrectionShrinkWords = 8
+        let maximumCorrectionShrinkWords = 0
 
         let previousWords = previous.split(whereSeparator: \.isWhitespace).map(String.init)
         let incomingWords = incoming.split(whereSeparator: \.isWhitespace).map(String.init)
