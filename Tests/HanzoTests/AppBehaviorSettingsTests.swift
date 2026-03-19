@@ -230,4 +230,66 @@ struct AppBehaviorSettingsTests {
             #expect(AppBehaviorSettings.override(for: bundleIdentifier, defaults: defaults) == nil)
         }
     }
+
+    @Test("shouldPersistHUDSettingsToAppOverride is true for supported app with existing override")
+    func shouldPersistHUDSettingsToAppOverrideForSupportedAppWithOverride() {
+        withDefaults { defaults in
+            let bundleIdentifier = "com.tinyspeck.slackmacgap"
+            AppBehaviorSettings.saveOverride(
+                AppBehaviorOverride(autoSubmitMode: .enter),
+                for: bundleIdentifier,
+                defaults: defaults
+            )
+
+            #expect(
+                AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(
+                    for: bundleIdentifier,
+                    defaults: defaults
+                )
+            )
+        }
+    }
+
+    @Test("shouldPersistHUDSettingsToAppOverride is false for supported app without override")
+    func shouldPersistHUDSettingsToAppOverrideForSupportedAppWithoutOverride() {
+        withDefaults { defaults in
+            #expect(
+                !AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(
+                    for: "com.tinyspeck.slackmacgap",
+                    defaults: defaults
+                )
+            )
+        }
+    }
+
+    @Test("shouldPersistHUDSettingsToAppOverride is false for unsupported app even when override exists")
+    func shouldPersistHUDSettingsToAppOverrideForUnsupportedApp() {
+        withDefaults { defaults in
+            let bundleIdentifier = "com.example.UnsupportedApp"
+            AppBehaviorSettings.saveOverride(
+                AppBehaviorOverride(autoSubmitMode: .enter),
+                for: bundleIdentifier,
+                defaults: defaults
+            )
+
+            #expect(
+                !AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(
+                    for: bundleIdentifier,
+                    defaults: defaults
+                )
+            )
+        }
+    }
+
+    @Test("shouldPersistHUDSettingsToAppOverride is false when bundle identifier is nil")
+    func shouldPersistHUDSettingsToAppOverrideForNilBundleIdentifier() {
+        withDefaults { defaults in
+            #expect(
+                !AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(
+                    for: nil,
+                    defaults: defaults
+                )
+            )
+        }
+    }
 }

@@ -3,11 +3,11 @@ import SwiftUI
 
 private enum TranscriptPopoverLayout {
     static let width: CGFloat = 480
-    static let fallbackMaxHeight: CGFloat = 560
+    static let fallbackMaxHeight: CGFloat = 760
 
     static var maxHeight: CGFloat {
         guard let screen = NSScreen.main else { return fallbackMaxHeight }
-        return max(480, min(screen.visibleFrame.height * 0.72, 760))
+        return max(480, screen.visibleFrame.height * 0.9)
     }
 }
 
@@ -111,14 +111,13 @@ private struct StatusFooterView: View {
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
-            .pillTooltip("Silence timer")
-            .accessibilityLabel("Silence timer")
+            .accessibilityLabel("Silence timeout")
 
             Text(" · ")
                 .font(.system(.caption2, design: .rounded))
                 .foregroundStyle(.primary.opacity(0.2))
 
-            // Auto-submit control
+            // Submit-after-insert control
             Button {
                 cycleAutoSubmit()
             } label: {
@@ -128,8 +127,7 @@ private struct StatusFooterView: View {
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
-            .pillTooltip("Auto submit")
-            .accessibilityLabel("Auto submit")
+            .accessibilityLabel("Submit after insert")
         }
     }
 
@@ -164,11 +162,12 @@ private struct StatusFooterView: View {
         let nextIndex = (currentIndex + 1) % silenceSteps.count
         let newValue = silenceSteps[nextIndex]
         appState.silenceTimeout = newValue
-        if let bundleIdentifier = appState.activeTargetBundleIdentifier,
-           AppBehaviorSettings.isSupported(bundleIdentifier: bundleIdentifier) {
-            var appOverride = AppBehaviorSettings.override(for: bundleIdentifier) ?? AppBehaviorOverride()
+        if let hudSettingsOverride = AppBehaviorSettings.hudSettingsOverride(
+            for: appState.activeTargetBundleIdentifier
+        ) {
+            var appOverride = hudSettingsOverride.appOverride
             appOverride.silenceTimeout = newValue
-            AppBehaviorSettings.saveOverride(appOverride, for: bundleIdentifier)
+            AppBehaviorSettings.saveOverride(appOverride, for: hudSettingsOverride.bundleIdentifier)
         } else {
             AppBehaviorSettings.setGlobalSilenceTimeout(newValue)
         }
@@ -181,59 +180,16 @@ private struct StatusFooterView: View {
         let nextIndex = (currentIndex + 1) % modes.count
         let newMode = modes[nextIndex]
         appState.autoSubmitMode = newMode
-        if let bundleIdentifier = appState.activeTargetBundleIdentifier,
-           AppBehaviorSettings.isSupported(bundleIdentifier: bundleIdentifier) {
-            var appOverride = AppBehaviorSettings.override(for: bundleIdentifier) ?? AppBehaviorOverride()
+        if let hudSettingsOverride = AppBehaviorSettings.hudSettingsOverride(
+            for: appState.activeTargetBundleIdentifier
+        ) {
+            var appOverride = hudSettingsOverride.appOverride
             appOverride.autoSubmitMode = newMode
-            AppBehaviorSettings.saveOverride(appOverride, for: bundleIdentifier)
+            AppBehaviorSettings.saveOverride(appOverride, for: hudSettingsOverride.bundleIdentifier)
         } else {
             AppBehaviorSettings.setGlobalAutoSubmitMode(newMode)
         }
         onSettingsChanged?()
-    }
-}
-
-// MARK: - Pill Tooltip
-
-private struct PillTooltipModifier: ViewModifier {
-    let text: String
-    @State private var isHovering = false
-    @State private var showTooltip = false
-
-    func body(content: Content) -> some View {
-        content
-            .onHover { hovering in
-                isHovering = hovering
-                if hovering {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        if isHovering { showTooltip = true }
-                    }
-                } else {
-                    showTooltip = false
-                }
-            }
-            .overlay(alignment: .top) {
-                if showTooltip {
-                    Text(text)
-                        .font(.system(.caption2, design: .rounded))
-                        .foregroundStyle(.primary.opacity(0.7))
-                        .fixedSize()
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(.primary.opacity(0.1))
-                        .clipShape(Capsule())
-                        .allowsHitTesting(false)
-                        .offset(y: -22)
-                        .transition(.opacity)
-                        .animation(.easeInOut(duration: 0.15), value: showTooltip)
-                }
-            }
-    }
-}
-
-private extension View {
-    func pillTooltip(_ text: String) -> some View {
-        modifier(PillTooltipModifier(text: text))
     }
 }
 

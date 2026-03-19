@@ -40,9 +40,14 @@ enum Constants {
     static let localWhisperModelRepository = "argmaxinc/whisperkit-coreml"
     // Remote model payload sizes (bytes) used to weight onboarding download progress.
     static let localWhisperModelExpectedDownloadBytes: Int64 = 146_707_731
-    static let localWhisperPartialMinSeconds: Double = 2.0
+    static let localWhisperPartialMinSeconds: Double = 1.0
     static let localWhisperPartialMinIntervalSeconds: Double = 0.8
+    // Adaptive partial decode window bounds. Runtime adjusts within this range
+    // to keep HUD updates responsive under sustained dictation.
     static let localWhisperPartialWindowSeconds: Double = 30.0
+    static let localWhisperPartialMinWindowSeconds: Double = 6.0
+    static let localWhisperPartialTargetDecodeSeconds: Double = 0.9
+    static let partialTranscriptAggressiveRecoveryAfterSeconds: Double = 6.0
     static let localWhisperSessionTTLSeconds: Double = 180.0
     static let localLLMModelsSubfolderName = "llm"
     static let localLLMModelRepository = "Qwen/Qwen3-4B-GGUF"
@@ -99,6 +104,9 @@ enum Constants {
     static let defaultSilenceTimeout: Double = 2.0  // seconds; 0 = disabled
     static let silenceRelativeThreshold: Float = 0.15  // fraction of peak speech level
     static let silenceAbsoluteFloor: Float = 0.005  // minimum silence threshold
+    static let silencePeakDecayPerSecond: Float = 0.70
+    static let silenceTranscriptActivityGraceMultiplier: Double = 0.9
+    static let silenceTranscriptActivityGraceMinimumSeconds: Double = 0.15
 
     // App-specific behavior overrides
     static let appBehaviorOverridesKey = "appBehaviorOverrides"
