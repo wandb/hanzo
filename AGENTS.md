@@ -29,8 +29,8 @@ Package split into two targets: `HanzoCore` (library) and `HanzoApp` (executable
 - `HanzoApp/` — @main entry point only (HanzoApp.swift)
 - `HanzoCore/App/` — AppDelegate (menu bar icon, windows)
 - `HanzoCore/Orchestrator/` — DictationOrchestrator: coordinates record → transcribe → insert flow
-- `HanzoCore/Services/` — ASRClient, AudioCaptureService, HotkeyService, TextInsertionService, PermissionService, LoggingService, LocalASRRuntimeManager
-- `HanzoCore/Protocols/` — Service protocols for DI (ASRClientProtocol, AudioCaptureProtocol, TextInsertionProtocol, PermissionServiceProtocol, LoggingServiceProtocol, LocalASRRuntimeManagerProtocol)
+- `HanzoCore/Services/` — ASRClient, AudioCaptureService, HotkeyService, TextInsertionService, PermissionService, LoggingService, LocalASRRuntimeManager, LocalLLMRuntimeManager, LocalWhisperASRClient, LocalWhisperRuntime
+- `HanzoCore/Protocols/` — Service protocols for DI (ASRClientProtocol, AudioCaptureProtocol, TextInsertionProtocol, PermissionServiceProtocol, LoggingServiceProtocol, LocalASRRuntimeManagerProtocol, LocalLLMRuntimeManagerProtocol)
 - `HanzoCore/Models/` — AppState (@Observable with DictationState enum), TranscriptionSession
 - `HanzoCore/Views/` — SwiftUI views; onboarding wizard in Views/Onboarding/
 - `HanzoCore/Utilities/` — Constants (UserDefaults keys, audio params), ASRProvider, PartialTranscriptMerger
@@ -48,6 +48,8 @@ Package split into two targets: `HanzoCore` (library) and `HanzoApp` (executable
 ## Dependencies
 
 - HotKey (global hotkeys) — SPM
+- WhisperKit (local ASR runtime/client) — SPM
+- Sparkle (app updates) — SPM
 - KeychainAccess (secure storage) — XcodeGen only
 
 ## Tests
@@ -60,13 +62,28 @@ Package split into two targets: `HanzoCore` (library) and `HanzoApp` (executable
 - ASRClient tests use `MockURLProtocol` to intercept HTTP requests
 - DictationOrchestrator tests use mock services injected via init
 - No hardware/permission dependencies in tests — all system boundaries are mocked
-- CI: GitHub Actions runs `swift build` + `swift test` on PRs and pushes to main (`.github/workflows/test.yml`)
+- CI: GitHub Actions runs `swift build --disable-keychain` + `swift test --disable-keychain` on PRs and pushes to main (`.github/workflows/test.yml`)
+
+## Instruction Maintenance
+
+- Keep Copilot/custom instruction files stable by default.
+- Do not update instruction files on every feature or bugfix.
+- Update instruction files only when there is a durable repo-wide policy change (for example: required test patterns, architecture constraints, PR/review standards) or when explicitly requested.
+- When changing silence/auto-close logic in `DictationOrchestrator`, update or add regression coverage in `Tests/HanzoTests/DictationOrchestratorTests.swift` for ambient-noise behavior and timing robustness.
 
 ## External Service
 
 - Optional custom ASR server (configurable endpoint in Settings)
 - Streaming API: `/v1/stream/start` → `/v1/stream/chunk` → `/v1/stream/finish`
 - Optional API key/password for custom server mode
+
+## Security Considerations
+
+- Keep local ASR/rewrite as the default path; external ASR is explicit opt-in only.
+- Do not hardcode API keys or passwords in source, tests, or prompts.
+- Prefer Keychain-backed storage for credentials and redact secrets from logs.
+- Treat custom ASR endpoints as untrusted input; validate configuration and prefer HTTPS for non-local endpoints.
+- Never require real microphone/accessibility permissions in automated tests; continue using mocked boundaries.
 
 ## Permissions
 
