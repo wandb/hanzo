@@ -162,11 +162,12 @@ private struct StatusFooterView: View {
         let nextIndex = (currentIndex + 1) % silenceSteps.count
         let newValue = silenceSteps[nextIndex]
         appState.silenceTimeout = newValue
-        if let bundleIdentifier = appState.activeTargetBundleIdentifier,
-           AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(for: bundleIdentifier) {
-            var appOverride = AppBehaviorSettings.override(for: bundleIdentifier) ?? AppBehaviorOverride()
+        if let hudSettingsOverride = AppBehaviorSettings.hudSettingsOverride(
+            for: appState.activeTargetBundleIdentifier
+        ) {
+            var appOverride = hudSettingsOverride.appOverride
             appOverride.silenceTimeout = newValue
-            AppBehaviorSettings.saveOverride(appOverride, for: bundleIdentifier)
+            AppBehaviorSettings.saveOverride(appOverride, for: hudSettingsOverride.bundleIdentifier)
         } else {
             AppBehaviorSettings.setGlobalSilenceTimeout(newValue)
         }
@@ -179,11 +180,12 @@ private struct StatusFooterView: View {
         let nextIndex = (currentIndex + 1) % modes.count
         let newMode = modes[nextIndex]
         appState.autoSubmitMode = newMode
-        if let bundleIdentifier = appState.activeTargetBundleIdentifier,
-           AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(for: bundleIdentifier) {
-            var appOverride = AppBehaviorSettings.override(for: bundleIdentifier) ?? AppBehaviorOverride()
+        if let hudSettingsOverride = AppBehaviorSettings.hudSettingsOverride(
+            for: appState.activeTargetBundleIdentifier
+        ) {
+            var appOverride = hudSettingsOverride.appOverride
             appOverride.autoSubmitMode = newMode
-            AppBehaviorSettings.saveOverride(appOverride, for: bundleIdentifier)
+            AppBehaviorSettings.saveOverride(appOverride, for: hudSettingsOverride.bundleIdentifier)
         } else {
             AppBehaviorSettings.setGlobalAutoSubmitMode(newMode)
         }

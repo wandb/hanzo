@@ -250,11 +250,11 @@ struct AppBehaviorSettingsTests {
         }
     }
 
-    @Test("shouldPersistHUDSettingsToAppOverride is true for supported app without override")
+    @Test("shouldPersistHUDSettingsToAppOverride is false for supported app without override")
     func shouldPersistHUDSettingsToAppOverrideForSupportedAppWithoutOverride() {
         withDefaults { defaults in
             #expect(
-                AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(
+                !AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(
                     for: "com.tinyspeck.slackmacgap",
                     defaults: defaults
                 )

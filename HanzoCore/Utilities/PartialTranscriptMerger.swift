@@ -297,18 +297,54 @@ enum PartialTranscriptMerger {
     }
 
     private static func longestSuffixPrefixOverlapLength(_ left: String, _ right: String) -> Int {
-        let maxLength = min(left.count, right.count)
+        let leftCharacters = Array(left)
+        let rightCharacters = Array(right)
+        let maxLength = min(leftCharacters.count, rightCharacters.count)
         guard maxLength > 0 else { return 0 }
 
-        for length in stride(from: maxLength, through: 1, by: -1) {
-            let leftStart = left.index(left.endIndex, offsetBy: -length)
-            let rightEnd = right.index(right.startIndex, offsetBy: length)
-            if left[leftStart...] == right[..<rightEnd] {
-                return length
+        let text = Array(leftCharacters.suffix(maxLength))
+        let pattern = Array(rightCharacters.prefix(maxLength))
+        let prefixTable = prefixTable(for: pattern)
+
+        var matched = 0
+        for (index, symbol) in text.enumerated() {
+            while matched > 0, symbol != pattern[matched] {
+                matched = prefixTable[matched - 1]
+            }
+
+            if symbol == pattern[matched] {
+                matched += 1
+                if matched == pattern.count, index < text.count - 1 {
+                    matched = prefixTable[matched - 1]
+                }
             }
         }
 
-        return 0
+        return matched
+    }
+
+    private static func prefixTable(for pattern: [Character]) -> [Int] {
+        guard !pattern.isEmpty else { return [] }
+        guard pattern.count > 1 else { return [0] }
+
+        var table = Array(repeating: 0, count: pattern.count)
+        var prefixLength = 0
+        var index = 1
+
+        while index < pattern.count {
+            if pattern[index] == pattern[prefixLength] {
+                prefixLength += 1
+                table[index] = prefixLength
+                index += 1
+            } else if prefixLength > 0 {
+                prefixLength = table[prefixLength - 1]
+            } else {
+                table[index] = 0
+                index += 1
+            }
+        }
+
+        return table
     }
 
     private static func longestCommonPrefixLength(_ left: String, _ right: String) -> Int {

@@ -104,15 +104,6 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
                 isFinal: false
             )
             let decodeDuration = Date().timeIntervalSince(decodeStartedAt)
-            let bufferedAudioSeconds = Double(session.audioSamples.count) / Constants.audioSampleRate
-            let partialInputSeconds = Double(partialInput.count) / Constants.audioSampleRate
-
-            logger.info(
-                "Local partial decode \(String(format: "%.2f", decodeDuration))s " +
-                "(window \(String(format: "%.1f", decodeWindowSeconds))s, " +
-                "input \(String(format: "%.1f", partialInputSeconds))s, " +
-                "buffered \(String(format: "%.1f", bufferedAudioSeconds))s)"
-            )
 
             session.partialText = partial.text
             session.language = partial.language
@@ -125,14 +116,22 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
             )
             if adjustedWindowSeconds != decodeWindowSeconds {
                 session.partialWindowSeconds = adjustedWindowSeconds
+                let bufferedAudioSeconds = Double(session.audioSamples.count) / Constants.audioSampleRate
+                let partialInputSeconds = Double(partialInput.count) / Constants.audioSampleRate
                 logger.info(
                     "Adjusted local partial decode window to \(String(format: "%.1f", adjustedWindowSeconds))s " +
-                    "(decode \(String(format: "%.2f", decodeDuration))s)"
+                    "(decode \(String(format: "%.2f", decodeDuration))s, " +
+                    "input \(String(format: "%.1f", partialInputSeconds))s, " +
+                    "buffered \(String(format: "%.1f", bufferedAudioSeconds))s)"
                 )
             } else if decodeDuration > Constants.localWhisperPartialTargetDecodeSeconds * 2 {
+                let bufferedAudioSeconds = Double(session.audioSamples.count) / Constants.audioSampleRate
+                let partialInputSeconds = Double(partialInput.count) / Constants.audioSampleRate
                 logger.warn(
                     "Local partial decode is slow (\(String(format: "%.2f", decodeDuration))s) " +
-                    "at \(String(format: "%.1f", decodeWindowSeconds))s window"
+                    "at \(String(format: "%.1f", decodeWindowSeconds))s window " +
+                    "(input \(String(format: "%.1f", partialInputSeconds))s, " +
+                    "buffered \(String(format: "%.1f", bufferedAudioSeconds))s)"
                 )
             }
         }

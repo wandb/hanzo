@@ -220,12 +220,21 @@ enum AppBehaviorSettings {
         for bundleIdentifier: String?,
         defaults: UserDefaults = .standard
     ) -> Bool {
+        hudSettingsOverride(for: bundleIdentifier, defaults: defaults) != nil
+    }
+
+    static func hudSettingsOverride(
+        for bundleIdentifier: String?,
+        defaults: UserDefaults = .standard
+    ) -> (bundleIdentifier: String, appOverride: AppBehaviorOverride)? {
         guard let bundleIdentifier,
-              isSupported(bundleIdentifier: bundleIdentifier, defaults: defaults) else {
-            return false
+              isSupported(bundleIdentifier: bundleIdentifier, defaults: defaults),
+              let appOverride = override(for: bundleIdentifier, defaults: defaults),
+              appOverride.hasOverrides else {
+            return nil
         }
 
-        return true
+        return (bundleIdentifier, appOverride)
     }
 
     static func saveOverride(
