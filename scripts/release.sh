@@ -107,7 +107,7 @@ require_cmd ditto
 require_cmd hdiutil
 require_cmd lipo
 require_cmd file
-require_cmd osascript
+require_cmd python3
 require_cmd /usr/libexec/PlistBuddy
 
 [ -f "$INFO_PLIST" ] || die "Missing Info.plist at $INFO_PLIST"
@@ -214,10 +214,27 @@ resolve_llama_runtime_dir() {
 WORK_DIR="$(mktemp -d /tmp/hanzo-release.XXXXXX)"
 DMG_DEVICE=""
 DMG_MOUNT_POINT=""
+
+detach_dmg() {
+    local device="$1"
+    [ -n "$device" ] || return 0
+
+    if hdiutil detach "$device" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    # Finder can briefly keep the volume busy after AppleScript layout changes.
+    sleep 1
+    if hdiutil detach "$device" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    hdiutil detach -force "$device" >/dev/null 2>&1
+}
+
 cleanup() {
     if [ -n "${DMG_DEVICE:-}" ]; then
-        hdiutil detach "$DMG_DEVICE" >/dev/null 2>&1 || \
-            hdiutil detach -force "$DMG_DEVICE" >/dev/null 2>&1 || true
+        detach_dmg "$DMG_DEVICE" || true
     fi
     rm -rf "$WORK_DIR"
 }
@@ -337,9 +354,16 @@ notarize_file() {
 }
 
 configure_dmg_layout() {
-    local mount_point="$1"
-    local volume_name="$2"
-    local app_bundle_name="$3"
+    local volume_name="$1"
+    local app_bundle_name="$2"
+
+    if [ -n "${CI:-}" ]; then
+        return 1
+    fi
+
+    if ! command -v osascript >/dev/null 2>&1; then
+        return 1
+    fi
 
     osascript <<EOF
 tell application "Finder"
@@ -353,7 +377,7 @@ tell application "Finder"
         set arrangement of iconViewOptions to not arranged
         set icon size of iconViewOptions to 102
         set text size of iconViewOptions to 16
-        set background picture of iconViewOptions to file "$app_bundle_name:Contents:Resources:InstallerBackground.png"
+        set background picture of iconViewOptions to file "Background:InstallerBackground.png"
         set position of item "$app_bundle_name" of container window to {170, 128}
         set position of item "Applications" of container window to {490, 128}
         close
@@ -383,19 +407,40 @@ mkdir -p "$DMG_STAGE"
 cp -R "$APP_ROOT" "$DMG_STAGE/"
 # Provide the standard drag-to-install target in the mounted DMG.
 ln -s /Applications "$DMG_STAGE/Applications"
-install -m 644 "$DMG_BACKGROUND_SOURCE" "$DMG_STAGE/${APP_NAME}.app/Contents/Resources/InstallerBackground.png"
+mkdir -p "$DMG_STAGE/Background"
+install -m 644 "$DMG_BACKGROUND_SOURCE" "$DMG_STAGE/Background/InstallerBackground.png"
 
 DMG_RW_PATH="$WORK_DIR/${ARTIFACT_BASENAME}.rw.dmg"
 hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGE" -ov -format UDRW "$DMG_RW_PATH" >/dev/null
 
-ATTACH_OUTPUT="$(hdiutil attach -readwrite -noverify -noautoopen "$DMG_RW_PATH")"
-DMG_DEVICE="$(echo "$ATTACH_OUTPUT" | awk '/^\/dev\// {print $1; exit}')"
-DMG_MOUNT_POINT="$(echo "$ATTACH_OUTPUT" | awk 'match($0, /\/Volumes\/.*/) {print substr($0, RSTART); exit}')"
-[ -n "$DMG_DEVICE" ] || die "Failed to determine mounted DMG device from hdiutil output"
-[ -n "$DMG_MOUNT_POINT" ] || die "Failed to determine mounted DMG path from hdiutil output"
+ATTACH_PLIST="$WORK_DIR/dmg-attach.plist"
+hdiutil attach -readwrite -noverify -noautoopen -plist "$DMG_RW_PATH" > "$ATTACH_PLIST"
+DMG_INFO="$(python3 - "$ATTACH_PLIST" <<'PY'
+import plistlib
+import sys
+
+with open(sys.argv[1], "rb") as handle:
+    data = plistlib.load(handle)
+
+for entity in data.get("system-entities", []):
+    dev_entry = entity.get("dev-entry")
+    mount_point = entity.get("mount-point")
+    if dev_entry and mount_point:
+        print(dev_entry)
+        print(mount_point)
+        break
+PY
+)"
+
+DMG_DEVICE="$(printf '%s\n' "$DMG_INFO" | sed -n '1p')"
+DMG_MOUNT_POINT="$(printf '%s\n' "$DMG_INFO" | sed -n '2p')"
+[ -n "$DMG_DEVICE" ] || die "Failed to determine mounted DMG device from hdiutil plist output"
+[ -n "$DMG_MOUNT_POINT" ] || die "Failed to determine mounted DMG path from hdiutil plist output"
 DMG_VOLUME_NAME="$(basename "$DMG_MOUNT_POINT")"
 
-if ! configure_dmg_layout "$DMG_MOUNT_POINT" "$DMG_VOLUME_NAME" "${APP_NAME}.app"; then
+chflags hidden "$DMG_MOUNT_POINT/Background" "$DMG_MOUNT_POINT/Background/InstallerBackground.png" || true
+
+if ! configure_dmg_layout "$DMG_VOLUME_NAME" "${APP_NAME}.app"; then
     echo "Warning: failed to apply Finder DMG layout customization; continuing with default layout."
 fi
 
@@ -404,7 +449,9 @@ fi
 rm -rf "$DMG_MOUNT_POINT/.fseventsd" "$DMG_MOUNT_POINT/.Spotlight-V100" "$DMG_MOUNT_POINT/.Trashes"
 
 sync
-hdiutil detach "$DMG_DEVICE" >/dev/null
+if ! detach_dmg "$DMG_DEVICE"; then
+    die "Failed to detach mounted DMG device: $DMG_DEVICE"
+fi
 DMG_DEVICE=""
 DMG_MOUNT_POINT=""
 
