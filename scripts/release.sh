@@ -377,7 +377,7 @@ tell application "Finder"
         set arrangement of iconViewOptions to not arranged
         set icon size of iconViewOptions to 102
         set text size of iconViewOptions to 16
-        set background picture of iconViewOptions to file "Background:InstallerBackground.png"
+        set background picture of iconViewOptions to file ".background:InstallerBackground.png"
         set position of item "$app_bundle_name" of container window to {170, 128}
         set position of item "Applications" of container window to {490, 128}
         close
@@ -407,8 +407,8 @@ mkdir -p "$DMG_STAGE"
 cp -R "$APP_ROOT" "$DMG_STAGE/"
 # Provide the standard drag-to-install target in the mounted DMG.
 ln -s /Applications "$DMG_STAGE/Applications"
-mkdir -p "$DMG_STAGE/Background"
-install -m 644 "$DMG_BACKGROUND_SOURCE" "$DMG_STAGE/Background/InstallerBackground.png"
+mkdir -p "$DMG_STAGE/.background"
+install -m 644 "$DMG_BACKGROUND_SOURCE" "$DMG_STAGE/.background/InstallerBackground.png"
 
 DMG_RW_PATH="$WORK_DIR/${ARTIFACT_BASENAME}.rw.dmg"
 hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGE" -ov -format UDRW "$DMG_RW_PATH" >/dev/null
@@ -438,7 +438,7 @@ DMG_MOUNT_POINT="$(printf '%s\n' "$DMG_INFO" | sed -n '2p')"
 [ -n "$DMG_MOUNT_POINT" ] || die "Failed to determine mounted DMG path from hdiutil plist output"
 DMG_VOLUME_NAME="$(basename "$DMG_MOUNT_POINT")"
 
-chflags hidden "$DMG_MOUNT_POINT/Background" "$DMG_MOUNT_POINT/Background/InstallerBackground.png" || true
+chflags hidden "$DMG_MOUNT_POINT/.background" "$DMG_MOUNT_POINT/.background/InstallerBackground.png" || true
 
 if ! configure_dmg_layout "$DMG_VOLUME_NAME" "${APP_NAME}.app"; then
     echo "Warning: failed to apply Finder DMG layout customization; continuing with default layout."
