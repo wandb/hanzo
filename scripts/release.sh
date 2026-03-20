@@ -131,6 +131,8 @@ if [ -z "$BUILD_NUMBER" ]; then
     BUILD_NUMBER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO_PLIST")"
 fi
 
+APP_BUNDLE_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")"
+
 LLAMA_RELEASE_TAG_DEFAULT="b8355"
 LLAMA_RELEASE_SHA256_DEFAULT="43e831c4ccf785dfd4c4197e00fbba309823d4088a5c40def5d4d934d6aa6f9b"
 LLAMA_RELEASE_TAG="${HANZO_LLAMA_RELEASE_TAG:-$LLAMA_RELEASE_TAG_DEFAULT}"
@@ -229,8 +231,25 @@ APP_CONTENTS="$APP_ROOT/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_RESOURCES="$APP_CONTENTS/Resources"
 
+SIGNED_EXECUTABLE_PATH="$APP_EXECUTABLE"
+if [ "$SIGN_ARTIFACTS" = false ]; then
+    echo "Applying stable ad-hoc signature for unsigned build: $APP_BUNDLE_IDENTIFIER"
+    if ! command -v codesign >/dev/null 2>&1; then
+        echo "Warning: codesign not found; unsigned app will use an unstable code requirement."
+    else
+        SIGNED_EXECUTABLE_PATH="$WORK_DIR/HanzoApp-signed"
+        cp "$APP_EXECUTABLE" "$SIGNED_EXECUTABLE_PATH"
+        # Keep unsigned beta builds on a stable designated requirement so TCC
+        # permission grants survive rebuilds/version bumps.
+        codesign --force --sign - \
+            --identifier "$APP_BUNDLE_IDENTIFIER" \
+            -r="designated => identifier \"$APP_BUNDLE_IDENTIFIER\"" \
+            "$SIGNED_EXECUTABLE_PATH"
+    fi
+fi
+
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
-install -m 755 "$APP_EXECUTABLE" "$APP_MACOS/Hanzo"
+install -m 755 "$SIGNED_EXECUTABLE_PATH" "$APP_MACOS/Hanzo"
 install -m 644 "$APP_ICON_SOURCE" "$APP_RESOURCES/Hanzo.icns"
 install -m 644 "$INFO_PLIST" "$APP_CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_CONTENTS/Info.plist"
