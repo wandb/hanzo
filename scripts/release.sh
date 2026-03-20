@@ -241,10 +241,12 @@ if [ "$SIGN_ARTIFACTS" = false ]; then
         cp "$APP_EXECUTABLE" "$SIGNED_EXECUTABLE_PATH"
         # Keep unsigned beta builds on a stable designated requirement so TCC
         # permission grants survive rebuilds/version bumps.
-        codesign --force --sign - \
+        if ! codesign --force --sign - \
             --identifier "$APP_BUNDLE_IDENTIFIER" \
             -r="designated => identifier \"$APP_BUNDLE_IDENTIFIER\"" \
-            "$SIGNED_EXECUTABLE_PATH"
+            "$SIGNED_EXECUTABLE_PATH"; then
+            die "Failed to apply stable ad-hoc signature for unsigned build; refusing to package an unstable TCC identity."
+        fi
     fi
 fi
 
