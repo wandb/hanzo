@@ -380,6 +380,9 @@ tell application "Finder"
         set background picture of iconViewOptions to file ".background:InstallerBackground.png"
         set position of item "$app_bundle_name" of container window to {170, 128}
         set position of item "Applications" of container window to {490, 128}
+        try
+            set position of item ".background" of container window to {700, 500}
+        end try
         close
         open
         update without registering applications
