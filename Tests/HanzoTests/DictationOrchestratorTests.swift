@@ -312,6 +312,45 @@ struct DictationOrchestratorTests {
         #expect(sut.appState.dictationState == .idle)
     }
 
+    @Test("cancel() during forging does not transition to error")
+    @MainActor func cancelDuringForgingStaysIdle() async throws {
+        let appState = AppState()
+        let asr = SlowFinishingASRClient()
+        let mockAudio = MockAudioCaptureService()
+        let mockText = MockTextInsertionService()
+        let mockPerms = MockPermissionService()
+        mockPerms.hasMicrophonePermission = true
+        let mockLogger = MockLogger()
+
+        let orchestrator = DictationOrchestrator(
+            appState: appState,
+            asrClient: asr,
+            audioService: mockAudio,
+            textInsertion: mockText,
+            permissionService: mockPerms,
+            logger: mockLogger,
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+
+        orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 60_000_000)
+        orchestrator.toggle() // listening -> forging
+        #expect(appState.dictationState == .forging)
+
+        orchestrator.cancel()
+
+        let settledIdle = await waitUntil(timeoutNanoseconds: 1_000_000_000) {
+            appState.dictationState == .idle
+        }
+        #expect(settledIdle)
+
+        // Wait past SlowFinishingASRClient delay to ensure late finish results are ignored.
+        try await Task.sleep(nanoseconds: 500_000_000)
+        #expect(appState.dictationState == .idle)
+        #expect(appState.errorMessage == nil)
+        #expect(mockText.insertedTexts.isEmpty)
+    }
+
     @Test("cancel() clears partialTranscript")
     @MainActor func cancelClearsTranscript() async throws {
         let sut = makeSUT()

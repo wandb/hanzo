@@ -68,8 +68,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // Monitor escape key (local for when app is active, global for non-activating panel)
         localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == 53 { // Escape
-                if self?.appState.dictationState == .listening {
-                    self?.orchestrator.cancel()
+                if self?.cancelDictationIfNeeded(source: "local") == true {
                     return nil
                 }
             }
@@ -77,9 +76,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == 53 {
-                if self?.appState.dictationState == .listening {
-                    self?.orchestrator.cancel()
-                }
+                _ = self?.cancelDictationIfNeeded(source: "global")
             }
         }
 
@@ -282,6 +279,17 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         if activeApp.bundleIdentifier != Bundle.main.bundleIdentifier {
             logger.info("App switched during recording — cancelling")
             orchestrator.cancel()
+        }
+    }
+
+    private func cancelDictationIfNeeded(source: String) -> Bool {
+        switch appState.dictationState {
+        case .listening, .forging:
+            logger.info("Escape pressed (\(source)) — cancelling dictation")
+            orchestrator.cancel()
+            return true
+        case .idle, .error:
+            return false
         }
     }
 
