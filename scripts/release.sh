@@ -377,12 +377,9 @@ tell application "Finder"
         set arrangement of iconViewOptions to not arranged
         set icon size of iconViewOptions to 102
         set text size of iconViewOptions to 16
-        set background picture of iconViewOptions to file ".background:InstallerBackground.png"
+        set background picture of iconViewOptions to file "$app_bundle_name:Contents:Resources:InstallerBackground.png"
         set position of item "$app_bundle_name" of container window to {170, 128}
         set position of item "Applications" of container window to {490, 128}
-        try
-            set position of item ".background" of container window to {700, 500}
-        end try
         close
         open
         update without registering applications
@@ -410,8 +407,28 @@ mkdir -p "$DMG_STAGE"
 cp -R "$APP_ROOT" "$DMG_STAGE/"
 # Provide the standard drag-to-install target in the mounted DMG.
 ln -s /Applications "$DMG_STAGE/Applications"
-mkdir -p "$DMG_STAGE/.background"
-install -m 644 "$DMG_BACKGROUND_SOURCE" "$DMG_STAGE/.background/InstallerBackground.png"
+DMG_APP_ROOT="$DMG_STAGE/${APP_NAME}.app"
+install -m 644 "$DMG_BACKGROUND_SOURCE" "$DMG_APP_ROOT/Contents/Resources/InstallerBackground.png"
+
+if command -v codesign >/dev/null 2>&1; then
+    if [ "$SIGN_ARTIFACTS" = true ]; then
+        codesign --force --sign "$SIGN_IDENTITY" \
+            --timestamp \
+            --options runtime \
+            --entitlements "$ENTITLEMENTS" \
+            "$DMG_APP_ROOT"
+        codesign --verify --deep --strict --verbose=2 "$DMG_APP_ROOT"
+    else
+        # Keep unsigned builds on a stable designated requirement even after
+        # injecting DMG-only resources into the staged app copy.
+        if ! codesign --force --sign - \
+            --identifier "$APP_BUNDLE_IDENTIFIER" \
+            -r="designated => identifier \"$APP_BUNDLE_IDENTIFIER\"" \
+            "$DMG_APP_ROOT"; then
+            die "Failed to re-sign staged DMG app after adding background resource."
+        fi
+    fi
+fi
 
 DMG_RW_PATH="$WORK_DIR/${ARTIFACT_BASENAME}.rw.dmg"
 hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGE" -ov -format UDRW "$DMG_RW_PATH" >/dev/null
@@ -440,8 +457,6 @@ DMG_MOUNT_POINT="$(printf '%s\n' "$DMG_INFO" | sed -n '2p')"
 [ -n "$DMG_DEVICE" ] || die "Failed to determine mounted DMG device from hdiutil plist output"
 [ -n "$DMG_MOUNT_POINT" ] || die "Failed to determine mounted DMG path from hdiutil plist output"
 DMG_VOLUME_NAME="$(basename "$DMG_MOUNT_POINT")"
-
-chflags hidden "$DMG_MOUNT_POINT/.background" "$DMG_MOUNT_POINT/.background/InstallerBackground.png" || true
 
 if ! configure_dmg_layout "$DMG_VOLUME_NAME" "${APP_NAME}.app"; then
     echo "Warning: failed to apply Finder DMG layout customization; continuing with default layout."
