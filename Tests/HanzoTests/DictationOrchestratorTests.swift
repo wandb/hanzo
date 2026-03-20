@@ -760,7 +760,37 @@ struct DictationOrchestratorTests {
 
         #expect(sut.appState.dictationState != .listening)
         #expect(stopIteration != nil)
-        #expect((stopIteration ?? Int.max) <= 16)
+        #expect((stopIteration ?? Int.max) <= 12)
+    }
+
+    @Test("Silence auto-close ignores borderline ambient bumps")
+    @MainActor func silenceAutoCloseIgnoresBorderlineAmbientBumps() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.silenceTimeout = 0.2
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        sut.mockAudio.simulateLevels([0.03, 0.031, 0.029, 0.03, 0.03, 0.031, 0.029])
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.appState.partialTranscript = "hello"
+
+        let ambientBaseline: [Float] = [0.007, 0.0071, 0.0069, 0.007, 0.0071, 0.0069, 0.007]
+        let ambientBumps: [Float] = [0.0104, 0.0105, 0.0103, 0.0104, 0.0105, 0.0104, 0.0103]
+        var stopIteration: Int?
+
+        for i in 0..<24 {
+            let levels = (i % 2 == 0) ? ambientBaseline : ambientBumps
+            sut.mockAudio.simulateLevels(levels)
+            try await Task.sleep(nanoseconds: 50_000_000)
+            if sut.appState.dictationState != .listening {
+                stopIteration = i
+                break
+            }
+        }
+
+        #expect(sut.appState.dictationState != .listening)
+        #expect(stopIteration != nil)
+        #expect((stopIteration ?? Int.max) <= 12)
     }
 
     @Test("Silence auto-close does not trigger before speech")
@@ -810,8 +840,8 @@ struct DictationOrchestratorTests {
         #expect(sut.appState.dictationState == .listening)
     }
 
-    @Test("Silence timer resets when transcript continues growing")
-    @MainActor func silenceAutoCloseResetsOnTranscriptGrowth() async throws {
+    @Test("Transcript growth during quiet does not indefinitely delay silence auto-close")
+    @MainActor func silenceAutoCloseNotBlockedByTranscriptGrowthDuringQuiet() async throws {
         let sut = makeSUT()
         sut.orchestrator.silenceTimeout = 0.25
         sut.orchestrator.toggle()
@@ -822,27 +852,32 @@ struct DictationOrchestratorTests {
         try await Task.sleep(nanoseconds: 50_000_000)
         sut.appState.partialTranscript = "hello"
 
-        // Low-volume stretch that would start the silence timer.
-        let quietLevels: [Float] = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]
-        for _ in 0..<3 {
-            sut.mockAudio.simulateLevels(quietLevels)
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
-
-        // Fresh transcript growth should reset/hold silence closure.
-        sut.appState.partialTranscript = "hello world"
+        // Low-volume stretch starts silence tracking after transcript grace.
+        let quietLevels: [Float] = [0.0065, 0.0067, 0.0066, 0.0065, 0.0066, 0.0067, 0.0065]
         for _ in 0..<4 {
             sut.mockAudio.simulateLevels(quietLevels)
             try await Task.sleep(nanoseconds: 50_000_000)
         }
-        #expect(sut.appState.dictationState == .listening)
 
-        // If quiet persists without new words, auto-close should still happen.
-        for _ in 0..<10 {
+        // Late transcript growth while still quiet should not keep the
+        // session alive for much longer than the configured timeout.
+        sut.appState.partialTranscript = "hello world"
+        var stopIteration: Int?
+        for i in 0..<14 {
+            if i == 2 {
+                sut.appState.partialTranscript = "hello world again"
+            }
             sut.mockAudio.simulateLevels(quietLevels)
             try await Task.sleep(nanoseconds: 50_000_000)
+            if sut.appState.dictationState != .listening {
+                stopIteration = i
+                break
+            }
         }
+
         #expect(sut.appState.dictationState != .listening)
+        #expect(stopIteration != nil)
+        #expect((stopIteration ?? Int.max) <= 10)
     }
 
     @Test("Silence auto-close does not trigger with audio but no transcription")

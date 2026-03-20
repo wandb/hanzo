@@ -742,8 +742,6 @@ final class DictationOrchestrator {
             lastObservedPartialTranscript = appState.partialTranscript
             if !appState.partialTranscript.isEmpty {
                 lastPartialTranscriptUpdateAt = now
-                // Growing transcript is strong evidence speech is still active.
-                silenceStartTime = nil
             }
         }
 
@@ -791,9 +789,14 @@ final class DictationOrchestrator {
             rawThreshold,
             ambientThreshold
         )
+        let speechResetThreshold = max(
+            threshold * Constants.silenceSpeechResetThresholdMultiplier,
+            threshold + Constants.silenceSpeechResetThresholdOffset
+        )
 
-        if averageLevel >= threshold {
-            // Audio above the adaptive threshold counts as active speech.
+        if averageLevel >= speechResetThreshold {
+            // Use a stronger reset threshold so borderline ambient bumps
+            // do not continually reset an in-progress silence timer.
             silenceStartTime = nil
             return
         }
@@ -805,9 +808,13 @@ final class DictationOrchestrator {
             Constants.silenceTranscriptActivityGraceMinimumSeconds,
             silenceTimeout * Constants.silenceTranscriptActivityGraceMultiplier
         )
+        let clampedTranscriptGrace = min(
+            transcriptGrace,
+            Constants.silenceTranscriptActivityGraceMaximumSeconds
+        )
         if let lastTranscriptUpdateAt = lastPartialTranscriptUpdateAt,
-           now.timeIntervalSince(lastTranscriptUpdateAt) < transcriptGrace {
-            silenceStartTime = nil
+           now.timeIntervalSince(lastTranscriptUpdateAt) < clampedTranscriptGrace,
+           silenceStartTime == nil {
             return
         }
 
@@ -824,6 +831,7 @@ final class DictationOrchestrator {
                 "(avg \(String(format: "%.4f", averageLevel)), " +
                 "ambient \(String(format: "%.4f", ambientNoiseLevel)), " +
                 "threshold \(String(format: "%.4f", threshold)), " +
+                "resetThreshold \(String(format: "%.4f", speechResetThreshold)), " +
                 "transcriptAge \(transcriptAge)s)"
             )
             silenceStartTime = nil
