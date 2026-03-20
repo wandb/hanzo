@@ -40,6 +40,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INFO_PLIST="$ROOT_DIR/HanzoCore/Info.plist"
 ENTITLEMENTS="$ROOT_DIR/HanzoCore/Hanzo.entitlements"
 APP_ICON_SOURCE="$ROOT_DIR/assets/icons/Hanzo.icns"
+DMG_BACKGROUND_SOURCE="$ROOT_DIR/assets/dmg/background.png"
 
 VERSION=""
 BUILD_NUMBER=""
@@ -106,11 +107,13 @@ require_cmd ditto
 require_cmd hdiutil
 require_cmd lipo
 require_cmd file
+require_cmd osascript
 require_cmd /usr/libexec/PlistBuddy
 
 [ -f "$INFO_PLIST" ] || die "Missing Info.plist at $INFO_PLIST"
 [ -f "$ENTITLEMENTS" ] || die "Missing entitlements at $ENTITLEMENTS"
 [ -f "$APP_ICON_SOURCE" ] || die "Missing app icon at $APP_ICON_SOURCE"
+[ -f "$DMG_BACKGROUND_SOURCE" ] || die "Missing DMG background at $DMG_BACKGROUND_SOURCE"
 
 if [ "$SIGN_ARTIFACTS" = true ]; then
     require_cmd codesign
@@ -209,7 +212,13 @@ resolve_llama_runtime_dir() {
 }
 
 WORK_DIR="$(mktemp -d /tmp/hanzo-release.XXXXXX)"
+DMG_DEVICE=""
+DMG_MOUNT_POINT=""
 cleanup() {
+    if [ -n "${DMG_DEVICE:-}" ]; then
+        hdiutil detach "$DMG_DEVICE" >/dev/null 2>&1 || \
+            hdiutil detach -force "$DMG_DEVICE" >/dev/null 2>&1 || true
+    fi
     rm -rf "$WORK_DIR"
 }
 trap cleanup EXIT
@@ -327,6 +336,34 @@ notarize_file() {
     xcrun notarytool submit "$input_file" --keychain-profile "$NOTARY_PROFILE" --wait
 }
 
+configure_dmg_layout() {
+    local mount_point="$1"
+    local volume_name="$2"
+    local app_bundle_name="$3"
+
+    osascript <<EOF
+tell application "Finder"
+    tell disk "$volume_name"
+        open
+        set current view of container window to icon view
+        set toolbar visible of container window to false
+        set statusbar visible of container window to false
+        set bounds of container window to {120, 120, 780, 520}
+        set iconViewOptions to the icon view options of container window
+        set arrangement of iconViewOptions to not arranged
+        set icon size of iconViewOptions to 102
+        set text size of iconViewOptions to 16
+        set background picture of iconViewOptions to file "$app_bundle_name:Contents:Resources:InstallerBackground.png"
+        set position of item "$app_bundle_name" of container window to {170, 128}
+        set position of item "Applications" of container window to {490, 128}
+        close
+        open
+        update without registering applications
+    end tell
+end tell
+EOF
+}
+
 if [ "$NOTARIZE" = true ]; then
     APP_NOTARY_ZIP="$WORK_DIR/${APP_NAME}-notary.zip"
     ditto -c -k --sequesterRsrc --keepParent "$APP_ROOT" "$APP_NOTARY_ZIP"
@@ -344,7 +381,34 @@ ditto -c -k --sequesterRsrc --keepParent "$APP_ROOT" "$APP_ZIP_PATH"
 DMG_STAGE="$WORK_DIR/dmg"
 mkdir -p "$DMG_STAGE"
 cp -R "$APP_ROOT" "$DMG_STAGE/"
-hdiutil create -volname "Hanzo" -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG_PATH" >/dev/null
+# Provide the standard drag-to-install target in the mounted DMG.
+ln -s /Applications "$DMG_STAGE/Applications"
+install -m 644 "$DMG_BACKGROUND_SOURCE" "$DMG_STAGE/${APP_NAME}.app/Contents/Resources/InstallerBackground.png"
+
+DMG_RW_PATH="$WORK_DIR/${ARTIFACT_BASENAME}.rw.dmg"
+hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGE" -ov -format UDRW "$DMG_RW_PATH" >/dev/null
+
+ATTACH_OUTPUT="$(hdiutil attach -readwrite -noverify -noautoopen "$DMG_RW_PATH")"
+DMG_DEVICE="$(echo "$ATTACH_OUTPUT" | awk '/^\/dev\// {print $1; exit}')"
+DMG_MOUNT_POINT="$(echo "$ATTACH_OUTPUT" | awk 'match($0, /\/Volumes\/.*/) {print substr($0, RSTART); exit}')"
+[ -n "$DMG_DEVICE" ] || die "Failed to determine mounted DMG device from hdiutil output"
+[ -n "$DMG_MOUNT_POINT" ] || die "Failed to determine mounted DMG path from hdiutil output"
+DMG_VOLUME_NAME="$(basename "$DMG_MOUNT_POINT")"
+
+if ! configure_dmg_layout "$DMG_MOUNT_POINT" "$DMG_VOLUME_NAME" "${APP_NAME}.app"; then
+    echo "Warning: failed to apply Finder DMG layout customization; continuing with default layout."
+fi
+
+# Remove filesystem metadata folders from the image root so users do not see
+# extra dot-directories when mounting the final read-only DMG.
+rm -rf "$DMG_MOUNT_POINT/.fseventsd" "$DMG_MOUNT_POINT/.Spotlight-V100" "$DMG_MOUNT_POINT/.Trashes"
+
+sync
+hdiutil detach "$DMG_DEVICE" >/dev/null
+DMG_DEVICE=""
+DMG_MOUNT_POINT=""
+
+hdiutil convert "$DMG_RW_PATH" -ov -format UDZO -imagekey zlib-level=9 -o "$DMG_PATH" >/dev/null
 
 if [ "$SIGN_ARTIFACTS" = true ]; then
     codesign --force --sign "$SIGN_IDENTITY" --timestamp "$DMG_PATH"
