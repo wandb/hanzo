@@ -21,6 +21,8 @@ final class DictationOrchestrator {
     private var chunkSendTask: Task<Void, Never>?
     private var isChunkSendInFlight = false
     private var isStoppingRecording = false
+    private var currentRecordingEpoch = 0
+    private var lastCancelledRecordingEpoch = 0
     private var previousApp: NSRunningApplication?
     private var activeSessionTargetBundleIdentifier: String?
     private var pendingRestartAfterForging = false
@@ -194,6 +196,7 @@ final class DictationOrchestrator {
             audioBuffer.removeAll()
             isChunkSendInFlight = false
             isStoppingRecording = false
+            lastCancelledRecordingEpoch = max(lastCancelledRecordingEpoch, currentRecordingEpoch)
         }
         sessionId = nil
         abortLocalSessionIfNeeded(sid)
@@ -210,6 +213,7 @@ final class DictationOrchestrator {
 
         Task { @MainActor in
             appState.dictationState = .idle
+            appState.errorMessage = nil
             appState.partialTranscript = ""
             appState.audioLevels = []
             appState.isPopoverPresented = false
@@ -263,6 +267,7 @@ final class DictationOrchestrator {
             audioBuffer.removeAll()
             isChunkSendInFlight = false
             isStoppingRecording = false
+            currentRecordingEpoch += 1
         }
         silenceStartTime = nil
         peakSpeechLevel = 0
@@ -297,14 +302,28 @@ final class DictationOrchestrator {
         logger.info("Stopping recording")
         audioService.stopCapture()
         appState.dictationState = .forging
+        var recordingEpoch = 0
         bufferQueue.sync {
             isStoppingRecording = true
+            recordingEpoch = currentRecordingEpoch
         }
         let inFlightChunkTask = chunkSendTask
 
         Task {
+            defer {
+                bufferQueue.sync {
+                    isChunkSendInFlight = false
+                    isStoppingRecording = false
+                }
+            }
+
             if let inFlightChunkTask {
                 await inFlightChunkTask.value
+            }
+
+            if cancellationRequested(for: recordingEpoch) {
+                logger.info("Stop sequence aborted due to cancellation request")
+                return
             }
 
             let remainingBuffer: Data = bufferQueue.sync {
@@ -338,10 +357,25 @@ final class DictationOrchestrator {
                 }
 
                 // Finish the stream
+                if cancellationRequested(for: recordingEpoch) {
+                    logger.info("Skipping stream finish due to cancellation request")
+                    return
+                }
+
                 guard let sid = sessionId else {
+                    if cancellationRequested(for: recordingEpoch) {
+                        logger.info("No active session during cancellation; stop ignored")
+                        return
+                    }
                     throw ASRError.sessionNotFound
                 }
                 let finalResponse = try await asrClient.finishStream(sessionId: sid)
+
+                if cancellationRequested(for: recordingEpoch) {
+                    logger.info("Discarding final transcript due to cancellation request")
+                    return
+                }
+
                 let rawFinalText = finalResponse.text.trimmingCharacters(in: .whitespacesAndNewlines)
                 let finalText = await postProcessFinalTranscript(rawFinalText)
                 let targetApp = previousApp
@@ -413,6 +447,10 @@ final class DictationOrchestrator {
                     applyEffectiveBehavior(for: nil)
                 }
             } catch {
+                if cancellationRequested(for: recordingEpoch) {
+                    logger.info("Ignoring transcription failure after cancellation request")
+                    return
+                }
                 logger.error("Transcription failed: \(error)")
                 let failedSessionId = sessionId
                 abortLocalSessionIfNeeded(failedSessionId)
@@ -426,11 +464,6 @@ final class DictationOrchestrator {
                 await MainActor.run {
                     applyEffectiveBehavior(for: nil)
                 }
-            }
-
-            bufferQueue.sync {
-                isChunkSendInFlight = false
-                isStoppingRecording = false
             }
 
             if pendingRestartAfterForging {
@@ -468,6 +501,10 @@ final class DictationOrchestrator {
         lastPartialTranscriptUpdateAt = nil
         activeSessionTargetBundleIdentifier = nil
         applyEffectiveBehavior(for: nil)
+    }
+
+    private func cancellationRequested(for recordingEpoch: Int) -> Bool {
+        bufferQueue.sync { lastCancelledRecordingEpoch >= recordingEpoch }
     }
 
     private func maybeStartChunkSendIfNeeded() {
