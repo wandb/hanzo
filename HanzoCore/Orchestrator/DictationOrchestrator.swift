@@ -742,8 +742,6 @@ final class DictationOrchestrator {
             lastObservedPartialTranscript = appState.partialTranscript
             if !appState.partialTranscript.isEmpty {
                 lastPartialTranscriptUpdateAt = now
-                // Growing transcript is strong evidence speech is still active.
-                silenceStartTime = nil
             }
         }
 
@@ -791,9 +789,14 @@ final class DictationOrchestrator {
             rawThreshold,
             ambientThreshold
         )
+        let speechActivityThreshold = max(
+            threshold * Constants.silenceSpeechActivityThresholdMultiplier,
+            threshold + Constants.silenceSpeechActivityThresholdOffset
+        )
 
-        if averageLevel >= threshold {
-            // Audio above the adaptive threshold counts as active speech.
+        if averageLevel >= speechActivityThreshold {
+            // Raise the speech-detection bar so borderline ambient bumps
+            // are more likely treated as silence.
             silenceStartTime = nil
             return
         }
@@ -805,9 +808,13 @@ final class DictationOrchestrator {
             Constants.silenceTranscriptActivityGraceMinimumSeconds,
             silenceTimeout * Constants.silenceTranscriptActivityGraceMultiplier
         )
+        let clampedTranscriptGrace = min(
+            transcriptGrace,
+            Constants.silenceTranscriptActivityGraceMaximumSeconds
+        )
         if let lastTranscriptUpdateAt = lastPartialTranscriptUpdateAt,
-           now.timeIntervalSince(lastTranscriptUpdateAt) < transcriptGrace {
-            silenceStartTime = nil
+           now.timeIntervalSince(lastTranscriptUpdateAt) < clampedTranscriptGrace,
+           silenceStartTime == nil {
             return
         }
 
@@ -824,6 +831,7 @@ final class DictationOrchestrator {
                 "(avg \(String(format: "%.4f", averageLevel)), " +
                 "ambient \(String(format: "%.4f", ambientNoiseLevel)), " +
                 "threshold \(String(format: "%.4f", threshold)), " +
+                "activityThreshold \(String(format: "%.4f", speechActivityThreshold)), " +
                 "transcriptAge \(transcriptAge)s)"
             )
             silenceStartTime = nil
