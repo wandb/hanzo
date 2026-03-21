@@ -789,14 +789,14 @@ final class DictationOrchestrator {
             rawThreshold,
             ambientThreshold
         )
-        let speechResetThreshold = max(
-            threshold * Constants.silenceSpeechResetThresholdMultiplier,
-            threshold + Constants.silenceSpeechResetThresholdOffset
+        let speechActivityThreshold = max(
+            threshold * Constants.silenceSpeechActivityThresholdMultiplier,
+            threshold + Constants.silenceSpeechActivityThresholdOffset
         )
 
-        if averageLevel >= speechResetThreshold {
-            // Use a stronger reset threshold so borderline ambient bumps
-            // do not continually reset an in-progress silence timer.
+        if averageLevel >= speechActivityThreshold {
+            // Raise the speech-detection bar so borderline ambient bumps
+            // are more likely treated as silence.
             silenceStartTime = nil
             return
         }
@@ -831,7 +831,7 @@ final class DictationOrchestrator {
                 "(avg \(String(format: "%.4f", averageLevel)), " +
                 "ambient \(String(format: "%.4f", ambientNoiseLevel)), " +
                 "threshold \(String(format: "%.4f", threshold)), " +
-                "resetThreshold \(String(format: "%.4f", speechResetThreshold)), " +
+                "activityThreshold \(String(format: "%.4f", speechActivityThreshold)), " +
                 "transcriptAge \(transcriptAge)s)"
             )
             silenceStartTime = nil
