@@ -117,13 +117,17 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
         _ = try await ensureModelIsAvailable(progressHandler: progressHandler)
     }
 
-    func postProcess(text: String, prompt: String) async throws -> String {
+    func postProcess(text: String, prompt: String, targetApp: String?) async throws -> String {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return "" }
 
         try await ensureRunning()
 
-        let rewritten = try await requestRewrite(transcript: trimmedText, userPrompt: prompt)
+        let rewritten = try await requestRewrite(
+            transcript: trimmedText,
+            instructions: prompt,
+            targetApp: targetApp
+        )
         let cleaned = sanitizeModelResponse(rewritten)
         return cleaned.isEmpty ? trimmedText : cleaned
     }
@@ -632,21 +636,26 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
         let choices: [Choice]
     }
 
-    private func requestRewrite(transcript: String, userPrompt: String) async throws -> String {
+    private func requestRewrite(
+        transcript: String,
+        instructions: String,
+        targetApp: String?
+    ) async throws -> String {
         guard let url = URL(string: "/v1/chat/completions", relativeTo: serverBaseURL()) else {
             throw LocalLLMRuntimeError.invalidServerResponse
         }
 
         let prompt = TranscriptRewritePrompt.render(
             transcript: transcript,
-            userPrompt: userPrompt
+            instructions: instructions,
+            targetApp: targetApp
         )
 
         let userMessage = "/no_think\n" + prompt.user
         let maxTokens = rewriteMaxTokens(
             transcript: transcript,
             systemPrompt: prompt.system,
-            userPrompt: userMessage
+            userMessage: userMessage
         )
 
         let requestBody = ChatCompletionRequest(
@@ -693,10 +702,10 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
         return withoutControlTokens.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func rewriteMaxTokens(transcript: String, systemPrompt: String, userPrompt: String) -> Int {
+    private func rewriteMaxTokens(transcript: String, systemPrompt: String, userMessage: String) -> Int {
         let contextSize = Constants.localLLMContextSize()
         let transcriptTokens = estimateTokenCount(transcript)
-        let promptTokens = estimateTokenCount(systemPrompt) + estimateTokenCount(userPrompt)
+        let promptTokens = estimateTokenCount(systemPrompt) + estimateTokenCount(userMessage)
 
         // Reserve room for chat framing tokens and small tokenization mismatch.
         let safetyMargin = 48
@@ -732,7 +741,8 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
         do {
             _ = try await requestRewrite(
                 transcript: "Test transcript.",
-                userPrompt: "Return this transcript unchanged."
+                instructions: "Return this transcript unchanged.",
+                targetApp: nil
             )
             hasPrimedInference = true
             let duration = Date().timeIntervalSince(start)

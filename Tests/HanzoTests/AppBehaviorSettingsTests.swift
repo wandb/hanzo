@@ -4,6 +4,9 @@ import Testing
 
 @Suite("AppBehaviorSettings")
 struct AppBehaviorSettingsTests {
+    private let slackBuiltInPrompt =
+        "Polish into a concise Slack message. Preserve existing @mentions, /commands, and #channels. Convert clear spoken forms like \"at <name>\" to @mentions (full names can include a space, for example @John Smith), \"slash <command>\" to /commands, and \"hashtag <channel name>\" to lowercase #channel-name with no spaces."
+
     private func withDefaults<T>(_ body: (UserDefaults) -> T) -> T {
         let suiteName = "AppBehaviorSettingsTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -160,6 +163,20 @@ struct AppBehaviorSettingsTests {
         #expect(override.hasOverrides == true)
     }
 
+    @Test("resolvedBehavior uses built-in LLM prompt for built-in apps when no override exists")
+    func resolvedBehaviorUsesBuiltInLLMPromptForBuiltInApps() {
+        withDefaults { defaults in
+            AppBehaviorSettings.setGlobalLLMPostProcessingPrompt("Global prompt", defaults: defaults)
+
+            let resolved = AppBehaviorSettings.resolvedBehavior(
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+
+            #expect(resolved.llmPostProcessingPrompt == slackBuiltInPrompt)
+        }
+    }
+
     @Test("resolvedBehavior uses per-app LLM prompt when set")
     func resolvedBehaviorUsesPerAppLLMPrompt() {
         withDefaults { defaults in
@@ -180,8 +197,8 @@ struct AppBehaviorSettingsTests {
         }
     }
 
-    @Test("resolvedBehavior falls back to global LLM prompt when per-app prompt is nil")
-    func resolvedBehaviorFallsBackToGlobalLLMPrompt() {
+    @Test("resolvedBehavior falls back to built-in LLM prompt when app override prompt is nil")
+    func resolvedBehaviorFallsBackToBuiltInLLMPrompt() {
         withDefaults { defaults in
             AppBehaviorSettings.setGlobalLLMPostProcessingPrompt("Global prompt", defaults: defaults)
             AppBehaviorSettings.saveOverride(
@@ -192,6 +209,24 @@ struct AppBehaviorSettingsTests {
 
             let resolved = AppBehaviorSettings.resolvedBehavior(
                 for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+            #expect(resolved.llmPostProcessingPrompt == slackBuiltInPrompt)
+        }
+    }
+
+    @Test("resolvedBehavior falls back to global LLM prompt for custom apps without prompt override")
+    func resolvedBehaviorFallsBackToGlobalLLMPromptForCustomApps() {
+        withDefaults { defaults in
+            _ = AppBehaviorSettings.addCustomApp(
+                bundleIdentifier: "com.example.CustomApp",
+                displayName: "Custom App",
+                defaults: defaults
+            )
+            AppBehaviorSettings.setGlobalLLMPostProcessingPrompt("Global prompt", defaults: defaults)
+
+            let resolved = AppBehaviorSettings.resolvedBehavior(
+                for: "com.example.CustomApp",
                 defaults: defaults
             )
             #expect(resolved.llmPostProcessingPrompt == "Global prompt")

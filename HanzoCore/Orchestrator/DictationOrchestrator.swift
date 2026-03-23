@@ -376,9 +376,13 @@ final class DictationOrchestrator {
                     return
                 }
 
-                let rawFinalText = finalResponse.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                let finalText = await postProcessFinalTranscript(rawFinalText)
                 let targetApp = previousApp
+                let targetAppName = resolvedTargetAppDisplayName(for: targetApp)
+                let rawFinalText = finalResponse.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let finalText = await postProcessFinalTranscript(
+                    rawFinalText,
+                    targetAppName: targetAppName
+                )
                 sessionId = nil
                 previousApp = nil
                 activeSessionTargetBundleIdentifier = nil
@@ -652,7 +656,10 @@ final class DictationOrchestrator {
         }
     }
 
-    private func postProcessFinalTranscript(_ rawFinalText: String) async -> String {
+    private func postProcessFinalTranscript(
+        _ rawFinalText: String,
+        targetAppName: String?
+    ) async -> String {
         guard !rawFinalText.isEmpty else { return rawFinalText }
 
         switch transcriptPostProcessingMode {
@@ -668,7 +675,8 @@ final class DictationOrchestrator {
             let start = Date()
             switch await llmPostProcessWithTimeout(
                 text: rawFinalText,
-                prompt: llmPostProcessingPrompt
+                prompt: llmPostProcessingPrompt,
+                targetAppName: targetAppName
             ) {
             case .success(let rewritten):
                 let duration = Date().timeIntervalSince(start)
@@ -699,7 +707,11 @@ final class DictationOrchestrator {
         case timeout
     }
 
-    private func llmPostProcessWithTimeout(text: String, prompt: String) async -> LLMPostProcessResult {
+    private func llmPostProcessWithTimeout(
+        text: String,
+        prompt: String,
+        targetAppName: String?
+    ) async -> LLMPostProcessResult {
         let timeoutNanoseconds = UInt64(Constants.localLLMPostProcessingTimeoutSeconds * 1_000_000_000)
 
         return await withTaskGroup(of: LLMPostProcessResult.self) { group in
@@ -707,7 +719,8 @@ final class DictationOrchestrator {
                 do {
                     let rewritten = try await self.localLLMRuntimeManager.postProcess(
                         text: text,
-                        prompt: prompt
+                        prompt: prompt,
+                        targetApp: targetAppName
                     )
                     return .success(rewritten)
                 } catch {
@@ -724,6 +737,24 @@ final class DictationOrchestrator {
             group.cancelAll()
             return first
         }
+    }
+
+    private func resolvedTargetAppDisplayName(for app: NSRunningApplication?) -> String? {
+        guard let app else { return nil }
+
+        if let localizedName = app.localizedName?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !localizedName.isEmpty {
+            return localizedName
+        }
+
+        if let bundleIdentifier = app.bundleIdentifier?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !bundleIdentifier.isEmpty {
+            return bundleIdentifier
+        }
+
+        return nil
     }
 
     // MARK: - Silence Detection

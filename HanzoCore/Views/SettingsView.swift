@@ -54,8 +54,8 @@ struct SettingsView: View {
     private let silenceTimeoutOptions: [Double] = [0, 1, 2, 3, 5]
     private let segmentedInputWidth: CGFloat = 220
     private let menuInputWidth: CGFloat = 180
-    private let postProcessingHelpText = "Automatically edits transcribed text for clarity and formatting using your local model and instructions. Individual apps can override."
-    private let userPromptHelpText = "Custom auto edit instructions inserted into the template as {{user_prompt}}."
+    private let postProcessingHelpText = "Automatically edits transcribed text for clarity and formatting using your local model. App-specific instructions override global defaults."
+    private let instructionsHelpText = "Global auto edit instructions inserted into the template as {{instructions}}. Used only when an app has no app-specific instruction source."
     private let rewriteTemplateHelpText = "Template used to build the auto edit request for the local model."
     private let localLLMContextHelpText = "Maximum context window for local auto edit inference. If the app is using too much memory, try lowering this setting."
     private let silenceTimeoutHelpText = "Stop recording after this much silence. Off disables it."
@@ -459,7 +459,7 @@ struct SettingsView: View {
                             scheduleRewriteTemplateValidation()
                         }
 
-                    Text("Placeholders: {{transcript}}, {{user_prompt}}, {{target_app}}, {{#user_prompt}}...{{/user_prompt}}, {{#target_app}}...{{/target_app}}")
+                    Text("Placeholders: {{transcript}}, {{instructions}}, {{target_app}}, {{#instructions}}...{{/instructions}}, {{#target_app}}...{{/target_app}}")
                         .font(.system(.caption, design: .rounded))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -488,7 +488,7 @@ struct SettingsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
-                    settingLabel("Instructions", helpText: userPromptHelpText)
+                    settingLabel("Instructions", helpText: instructionsHelpText)
                     TextEditor(text: $llmPostProcessingPrompt)
                         .font(.system(.body, design: .rounded))
                         .scrollContentBackground(.hidden)
@@ -566,7 +566,7 @@ struct SettingsView: View {
 
             settingsSectionHeader(
                 "Auto edit",
-                subtitle: "Default follows the global setting. Override and instructions apply only to this app."
+                subtitle: "App instructions override global. Global instructions are fallback only when no app-specific default exists."
             )
 
             HStack(alignment: .top) {
@@ -583,7 +583,7 @@ struct SettingsView: View {
 
             if resolvedPostProcessingMode(for: app) == .llm {
                 VStack(alignment: .leading, spacing: 6) {
-                    settingLabel("Instructions", helpText: userPromptHelpText)
+                    settingLabel("Instructions", helpText: appInstructionsHelpText(for: app))
                     TextEditor(text: llmPromptBinding(for: app))
                         .font(.system(.body, design: .rounded))
                         .scrollContentBackground(.hidden)
@@ -597,7 +597,7 @@ struct SettingsView: View {
                     if appBehaviorOverrides[app.bundleIdentifier]?.llmPostProcessingPrompt != nil {
                         HStack {
                             Spacer()
-                            Button("Reset to default") {
+                            Button(app.isBuiltIn ? "Reset to suggested" : "Reset to default") {
                                 var appOverride = appBehaviorOverrides[app.bundleIdentifier] ?? AppBehaviorOverride()
                                 appOverride.llmPostProcessingPrompt = nil
                                 persistOverride(appOverride, for: app.bundleIdentifier)
@@ -684,12 +684,31 @@ struct SettingsView: View {
 
     private func llmPromptBinding(for app: SupportedAppBehavior) -> Binding<String> {
         Binding {
-            appBehaviorOverrides[app.bundleIdentifier]?.llmPostProcessingPrompt ?? llmPostProcessingPrompt
+            resolvedLLMPrompt(for: app)
         } set: { newValue in
             var appOverride = appBehaviorOverrides[app.bundleIdentifier] ?? AppBehaviorOverride()
             appOverride.llmPostProcessingPrompt = newValue
             persistOverride(appOverride, for: app.bundleIdentifier)
         }
+    }
+
+    private func resolvedLLMPrompt(for app: SupportedAppBehavior) -> String {
+        if let appPrompt = appBehaviorOverrides[app.bundleIdentifier]?.llmPostProcessingPrompt {
+            return appPrompt
+        }
+        if let builtInPrompt = AppBehaviorSettings.builtInDefaultLLMPostProcessingPrompt(
+            for: app.bundleIdentifier
+        ) {
+            return builtInPrompt
+        }
+        return llmPostProcessingPrompt
+    }
+
+    private func appInstructionsHelpText(for app: SupportedAppBehavior) -> String {
+        if app.isBuiltIn {
+            return "App instructions override global. Reset to suggested to use this app's built-in default."
+        }
+        return "App instructions override global. If not set, this app uses global instructions."
     }
 
     private func silenceTimeoutLabel(_ timeout: Double) -> String {

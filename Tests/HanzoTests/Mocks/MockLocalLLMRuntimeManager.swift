@@ -9,6 +9,7 @@ final class MockLocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
 
     var lastInputText: String?
     var lastPrompt: String?
+    var lastTargetApp: String?
 
     var ensureRunningError: Error?
     var prepareModelError: Error?
@@ -29,10 +30,11 @@ final class MockLocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
         }
     }
 
-    func postProcess(text: String, prompt: String) async throws -> String {
+    func postProcess(text: String, prompt: String, targetApp: String?) async throws -> String {
         postProcessCallCount += 1
         lastInputText = text
         lastPrompt = prompt
+        lastTargetApp = targetApp
         if let postProcessDelayNanoseconds {
             try await Task.sleep(nanoseconds: postProcessDelayNanoseconds)
         }

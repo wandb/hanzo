@@ -64,6 +64,28 @@ enum AppBehaviorSettings {
         SupportedAppBehavior(bundleIdentifier: "com.googlecode.iterm2", displayName: "iTerm2", isBuiltIn: true),
         SupportedAppBehavior(bundleIdentifier: "dev.warp.Warp-Stable", displayName: "Warp", isBuiltIn: true)
     ]
+    private static let builtInLLMPostProcessingPromptDefaults: [String: String] = [
+        "com.tinyspeck.slackmacgap":
+            "Polish into a concise Slack message. Preserve existing @mentions, /commands, and #channels. Convert clear spoken forms like \"at <name>\" to @mentions (full names can include a space, for example @John Smith), \"slash <command>\" to /commands, and \"hashtag <channel name>\" to lowercase #channel-name with no spaces.",
+        "com.conductor.app":
+            "Polish into a concise request for an AI coding agent. Preserve existing @mentions and /commands. Convert clear spoken forms like \"at <name>\" and \"slash <command>\" when intent is explicit.",
+        "com.openai.chat":
+            "Polish into a clear AI prompt. Preserve existing @mentions and /commands. Convert clear spoken forms like \"at <name>\" and \"slash <command>\" when intent is explicit.",
+        "com.anthropic.claudefordesktop":
+            "Polish into a clear AI prompt. Preserve existing @mentions and /commands. Convert clear spoken forms like \"at <name>\" and \"slash <command>\" when intent is explicit.",
+        "com.todesktop.230313mzl4w4u92":
+            "Polish into a concise coding-assistant prompt. Preserve existing @mentions and /commands. Convert clear spoken forms like \"at <name>\" and \"slash <command>\" when intent is explicit.",
+        "com.microsoft.VSCode":
+            "Lightly clean up dictation for clarity while preserving technical terms.",
+        "com.apple.dt.Xcode":
+            "Lightly clean up dictation for clarity while preserving technical terms.",
+        "com.apple.Terminal":
+            "Lightly clean up dictation while preserving command intent and syntax.",
+        "com.googlecode.iterm2":
+            "Lightly clean up dictation while preserving command intent and syntax.",
+        "dev.warp.Warp-Stable":
+            "Lightly clean up dictation while preserving command intent and syntax."
+    ]
     private static let encoder = JSONEncoder()
     private static let decoder = JSONDecoder()
 
@@ -200,6 +222,10 @@ enum AppBehaviorSettings {
         )
     }
 
+    static func builtInDefaultLLMPostProcessingPrompt(for bundleIdentifier: String) -> String? {
+        builtInLLMPostProcessingPromptDefaults[bundleIdentifier]
+    }
+
     static func loadOverrides(defaults: UserDefaults = .standard) -> [String: AppBehaviorOverride] {
         guard let data = defaults.data(forKey: Constants.appBehaviorOverridesKey) else {
             return [:]
@@ -263,8 +289,7 @@ enum AppBehaviorSettings {
         let globalLLMPrompt = globalLLMPostProcessingPrompt(defaults: defaults)
 
         guard let bundleIdentifier,
-              isSupported(bundleIdentifier: bundleIdentifier, defaults: defaults),
-              let appOverride = override(for: bundleIdentifier, defaults: defaults) else {
+              isSupported(bundleIdentifier: bundleIdentifier, defaults: defaults) else {
             return ResolvedAppBehavior(
                 autoSubmitMode: globalAutoSubmitMode,
                 silenceTimeout: globalSilenceTimeout,
@@ -274,14 +299,14 @@ enum AppBehaviorSettings {
             )
         }
 
-        let resolvedAutoSubmitMode = appOverride.autoSubmitMode ?? globalAutoSubmitMode
-        let resolvedSilenceTimeout = appOverride.silenceTimeout ?? globalSilenceTimeout
-        let resolvedPostProcessing = appOverride.postProcessingMode ?? globalPostProcessing
-        let resolvedLLMPrompt = appOverride.llmPostProcessingPrompt ?? globalLLMPrompt
-        let isUsingAppOverride = appOverride.autoSubmitMode != nil
-            || appOverride.silenceTimeout != nil
-            || appOverride.postProcessingMode != nil
-            || appOverride.llmPostProcessingPrompt != nil
+        let appOverride = override(for: bundleIdentifier, defaults: defaults)
+        let resolvedAutoSubmitMode = appOverride?.autoSubmitMode ?? globalAutoSubmitMode
+        let resolvedSilenceTimeout = appOverride?.silenceTimeout ?? globalSilenceTimeout
+        let resolvedPostProcessing = appOverride?.postProcessingMode ?? globalPostProcessing
+        let resolvedLLMPrompt = appOverride?.llmPostProcessingPrompt
+            ?? builtInDefaultLLMPostProcessingPrompt(for: bundleIdentifier)
+            ?? globalLLMPrompt
+        let isUsingAppOverride = appOverride?.hasOverrides == true
 
         return ResolvedAppBehavior(
             autoSubmitMode: resolvedAutoSubmitMode,

@@ -22,6 +22,15 @@ struct TranscriptRewritePromptTests {
         #expect(validationError == nil)
     }
 
+    @Test("default rewrite template includes syntax token guidance")
+    func defaultTemplateIncludesSyntaxTokenGuidance() {
+        let template = TranscriptRewritePrompt.defaultTemplate()
+        #expect(template.contains("Rewrite context:"))
+        #expect(template.contains("Preserve tokens starting with @, /, or #."))
+        #expect(template.contains("follow app-specific patterns for mentions, commands, and channels"))
+        #expect(template.contains("Do not add @mentions, /commands, or #channels if intent is unclear."))
+    }
+
     @Test("validation fails when transcript placeholder is missing")
     func validationFailsWhenTranscriptPlaceholderMissing() {
         let template = """
@@ -53,8 +62,8 @@ struct TranscriptRewritePromptTests {
             let customTemplate = """
             System rewrite policy.
 
-            {{#user_prompt}}Instruction: {{user_prompt}}
-            {{/user_prompt}}{{#target_app}}Target app: {{target_app}}
+            {{#instructions}}Instruction: {{instructions}}
+            {{/instructions}}{{#target_app}}Target app: {{target_app}}
             {{/target_app}}Transcript: {{transcript}}
             """
 
@@ -63,7 +72,7 @@ struct TranscriptRewritePromptTests {
 
             let rendered = TranscriptRewritePrompt.render(
                 transcript: "hello world",
-                userPrompt: "Make this concise.",
+                instructions: "Make this concise.",
                 targetApp: "Slack",
                 defaults: defaults
             )
@@ -75,7 +84,7 @@ struct TranscriptRewritePromptTests {
 
             let withoutOptionalValues = TranscriptRewritePrompt.render(
                 transcript: "hello world",
-                userPrompt: nil,
+                instructions: nil,
                 targetApp: nil,
                 defaults: defaults
             )
@@ -86,17 +95,30 @@ struct TranscriptRewritePromptTests {
         }
     }
 
+    @Test("validation fails for legacy user_prompt placeholder")
+    func validationFailsForLegacyUserPromptPlaceholder() {
+        let legacyTemplate = """
+        System rewrite policy.
+
+        {{#user_prompt}}Instruction: {{user_prompt}}{{/user_prompt}}
+        Transcript: {{transcript}}
+        """
+
+        let validationError = TranscriptRewritePrompt.validateTemplate(legacyTemplate)
+        #expect(validationError == "Unsupported section '{{#user_prompt}}'.")
+    }
+
     @Test("render falls back to default template when stored template is invalid")
     func renderFallsBackToDefaultTemplateWhenStoredTemplateInvalid() {
         withDefaults { defaults in
             defaults.set(
-                "Broken template {{#user_prompt}} {{invalid}}",
+                "Broken template {{#instructions}} {{invalid}}",
                 forKey: Constants.rewritePromptTemplateKey
             )
 
             let rendered = TranscriptRewritePrompt.render(
                 transcript: "sample text",
-                userPrompt: nil,
+                instructions: nil,
                 targetApp: nil,
                 defaults: defaults
             )
