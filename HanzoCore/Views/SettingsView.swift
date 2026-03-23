@@ -684,12 +684,24 @@ struct SettingsView: View {
 
     private func llmPromptBinding(for app: SupportedAppBehavior) -> Binding<String> {
         Binding {
-            AppBehaviorSettings.resolvedBehavior(for: app.bundleIdentifier).llmPostProcessingPrompt
+            resolvedLLMPrompt(for: app)
         } set: { newValue in
             var appOverride = appBehaviorOverrides[app.bundleIdentifier] ?? AppBehaviorOverride()
             appOverride.llmPostProcessingPrompt = newValue
             persistOverride(appOverride, for: app.bundleIdentifier)
         }
+    }
+
+    private func resolvedLLMPrompt(for app: SupportedAppBehavior) -> String {
+        if let appPrompt = appBehaviorOverrides[app.bundleIdentifier]?.llmPostProcessingPrompt {
+            return appPrompt
+        }
+        if let builtInPrompt = AppBehaviorSettings.builtInDefaultLLMPostProcessingPrompt(
+            for: app.bundleIdentifier
+        ) {
+            return builtInPrompt
+        }
+        return llmPostProcessingPrompt
     }
 
     private func appInstructionsHelpText(for app: SupportedAppBehavior) -> String {
