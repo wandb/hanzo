@@ -569,6 +569,20 @@ struct DictationOrchestratorTests {
         let mockLLM = MockLocalLLMRuntimeManager()
         mockLLM.postProcessResult = .success("This is concise and professional.")
         let rawTranscript = "Um this is, like, the update uh"
+        let expectedTargetApp: String? = {
+            let localized = NSRunningApplication.current.localizedName?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let localized, !localized.isEmpty {
+                return localized
+            }
+
+            let bundleIdentifier = NSRunningApplication.current.bundleIdentifier?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let bundleIdentifier, !bundleIdentifier.isEmpty {
+                return bundleIdentifier
+            }
+            return nil
+        }()
 
         let sut = makeSUT(
             asrFinishResult: .success(
@@ -592,6 +606,7 @@ struct DictationOrchestratorTests {
         #expect(mockLLM.postProcessCallCount == 1)
         #expect(mockLLM.lastInputText == rawTranscript)
         #expect(mockLLM.lastPrompt == "Make this concise and professional.")
+        #expect(mockLLM.lastTargetApp == expectedTargetApp)
     }
 
     @Test("LLM mode falls back to raw transcript when local LLM processing fails")
