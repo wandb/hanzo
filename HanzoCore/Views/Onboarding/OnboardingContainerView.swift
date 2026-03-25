@@ -12,7 +12,7 @@ struct OnboardingContainerView: View {
         return 2
     }
 
-    private let totalSteps = 4
+    private let totalSteps = 5
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,6 +43,10 @@ struct OnboardingContainerView: View {
                 }
             case 3:
                 HotkeyConfirmationStep(appState: appState) {
+                    withAnimation { currentStep = 4 }
+                }
+            case 4:
+                AppCustomizationStep {
                     UserDefaults.standard.set(true, forKey: Constants.onboardingCompleteKey)
                     onComplete()
                 }
