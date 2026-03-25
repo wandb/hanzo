@@ -60,6 +60,12 @@ struct SettingsView: View {
     private let localLLMContextHelpText = "Maximum context window for local auto edit inference. If the app is using too much memory, try lowering this setting."
     private let silenceTimeoutHelpText = "Stop recording after this much silence. Off disables it."
     private let autoSubmitHelpText = "Press Enter or Cmd+Enter automatically after insert."
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+    }
+    private var appBuild: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unknown"
+    }
 
     private enum Field { case endpoint, serverPassword }
 
@@ -156,6 +162,14 @@ struct SettingsView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if selectedSection == .general {
+                    Spacer(minLength: 12)
+                    Text("Version \(appVersion) | Build \(appBuild)")
+                        .font(.system(.caption, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
                 }
             }
             .padding(.horizontal, 20)
