@@ -400,10 +400,6 @@ final class DictationOrchestrator {
                 // Let popover fully dismiss before mutating visible HUD content/state.
                 try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
 
-                await MainActor.run {
-                    appState.dictationState = .idle
-                }
-
                 // PHASE 2: Activate target app and paste
                 if !finalText.isEmpty, let targetApp {
                     await MainActor.run {
@@ -429,6 +425,7 @@ final class DictationOrchestrator {
                 }
 
                 await MainActor.run {
+                    appState.dictationState = .idle
                     appState.partialTranscript = ""
                     appState.audioLevels = []
                 }

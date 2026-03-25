@@ -717,6 +717,30 @@ struct DictationOrchestratorTests {
         )
     }
 
+    @Test("State stays forging until insertion and submit complete")
+    @MainActor func stateStaysForgingUntilInsertionAndSubmitComplete() async throws {
+        let sut = makeSUT(
+            autoSubmitMode: .enter,
+            asrFinishResult: .success(
+                ASRFinishResponse(text: "final transcript", language: "en")
+            ),
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+        sut.mockText.insertionDelayNanoseconds = 1_000_000_000
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        try await Task.sleep(nanoseconds: 700_000_000)
+        #expect(sut.appState.dictationState == .forging)
+
+        let isIdle = await waitUntil(timeoutNanoseconds: 6_000_000_000) {
+            sut.appState.dictationState == .idle
+        }
+        #expect(isIdle)
+    }
+
     // MARK: - Audio Levels
 
     @Test("Audio levels callback updates appState.audioLevels")

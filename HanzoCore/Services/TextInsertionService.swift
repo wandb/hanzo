@@ -14,12 +14,12 @@ final class TextInsertionService: TextInsertionProtocol {
         pasteboard.setString(text, forType: .string)
 
         // Small delay to ensure pasteboard is ready.
-        try? await Task.sleep(nanoseconds: Constants.textInsertionPasteboardReadyDelayNanoseconds)
+        try? await Task.sleep(for: Constants.textInsertionPasteboardReadyDelay)
 
         simulatePaste()
 
         // Allow target apps time to consume Cmd+V before submit keystrokes.
-        try? await Task.sleep(nanoseconds: Constants.textInsertionSettleDelayNanoseconds)
+        try? await Task.sleep(for: Constants.textInsertionSettleDelay)
         restorePasteboard(pasteboard, contents: savedContents)
         logger.info("Clipboard restored after text insertion")
 
