@@ -84,6 +84,8 @@ enum Constants {
     // Auto-submit (press Return/Cmd+Return after paste)
     static let autoSubmitKey = "autoSubmitMode"
     static let defaultAutoSubmitMode: AutoSubmitMode = .off
+    static let textInsertionPasteboardReadyDelay: Duration = .milliseconds(50)
+    static let textInsertionSettleDelay: Duration = .milliseconds(350)
 
     // Final transcript post-processing
     static let transcriptPostProcessingModeKey = "transcriptPostProcessingMode"

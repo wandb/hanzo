@@ -24,6 +24,7 @@ struct DictationOrchestratorTests {
         micPermission: Bool = true,
         accessibilityPermission: Bool = true,
         onboardingComplete: Bool = true,
+        autoSubmitMode: AutoSubmitMode = .off,
         asrStartResult: Result<String, Error> = .success("test-session"),
         asrChunkResult: Result<ASRChunkResponse, Error> = .success(
             ASRChunkResponse(text: "partial", language: "en")
@@ -39,6 +40,7 @@ struct DictationOrchestratorTests {
         frontmostApplicationProvider: @escaping () -> NSRunningApplication? = { nil }
     ) -> SUT {
         // Set global post-processing settings so the orchestrator picks them up.
+        AppBehaviorSettings.setGlobalAutoSubmitMode(autoSubmitMode)
         AppBehaviorSettings.setGlobalPostProcessingMode(postProcessingMode)
         AppBehaviorSettings.setGlobalLLMPostProcessingPrompt(llmPostProcessingPrompt)
 
@@ -663,6 +665,80 @@ struct DictationOrchestratorTests {
         }
         #expect(inserted)
         #expect(sut.mockText.insertedTexts.first == rawTranscript)
+    }
+
+    // MARK: - Auto-Submit
+
+    @Test("Enter auto-submit runs only after text insertion completes")
+    @MainActor func enterAutoSubmitWaitsForInsertionCompletion() async throws {
+        let sut = makeSUT(
+            autoSubmitMode: .enter,
+            asrFinishResult: .success(
+                ASRFinishResponse(text: "final transcript", language: "en")
+            ),
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+        sut.mockText.insertionDelayNanoseconds = 700_000_000
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let submitted = await waitUntil(timeoutNanoseconds: 5_000_000_000) {
+            sut.mockText.returnSimulated
+        }
+        #expect(submitted)
+        #expect(
+            sut.mockText.eventLog == ["insert:start", "insert:end", "submit:return"]
+        )
+    }
+
+    @Test("Cmd+Enter auto-submit runs only after text insertion completes")
+    @MainActor func cmdEnterAutoSubmitWaitsForInsertionCompletion() async throws {
+        let sut = makeSUT(
+            autoSubmitMode: .cmdEnter,
+            asrFinishResult: .success(
+                ASRFinishResponse(text: "final transcript", language: "en")
+            ),
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+        sut.mockText.insertionDelayNanoseconds = 700_000_000
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let submitted = await waitUntil(timeoutNanoseconds: 5_000_000_000) {
+            sut.mockText.cmdReturnSimulated
+        }
+        #expect(submitted)
+        #expect(
+            sut.mockText.eventLog == ["insert:start", "insert:end", "submit:cmd-return"]
+        )
+    }
+
+    @Test("State stays forging until insertion and submit complete")
+    @MainActor func stateStaysForgingUntilInsertionAndSubmitComplete() async throws {
+        let sut = makeSUT(
+            autoSubmitMode: .enter,
+            asrFinishResult: .success(
+                ASRFinishResponse(text: "final transcript", language: "en")
+            ),
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+        sut.mockText.insertionDelayNanoseconds = 1_000_000_000
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        try await Task.sleep(nanoseconds: 700_000_000)
+        #expect(sut.appState.dictationState == .forging)
+
+        let isIdle = await waitUntil(timeoutNanoseconds: 6_000_000_000) {
+            sut.appState.dictationState == .idle
+        }
+        #expect(isIdle)
     }
 
     // MARK: - Audio Levels

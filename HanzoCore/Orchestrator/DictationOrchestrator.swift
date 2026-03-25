@@ -400,10 +400,6 @@ final class DictationOrchestrator {
                 // Let popover fully dismiss before mutating visible HUD content/state.
                 try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
 
-                await MainActor.run {
-                    appState.dictationState = .idle
-                }
-
                 // PHASE 2: Activate target app and paste
                 if !finalText.isEmpty, let targetApp {
                     await MainActor.run {
@@ -422,28 +418,14 @@ final class DictationOrchestrator {
                     }
 
                     // PHASE 3: Paste
-                    await MainActor.run {
-                        textInsertion.insertText(finalText)
-                    }
+                    await insertTextOnMainActor(finalText)
 
                     // PHASE 4: Auto-submit
-                    switch autoSubmitMode {
-                    case .enter:
-                        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms for paste to complete
-                        await MainActor.run {
-                            textInsertion.simulateReturn()
-                        }
-                    case .cmdEnter:
-                        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms for paste to complete
-                        await MainActor.run {
-                            textInsertion.simulateCmdReturn()
-                        }
-                    case .off:
-                        break
-                    }
+                    await triggerAutoSubmitOnMainActor()
                 }
 
                 await MainActor.run {
+                    appState.dictationState = .idle
                     appState.partialTranscript = ""
                     appState.audioLevels = []
                 }
@@ -487,6 +469,23 @@ final class DictationOrchestrator {
         }
 
         maybeStartChunkSendIfNeeded()
+    }
+
+    @MainActor
+    private func insertTextOnMainActor(_ text: String) async {
+        await textInsertion.insertText(text)
+    }
+
+    @MainActor
+    private func triggerAutoSubmitOnMainActor() {
+        switch autoSubmitMode {
+        case .enter:
+            textInsertion.simulateReturn()
+        case .cmdEnter:
+            textInsertion.simulateCmdReturn()
+        case .off:
+            break
+        }
     }
 
     private func reset() {

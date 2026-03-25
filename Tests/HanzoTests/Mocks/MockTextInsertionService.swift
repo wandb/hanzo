@@ -5,9 +5,16 @@ final class MockTextInsertionService: TextInsertionProtocol {
     var copiedTexts: [String] = []
     var returnSimulated = false
     var cmdReturnSimulated = false
+    var insertionDelayNanoseconds: UInt64 = 0
+    var eventLog: [String] = []
 
-    func insertText(_ text: String) {
+    func insertText(_ text: String) async {
+        eventLog.append("insert:start")
         insertedTexts.append(text)
+        if insertionDelayNanoseconds > 0 {
+            try? await Task.sleep(nanoseconds: insertionDelayNanoseconds)
+        }
+        eventLog.append("insert:end")
     }
 
     func copyToClipboard(_ text: String) {
@@ -15,10 +22,12 @@ final class MockTextInsertionService: TextInsertionProtocol {
     }
 
     func simulateReturn() {
+        eventLog.append("submit:return")
         returnSimulated = true
     }
 
     func simulateCmdReturn() {
+        eventLog.append("submit:cmd-return")
         cmdReturnSimulated = true
     }
 }
