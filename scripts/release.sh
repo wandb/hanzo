@@ -356,7 +356,6 @@ create-dmg \
     --background "$DMG_BG_SOURCE" \
     --window-pos 200 120 \
     --window-size 660 400 \
-    --text-size 14 \
     --icon-size 128 \
     --icon "Hanzo.app" 180 170 \
     --hide-extension "Hanzo.app" \
