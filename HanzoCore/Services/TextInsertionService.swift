@@ -4,7 +4,7 @@ import CoreGraphics
 final class TextInsertionService: TextInsertionProtocol {
     private let logger = LoggingService.shared
 
-    func insertText(_ text: String) {
+    func insertText(_ text: String) async {
         guard !text.isEmpty else { return }
 
         let pasteboard = NSPasteboard.general
@@ -13,16 +13,15 @@ final class TextInsertionService: TextInsertionProtocol {
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
 
-        // Small delay to ensure pasteboard is ready
-        usleep(50_000) // 50ms
+        // Small delay to ensure pasteboard is ready.
+        try? await Task.sleep(nanoseconds: Constants.textInsertionPasteboardReadyDelayNanoseconds)
 
         simulatePaste()
 
-        // Restore clipboard after a delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [self] in
-            restorePasteboard(pasteboard, contents: savedContents)
-            logger.info("Clipboard restored after text insertion")
-        }
+        // Allow target apps time to consume Cmd+V before submit keystrokes.
+        try? await Task.sleep(nanoseconds: Constants.textInsertionSettleDelayNanoseconds)
+        restorePasteboard(pasteboard, contents: savedContents)
+        logger.info("Clipboard restored after text insertion")
 
         logger.info("Text inserted (\(text.count) chars)")
     }
