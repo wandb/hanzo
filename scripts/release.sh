@@ -104,6 +104,7 @@ require_cmd find
 require_cmd mktemp
 require_cmd ditto
 require_cmd hdiutil
+require_cmd create-dmg
 require_cmd lipo
 require_cmd file
 require_cmd /usr/libexec/PlistBuddy
@@ -111,6 +112,9 @@ require_cmd /usr/libexec/PlistBuddy
 [ -f "$INFO_PLIST" ] || die "Missing Info.plist at $INFO_PLIST"
 [ -f "$ENTITLEMENTS" ] || die "Missing entitlements at $ENTITLEMENTS"
 [ -f "$APP_ICON_SOURCE" ] || die "Missing app icon at $APP_ICON_SOURCE"
+
+DMG_BG_SOURCE="$ROOT_DIR/assets/dmg/background.png"
+[ -f "$DMG_BG_SOURCE" ] || die "Missing DMG background at $DMG_BG_SOURCE"
 
 if [ "$SIGN_ARTIFACTS" = true ]; then
     require_cmd codesign
@@ -344,7 +348,27 @@ ditto -c -k --sequesterRsrc --keepParent "$APP_ROOT" "$APP_ZIP_PATH"
 DMG_STAGE="$WORK_DIR/dmg"
 mkdir -p "$DMG_STAGE"
 cp -R "$APP_ROOT" "$DMG_STAGE/"
-hdiutil create -volname "Hanzo" -srcfolder "$DMG_STAGE" -ov -format UDZO "$DMG_PATH" >/dev/null
+
+# create-dmg returns exit code 2 when it works but "could not set icon position"
+# warnings are emitted; this is expected and the DMG is still valid.
+create-dmg \
+    --volname "Hanzo" \
+    --background "$DMG_BG_SOURCE" \
+    --window-pos 200 120 \
+    --window-size 660 400 \
+    --icon-size 128 \
+    --icon "Hanzo.app" 180 170 \
+    --hide-extension "Hanzo.app" \
+    --app-drop-link 480 170 \
+    --volicon "$APP_ICON_SOURCE" \
+    --no-internet-enable \
+    "$DMG_PATH" \
+    "$DMG_STAGE" \
+    || [ $? -eq 2 ]
+
+if [ ! -s "$DMG_PATH" ]; then
+    die "DMG was not created or is empty: $DMG_PATH"
+fi
 
 if [ "$SIGN_ARTIFACTS" = true ]; then
     codesign --force --sign "$SIGN_IDENTITY" --timestamp "$DMG_PATH"
