@@ -345,8 +345,12 @@ CHECKSUM_PATH="$OUTPUT_DIR/${ARTIFACT_BASENAME}.sha256"
 
 ditto -c -k --sequesterRsrc --keepParent "$APP_ROOT" "$APP_ZIP_PATH"
 
+DMG_STAGE="$WORK_DIR/dmg"
+mkdir -p "$DMG_STAGE"
+cp -R "$APP_ROOT" "$DMG_STAGE/"
+
 # create-dmg returns exit code 2 when it works but "could not set icon position"
-# warnings are emitted — this is expected and the DMG is still valid.
+# warnings are emitted; this is expected and the DMG is still valid.
 create-dmg \
     --volname "Hanzo" \
     --background "$DMG_BG_SOURCE" \
@@ -359,8 +363,12 @@ create-dmg \
     --volicon "$APP_ICON_SOURCE" \
     --no-internet-enable \
     "$DMG_PATH" \
-    "$APP_ROOT" \
+    "$DMG_STAGE" \
     || [ $? -eq 2 ]
+
+if [ ! -s "$DMG_PATH" ]; then
+    die "DMG was not created or is empty: $DMG_PATH"
+fi
 
 if [ "$SIGN_ARTIFACTS" = true ]; then
     codesign --force --sign "$SIGN_IDENTITY" --timestamp "$DMG_PATH"
