@@ -45,7 +45,7 @@ struct HotkeyConfirmationStep: View {
             }
 
             if demoCompleted {
-                Button("Done") {
+                Button("Continue") {
                     onDone()
                 }
                 .buttonStyle(HUDButtonStyle())
