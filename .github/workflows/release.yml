@@ -104,6 +104,9 @@ jobs:
             --key-id "$NOTARY_API_KEY_ID" \
             --issuer "$NOTARY_API_ISSUER_ID"
 
+      - name: Install create-dmg
+        run: brew install create-dmg
+
       - name: Build release artifacts
         env:
           VERSION: ${{ steps.meta.outputs.version }}
