@@ -26,10 +26,15 @@ Fast unsigned repeat build:
 ./scripts/release-unsigned.sh
 ```
 
-Signed + notarized (actual local workflow):
+Most local release validation on a machine with signing configured:
 
 ```sh
-./scripts/version.sh bump-build
+./scripts/release.sh --skip-notarize
+```
+
+Occasional local full notarization:
+
+```sh
 ./scripts/release.sh
 ```
 
@@ -46,14 +51,83 @@ Use `./scripts/version.sh` to track and bump versions in `Info.plist`:
 ./scripts/version.sh set --version 1.2.0 --build-number 1
 ```
 
-Typical local distribution loop:
+Typical local packaging loop when you want signed artifacts without notarization:
 
 ```sh
 ./scripts/version.sh bump-build
-./scripts/release-unsigned.sh
+./scripts/release.sh --skip-notarize
 ```
 
 For GitHub tag releases, keep tags aligned with `CFBundleShortVersionString` (e.g. tag `v1.2.0` when app version is `1.2.0`).
+
+## Recommended operating model
+
+- Use `./scripts/dev-run.sh` for normal app development.
+- Use `./scripts/release.sh --skip-notarize` for most local packaging/signing checks.
+- Use `./scripts/release.sh --unsigned` or `./scripts/release-unsigned.sh` on machines that do not have Developer ID signing configured.
+- Use `./scripts/release.sh` only when you need a full local notarization sanity check.
+- Treat the GitHub tag workflow as the canonical public release path. The DMG and ZIP published from GitHub Releases are the official shipped artifacts.
+
+## App Store Connect API key setup
+
+Hanzo's release automation is designed around an App Store Connect API key for notarization, not a personal Apple ID login. Use a Team API key so local notarization and GitHub Actions share the same auth model.
+
+### 1. Create the Team API key in App Store Connect
+
+As of March 30, 2026, the flow in App Store Connect is:
+
+1. Open `https://appstoreconnect.apple.com/`.
+2. Go to `Users and Access`.
+3. Open the `Integrations` tab.
+4. In `App Store Connect API`, request access if your team has never enabled it before.
+5. Open `Team Keys`.
+6. Click `Generate API Key`.
+7. Enter a name like `Hanzo Release CI`.
+8. Choose an access level that allows notarization for your team.
+9. Download the generated `AuthKey_<KEY_ID>.p8` file and store it securely.
+10. Copy the displayed `Key ID` and `Issuer ID`.
+
+Notes:
+
+- The `.p8` private key is only downloadable once.
+- You need an Account Holder, Admin, or equivalent App Store Connect permission that allows generating API keys.
+
+### 2. Configure the local notarytool profile with that API key
+
+From the repo root:
+
+```sh
+./scripts/configure-notarytool-profile.sh \
+  --profile hanzo-notary \
+  --key-id YOUR_KEY_ID \
+  --issuer YOUR_ISSUER_ID \
+  --key-file ~/Downloads/AuthKey_YOUR_KEY_ID.p8
+```
+
+That stores a validated `notarytool` keychain profile that `./scripts/release.sh` can reuse locally.
+
+If you want that profile to be the default for future shells:
+
+```sh
+export HANZO_NOTARY_PROFILE=hanzo-notary
+```
+
+### 3. Add the same API key to GitHub Actions
+
+The release workflow expects these repository secrets:
+
+- `NOTARY_API_KEY_ID`
+- `NOTARY_API_ISSUER_ID`
+- `NOTARY_API_PRIVATE_KEY_B64`
+
+Example commands:
+
+```sh
+gh secret set NOTARY_API_KEY_ID --body "YOUR_KEY_ID"
+gh secret set NOTARY_API_ISSUER_ID --body "YOUR_ISSUER_ID"
+base64 < ~/Downloads/AuthKey_YOUR_KEY_ID.p8 | tr -d '\n' | \
+  gh secret set NOTARY_API_PRIVATE_KEY_B64
+```
 
 ## GitHub Actions release workflow
 
