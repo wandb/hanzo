@@ -1,6 +1,7 @@
 import Foundation
 
 enum TranscriptRewritePrompt {
+    private static let resourceBundleName = "Hanzo_HanzoCore.bundle"
     private static let fallbackTemplate = """
     You are a real-time transcript rewriter. Return only polished transcript text with meaning and factual content preserved. Apply the user's instructions exactly. If a style or tone is specified, ensure the output clearly reflects it.
 
@@ -29,6 +30,7 @@ enum TranscriptRewritePrompt {
         "instructions",
         "target_app"
     ]
+    private final class BundleLocator {}
 
     static func defaultTemplate() -> String {
         loadTemplate("rewrite")
@@ -215,7 +217,8 @@ enum TranscriptRewritePrompt {
     // MARK: - Template Loading
 
     private static func loadTemplate(_ name: String) -> String {
-        guard let url = Bundle.module.url(forResource: name, withExtension: "txt") else {
+        guard let bundle = resourceBundle(),
+              let url = bundle.url(forResource: name, withExtension: "txt") else {
             NSLog("Hanzo: missing prompt template \(name).txt; using fallback.")
             return fallbackTemplate
         }
@@ -224,6 +227,61 @@ enum TranscriptRewritePrompt {
             return fallbackTemplate
         }
         return template
+    }
+
+    static func resourceBundle(
+        mainBundle: Bundle = .main,
+        containingBundle: Bundle = Bundle(for: BundleLocator.self),
+        fileManager: FileManager = .default
+    ) -> Bundle? {
+        let roots = resourceBundleCandidateRoots(mainBundle: mainBundle, containingBundle: containingBundle)
+
+        if let bundleURL = resolveResourceBundleURL(candidateRoots: roots, fileManager: fileManager) {
+            return Bundle(url: bundleURL)
+        }
+
+        return (Bundle.allBundles + Bundle.allFrameworks).first {
+            $0.bundleURL.lastPathComponent == resourceBundleName
+        }
+    }
+
+    static func resolveResourceBundleURL(
+        candidateRoots: [URL],
+        fileManager: FileManager = .default
+    ) -> URL? {
+        for root in candidateRoots {
+            let candidate = root.appendingPathComponent(resourceBundleName, isDirectory: true)
+            if fileManager.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+        }
+
+        return nil
+    }
+
+    private static func resourceBundleCandidateRoots(
+        mainBundle: Bundle,
+        containingBundle: Bundle
+    ) -> [URL] {
+        var roots: [URL] = []
+        var seen: Set<String> = []
+
+        func append(_ url: URL?) {
+            guard let url else { return }
+            let standardized = url.standardizedFileURL
+            if seen.insert(standardized.path).inserted {
+                roots.append(standardized)
+            }
+        }
+
+        append(mainBundle.resourceURL)
+        append(mainBundle.bundleURL)
+        append(mainBundle.bundleURL.deletingLastPathComponent())
+        append(containingBundle.resourceURL)
+        append(containingBundle.bundleURL)
+        append(containingBundle.bundleURL.deletingLastPathComponent())
+
+        return roots
     }
 
     // MARK: - Mustache-style Rendering
