@@ -2,31 +2,33 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
-    <key>CFBundleExecutable</key>
-    <string>Hanzo</string>
-    <key>CFBundleIconFile</key>
-    <string>Hanzo</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.hanzo.app</string>
-    <key>CFBundleName</key>
-    <string>Hanzo</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>15.0</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>Hanzo needs microphone access to capture your speech for transcription.</string>
-    <key>SUFeedURL</key>
-    <string>https://updates.hanzo.ai/appcast.xml</string>
-    <key>SUEnableAutomaticChecks</key>
-    <true/>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>Hanzo</string>
+	<key>CFBundleIconFile</key>
+	<string>Hanzo</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.hanzo.app</string>
+	<key>CFBundleName</key>
+	<string>Hanzo</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>2</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Hanzo needs microphone access to capture your speech for transcription.</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://wandb.github.io/hanzo/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>2TbqP0xW865U4h6MHdxfGxOwAOh35e+rasiB67y16Cw=</string>
 </dict>
 </plist>

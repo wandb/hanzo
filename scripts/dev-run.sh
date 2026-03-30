@@ -259,7 +259,7 @@ resource_bundle_count=0
 hanzo_bundle_name=""
 while IFS= read -r bundle_path; do
     bundle_name="$(basename "$bundle_path")"
-    rsync -a --delete "$bundle_path/" "$APP_ROOT/$bundle_name/"
+    rsync -a --delete "$bundle_path/" "$APP_DIR/Resources/$bundle_name/"
     resource_bundle_count=$((resource_bundle_count + 1))
     case "$bundle_name" in
         *_HanzoCore.bundle) hanzo_bundle_name="$bundle_name" ;;
@@ -268,7 +268,7 @@ done < <(find "$BIN_DIR" -maxdepth 1 -name "*.bundle" -type d | sort)
 
 [ "$resource_bundle_count" -gt 0 ] || die "No SwiftPM resource bundles found in $BIN_DIR"
 [ -n "$hanzo_bundle_name" ] || die "HanzoCore resource bundle was not copied"
-[ -f "$APP_ROOT/$hanzo_bundle_name/rewrite.txt" ] || die "rewrite.txt missing from $hanzo_bundle_name"
+[ -f "$APP_DIR/Resources/$hanzo_bundle_name/rewrite.txt" ] || die "rewrite.txt missing from $hanzo_bundle_name"
 
 echo "App bundle created at $APP_ROOT"
 if [ "$NO_LAUNCH" = true ]; then
