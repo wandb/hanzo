@@ -159,7 +159,9 @@ download_llama_runtime() {
     fi
 
     mkdir -p "$cache_root"
-    echo "Downloading llama.cpp runtime ($LLAMA_RELEASE_TAG)..."
+    # resolve_llama_runtime_dir captures this function's stdout as the final path,
+    # so progress messages must go to stderr.
+    echo "Downloading llama.cpp runtime ($LLAMA_RELEASE_TAG)..." >&2
     curl -L --fail -o "$archive_path" "$archive_url"
     echo "$LLAMA_RELEASE_SHA256  $archive_path" | shasum -a 256 -c - >/dev/null
 
