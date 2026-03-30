@@ -72,6 +72,8 @@ Signed Sparkle updates only work if the app release itself is signed and notariz
 - `NOTARY_API_ISSUER_ID`
 - `NOTARY_API_PRIVATE_KEY_B64`
 
+Hanzo uses the same App Store Connect API key model for both local notarization and GitHub Actions. Local setup is documented in `docs/RELEASING.md`.
+
 ## Release flow
 
 ### 1. Prepare the version
