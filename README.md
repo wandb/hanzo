@@ -58,6 +58,9 @@ Hanzo runs in the menu bar — there is no dock icon.
 - Typical unsigned local release loop:
   - `./scripts/version.sh bump-build`
   - `./scripts/release-unsigned.sh`
+- Signed + notarized local release:
+  - `./scripts/version.sh bump-build`
+  - `./scripts/release.sh`
 
 ## Configuration
 

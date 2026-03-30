@@ -279,6 +279,16 @@ mkdir -p "$APP_MACOS/llama-runtime"
 rsync -a --delete "$LLAMA_RUNTIME_DIR/" "$APP_MACOS/llama-runtime/"
 chmod +x "$APP_MACOS/llama-runtime/llama-server"
 
+# Keep non-code license/docs out of Contents/MacOS; strict code signing rejects
+# plain files there. Preserve them under Resources for attribution.
+mkdir -p "$APP_RESOURCES/ThirdPartyLicenses"
+for doc_name in LICENSE LICENSE.txt COPYING NOTICE README README.md; do
+    if [ -f "$APP_MACOS/llama-runtime/$doc_name" ]; then
+        mv "$APP_MACOS/llama-runtime/$doc_name" \
+            "$APP_RESOURCES/ThirdPartyLicenses/llama-runtime-$doc_name"
+    fi
+done
+
 LLAMA_ARCHS="$(lipo -archs "$APP_MACOS/llama-runtime/llama-server" 2>/dev/null || true)"
 echo "$LLAMA_ARCHS" | grep -q "arm64" || die "llama-server is not arm64: $LLAMA_ARCHS"
 
@@ -286,7 +296,8 @@ resource_bundle_count=0
 hanzo_bundle_name=""
 while IFS= read -r bundle_path; do
     bundle_name="$(basename "$bundle_path")"
-    rsync -a --delete "$bundle_path/" "$APP_ROOT/$bundle_name/"
+    # Resource bundles must live under Contents/Resources for code signing.
+    rsync -a --delete "$bundle_path/" "$APP_RESOURCES/$bundle_name/"
     resource_bundle_count=$((resource_bundle_count + 1))
     case "$bundle_name" in
         *_HanzoCore.bundle) hanzo_bundle_name="$bundle_name" ;;
@@ -295,7 +306,7 @@ done < <(find "$BIN_DIR" -maxdepth 1 -name "*.bundle" -type d | sort)
 
 [ "$resource_bundle_count" -gt 0 ] || die "No SwiftPM resource bundles found in $BIN_DIR"
 [ -n "$hanzo_bundle_name" ] || die "HanzoCore resource bundle was not copied"
-[ -f "$APP_ROOT/$hanzo_bundle_name/rewrite.txt" ] || die "rewrite.txt missing from $hanzo_bundle_name"
+[ -f "$APP_RESOURCES/$hanzo_bundle_name/rewrite.txt" ] || die "rewrite.txt missing from $hanzo_bundle_name"
 
 sign_macho_tree() {
     local tree_root="$1"
@@ -306,9 +317,28 @@ sign_macho_tree() {
     done < <(find "$tree_root" -type f -print0)
 }
 
+sign_nested_bundles() {
+    local root_bundle="$1"
+    while IFS= read -r nested_bundle; do
+        [ "$nested_bundle" = "$root_bundle" ] && continue
+        codesign --force --sign "$SIGN_IDENTITY" --timestamp --options runtime "$nested_bundle"
+    done < <(
+        find "$root_bundle" -type d \( -name "*.app" -o -name "*.xpc" -o -name "*.framework" \) \
+            | awk '{ print length, $0 }' \
+            | sort -rn \
+            | cut -d' ' -f2-
+    )
+}
+
 sign_swiftpm_dynamic_artifacts() {
     while IFS= read -r artifact_path; do
-        codesign --force --sign "$SIGN_IDENTITY" --timestamp --options runtime "$artifact_path"
+        if [ -d "$artifact_path" ] && [[ "$artifact_path" == *.framework ]]; then
+            sign_macho_tree "$artifact_path"
+            sign_nested_bundles "$artifact_path"
+            codesign --force --sign "$SIGN_IDENTITY" --timestamp --options runtime "$artifact_path"
+        else
+            codesign --force --sign "$SIGN_IDENTITY" --timestamp --options runtime "$artifact_path"
+        fi
     done < <(find "$APP_MACOS" -maxdepth 1 \( -name "*.framework" -type d -o -name "*.dylib" -type f \) | sort)
 }
 
@@ -342,6 +372,9 @@ mkdir -p "$OUTPUT_DIR"
 APP_ZIP_PATH="$OUTPUT_DIR/${ARTIFACT_BASENAME}.zip"
 DMG_PATH="$OUTPUT_DIR/${ARTIFACT_BASENAME}.dmg"
 CHECKSUM_PATH="$OUTPUT_DIR/${ARTIFACT_BASENAME}.sha256"
+
+# Overwrite existing release artifacts for the same version/build.
+rm -f "$APP_ZIP_PATH" "$DMG_PATH" "$CHECKSUM_PATH"
 
 ditto -c -k --sequesterRsrc --keepParent "$APP_ROOT" "$APP_ZIP_PATH"
 

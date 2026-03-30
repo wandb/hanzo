@@ -25,7 +25,9 @@
     <key>NSMicrophoneUsageDescription</key>
     <string>Hanzo needs microphone access to capture your speech for transcription.</string>
     <key>SUFeedURL</key>
-    <string>https://updates.hanzo.ai/appcast.xml</string>
+    <string>https://wandb.github.io/hanzo/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>2TbqP0xW865U4h6MHdxfGxOwAOh35e+rasiB67y16Cw=</string>
     <key>SUEnableAutomaticChecks</key>
     <true/>
 </dict>

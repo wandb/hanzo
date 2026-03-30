@@ -21,10 +21,12 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
+    permissions:
+      contents: write
     runs-on: macos-15
     steps:
       - name: Checkout
@@ -38,9 +40,17 @@ jobs:
             build_number="${{ inputs.build_number }}"
             unsigned="${{ inputs.unsigned }}"
           else
-            version="${GITHUB_REF_NAME#v}"
-            build_number="${GITHUB_RUN_NUMBER}"
+            tag_version="${GITHUB_REF_NAME#v}"
+            plist_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' HanzoCore/Info.plist)"
+            build_number="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' HanzoCore/Info.plist)"
             unsigned="false"
+
+            if [ "$tag_version" != "$plist_version" ]; then
+              echo "::error::Tag version $tag_version does not match HanzoCore/Info.plist version $plist_version"
+              exit 1
+            fi
+
+            version="$plist_version"
           fi
 
           if [ -z "$version" ]; then
@@ -143,3 +153,44 @@ jobs:
             dist/*.zip
             dist/*.sha256
           generate_release_notes: true
+
+      - name: Configure GitHub Pages
+        if: startsWith(github.ref, 'refs/tags/') && steps.meta.outputs.unsigned != 'true'
+        uses: actions/configure-pages@v5
+
+      - name: Build Sparkle appcast site
+        if: startsWith(github.ref, 'refs/tags/') && steps.meta.outputs.unsigned != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SPARKLE_PRIVATE_ED_KEY: ${{ secrets.SPARKLE_PRIVATE_ED_KEY }}
+        run: |
+          if [ -z "$SPARKLE_PRIVATE_ED_KEY" ]; then
+            echo "::error::Missing required secret for Sparkle appcast signing: SPARKLE_PRIVATE_ED_KEY"
+            exit 1
+          fi
+
+          ./scripts/build-sparkle-appcast-site.sh \
+            --repo "${GITHUB_REPOSITORY}" \
+            --site-url "https://wandb.github.io/hanzo" \
+            --output-dir dist/sparkle-site
+
+      - name: Upload GitHub Pages artifact
+        if: startsWith(github.ref, 'refs/tags/') && steps.meta.outputs.unsigned != 'true'
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist/sparkle-site
+
+  deploy_pages:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: release
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

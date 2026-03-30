@@ -26,14 +26,11 @@ Fast unsigned repeat build:
 ./scripts/release-unsigned.sh
 ```
 
-Signed + notarized:
+Signed + notarized (actual local workflow):
 
 ```sh
-./scripts/release.sh \
-  --version 1.0.0 \
-  --build-number 1 \
-  --sign-identity "Developer ID Application: Your Name (TEAMID)" \
-  --notary-profile hanzo-notary
+./scripts/version.sh bump-build
+./scripts/release.sh
 ```
 
 ## Versioning workflow
@@ -64,6 +61,7 @@ Workflow file: `.github/workflows/release.yml`
 
 - `workflow_dispatch` supports unsigned test builds.
 - Tag pushes (`v*`) build signed/notarized artifacts and publish a GitHub Release.
+- Tag pushes read `CFBundleShortVersionString` and `CFBundleVersion` from `HanzoCore/Info.plist`; the tag must match the plist version.
 
 Required repository secrets for signed releases:
 
@@ -79,14 +77,15 @@ Required repository secrets for signed releases:
 
 The app includes Sparkle and will show `Check for Updates...` only after `SUPublicEDKey` is configured.
 
-Remaining production setup:
+Hanzo is configured to look for its appcast at:
 
-1. Choose and host an appcast URL (recommended: `https://updates.hanzo.ai/appcast.xml`).
-2. Generate Sparkle EdDSA keys (`generate_keys`) and add `SUPublicEDKey` to `HanzoCore/Info.plist`.
-3. Generate/update `appcast.xml` from each signed release (Sparkle `generate_appcast`).
-4. Host `appcast.xml` plus release artifacts over HTTPS.
+`https://wandb.github.io/hanzo/appcast.xml`
 
-Best practice for hosting:
+GitHub-backed Sparkle rollout is documented in `docs/SPARKLE_SETUP.md`.
 
-- Keep binaries in GitHub Releases initially.
-- Host `appcast.xml` on a stable custom domain (`updates.hanzo.ai`) so update URLs remain stable if hosting changes later.
+In short:
+
+1. Generate Sparkle EdDSA keys (`generate_keys`) and add `SUPublicEDKey` to `HanzoCore/Info.plist`.
+2. Export the private EdDSA key and store it as the GitHub Actions secret `SPARKLE_PRIVATE_ED_KEY`.
+3. Enable GitHub Pages for this repo with `GitHub Actions` as the publishing source.
+4. Push a signed tag release (`v*`); the release workflow publishes artifacts to GitHub Releases, builds `appcast.xml`, and deploys the Sparkle feed to GitHub Pages.
