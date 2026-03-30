@@ -96,6 +96,40 @@ require_cmd gh
 require_cmd jq
 [ -x "$GENERATE_APPCAST" ] || die "Missing generate_appcast at $GENERATE_APPCAST"
 
+normalize_output_dir() {
+    local path="$1"
+    local parent
+    local basename
+
+    [ -n "$path" ] || die "--output-dir must not be empty"
+    if [[ "$path" != /* ]]; then
+        path="$ROOT_DIR/$path"
+    fi
+    path="${path%/}"
+    parent="$(dirname "$path")"
+    basename="$(basename "$path")"
+
+    [ -d "$parent" ] || die "--output-dir parent directory does not exist: $parent"
+    printf '%s/%s\n' "$(cd "$parent" && pwd -P)" "$basename"
+}
+
+validate_output_dir() {
+    local path="$1"
+    local dist_root="$ROOT_DIR/dist"
+
+    [ -n "$path" ] || die "--output-dir must not be empty"
+    [ "$path" != "/" ] || die "--output-dir must not be /"
+    [ "$path" != "$HOME" ] || die "--output-dir must not be \$HOME"
+    [ "$path" != "$dist_root" ] || die "--output-dir must be a subdirectory of $dist_root"
+
+    case "$path" in
+        "$dist_root"/*) ;;
+        *)
+            die "--output-dir must be inside $dist_root"
+            ;;
+    esac
+}
+
 derive_repo_from_remote() {
     local remote_url
     remote_url="$(git -C "$ROOT_DIR" config --get remote.origin.url || true)"
@@ -136,7 +170,14 @@ derive_site_url() {
     fi
 }
 
+mkdir -p "$ROOT_DIR/dist"
+OUTPUT_DIR="$(normalize_output_dir "$OUTPUT_DIR")"
+validate_output_dir "$OUTPUT_DIR"
+
 if [ -z "$REPO" ]; then
+    require_cmd git
+    git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+        || die "Could not derive --repo outside a git checkout"
     REPO="$(derive_repo_from_remote)"
 fi
 
@@ -170,7 +211,11 @@ gh api \
     --slurp \
     "repos/$REPO/releases?per_page=100" > "$RELEASES_JSON"
 
-mapfile -t RELEASE_ROWS < <(
+RELEASE_ROWS=()
+while IFS= read -r release_row; do
+    [ -n "$release_row" ] || continue
+    RELEASE_ROWS+=("$release_row")
+done < <(
     jq -r --argjson limit "$RELEASE_LIMIT" '
         [.[]
          | .[]

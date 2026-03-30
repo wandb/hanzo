@@ -296,7 +296,11 @@ resource_bundle_count=0
 hanzo_bundle_name=""
 while IFS= read -r bundle_path; do
     bundle_name="$(basename "$bundle_path")"
-    # Resource bundles must live under Contents/Resources for code signing.
+    # SwiftPM's generated Bundle.module accessor looks for bundles at
+    # Bundle.main.bundleURL/<bundle-name>, which is the app root for macOS apps.
+    # Keep a root copy for runtime lookup and mirror into Resources so the
+    # packaged layout stays close to the conventional app bundle structure.
+    rsync -a --delete "$bundle_path/" "$APP_ROOT/$bundle_name/"
     rsync -a --delete "$bundle_path/" "$APP_RESOURCES/$bundle_name/"
     resource_bundle_count=$((resource_bundle_count + 1))
     case "$bundle_name" in
@@ -306,7 +310,7 @@ done < <(find "$BIN_DIR" -maxdepth 1 -name "*.bundle" -type d | sort)
 
 [ "$resource_bundle_count" -gt 0 ] || die "No SwiftPM resource bundles found in $BIN_DIR"
 [ -n "$hanzo_bundle_name" ] || die "HanzoCore resource bundle was not copied"
-[ -f "$APP_RESOURCES/$hanzo_bundle_name/rewrite.txt" ] || die "rewrite.txt missing from $hanzo_bundle_name"
+[ -f "$APP_ROOT/$hanzo_bundle_name/rewrite.txt" ] || die "rewrite.txt missing from $hanzo_bundle_name"
 
 sign_macho_tree() {
     local tree_root="$1"
@@ -319,15 +323,10 @@ sign_macho_tree() {
 
 sign_nested_bundles() {
     local root_bundle="$1"
-    while IFS= read -r nested_bundle; do
-        [ "$nested_bundle" = "$root_bundle" ] && continue
+    while IFS= read -r -d '' nested_bundle; do
         codesign --force --sign "$SIGN_IDENTITY" --timestamp --options runtime "$nested_bundle"
-    done < <(
-        find "$root_bundle" -type d \( -name "*.app" -o -name "*.xpc" -o -name "*.framework" \) \
-            | awk '{ print length, $0 }' \
-            | sort -rn \
-            | cut -d' ' -f2-
-    )
+    done < <(find "$root_bundle" -mindepth 1 -depth -type d \
+        \( -name "*.app" -o -name "*.xpc" -o -name "*.framework" \) -print0)
 }
 
 sign_swiftpm_dynamic_artifacts() {

@@ -1,6 +1,6 @@
 # Sparkle Setup on GitHub
 
-This repo already has the Sparkle framework wired into the app and the release workflow already produces signed/notarized ZIP and DMG artifacts. The remaining work is to add your Sparkle signing key, publish an appcast, and host that appcast on GitHub Pages.
+This repo already has the Sparkle framework wired into the app and the release workflow already produces signed/notarized ZIP and DMG artifacts. For `wandb/hanzo`, the production `SUPublicEDKey` is already committed in `HanzoCore/Info.plist`. The remaining work is to keep the private key in GitHub Actions, publish an appcast, and host that appcast on GitHub Pages.
 
 ## URLs used by Hanzo
 
@@ -9,9 +9,13 @@ This repo already has the Sparkle framework wired into the app and the release w
 
 If the repo owner or repo name changes, update `SUFeedURL` in `HanzoCore/Info.plist`.
 
+If you are shipping a fork or a different app identity, generate your own Sparkle keypair and replace the checked-in `SUPublicEDKey`. Do not reuse the Hanzo production key for another app.
+
 ## One-time setup
 
 ### 1. Generate the Sparkle EdDSA keypair
+
+This has already been done for `wandb/hanzo`. Only repeat this if you are rotating Hanzo's update key or setting up a fork with its own feed.
 
 Run this from the repo root:
 

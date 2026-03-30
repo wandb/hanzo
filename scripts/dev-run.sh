@@ -260,6 +260,7 @@ hanzo_bundle_name=""
 while IFS= read -r bundle_path; do
     bundle_name="$(basename "$bundle_path")"
     rsync -a --delete "$bundle_path/" "$APP_ROOT/$bundle_name/"
+    rsync -a --delete "$bundle_path/" "$APP_DIR/Resources/$bundle_name/"
     resource_bundle_count=$((resource_bundle_count + 1))
     case "$bundle_name" in
         *_HanzoCore.bundle) hanzo_bundle_name="$bundle_name" ;;
