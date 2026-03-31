@@ -344,9 +344,10 @@ final class DictationOrchestrator {
                             .map { now.timeIntervalSince($0) } ?? .greatestFiniteMagnitude
                         let allowAggressiveRecovery = transcriptStaleness
                             >= Constants.partialTranscriptAggressiveRecoveryAfterSeconds
+                        let sanitizedIncoming = ASRArtifactFilter.sanitize(trailingResponse.text)
                         let mergedPartial = PartialTranscriptMerger.merge(
                             previous: previousPartial,
-                            incoming: trailingResponse.text,
+                            incoming: sanitizedIncoming,
                             allowAggressiveRecovery: allowAggressiveRecovery
                         )
                         guard mergedPartial != previousPartial else { return }
@@ -378,11 +379,11 @@ final class DictationOrchestrator {
 
                 let targetApp = previousApp
                 let targetAppName = resolvedTargetAppDisplayName(for: targetApp)
-                let rawFinalText = finalResponse.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                let finalText = await postProcessFinalTranscript(
+                let rawFinalText = ASRArtifactFilter.sanitize(finalResponse.text)
+                let finalText = ASRArtifactFilter.sanitize(await postProcessFinalTranscript(
                     rawFinalText,
                     targetAppName: targetAppName
-                )
+                ))
                 sessionId = nil
                 previousApp = nil
                 activeSessionTargetBundleIdentifier = nil
@@ -556,9 +557,10 @@ final class DictationOrchestrator {
                     .map { now.timeIntervalSince($0) } ?? .greatestFiniteMagnitude
                 let allowAggressiveRecovery = transcriptStaleness
                     >= Constants.partialTranscriptAggressiveRecoveryAfterSeconds
+                let sanitizedIncoming = ASRArtifactFilter.sanitize(response.text)
                 let mergedPartial = PartialTranscriptMerger.merge(
                     previous: previousPartial,
-                    incoming: response.text,
+                    incoming: sanitizedIncoming,
                     allowAggressiveRecovery: allowAggressiveRecovery
                 )
                 guard mergedPartial != previousPartial else { return }
@@ -679,6 +681,16 @@ final class DictationOrchestrator {
             ) {
             case .success(let rewritten):
                 let duration = Date().timeIntervalSince(start)
+                if shouldDiscardRewrittenTranscript(
+                    rewritten,
+                    rawTranscript: rawFinalText,
+                    instructions: llmPostProcessingPrompt
+                ) {
+                    logger.warn(
+                        "Discarding local LLM post-processing output that appears to echo rewrite instructions"
+                    )
+                    return rawFinalText
+                }
                 let changed = rewritten != rawFinalText
                 logger.info(
                     "Local LLM post-processing finished in \(String(format: "%.2f", duration))s (changed: \(changed))"
@@ -754,6 +766,54 @@ final class DictationOrchestrator {
         }
 
         return nil
+    }
+
+    private func shouldDiscardRewrittenTranscript(
+        _ rewritten: String,
+        rawTranscript: String,
+        instructions: String
+    ) -> Bool {
+        let normalizedInstructions = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedInstructions.isEmpty else { return false }
+
+        let rewrittenTokens = normalizedTokenSet(from: rewritten)
+        let instructionTokens = normalizedTokenSet(from: normalizedInstructions)
+        let rawTokens = normalizedTokenSet(from: rawTranscript)
+
+        guard rewrittenTokens.count >= 6, instructionTokens.count >= 6 else {
+            return false
+        }
+
+        let instructionOverlap = tokenOverlapRatio(source: rewrittenTokens, reference: instructionTokens)
+        let rawOverlap = tokenOverlapRatio(source: rewrittenTokens, reference: rawTokens)
+        let hasMetaRewriteLanguage = rewritten.range(
+            of: #"\b(rewrite|transcript|instruction|prompt)\b"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
+
+        return hasMetaRewriteLanguage && instructionOverlap >= 0.45 && rawOverlap < 0.35
+    }
+
+    private func normalizedTokenSet(from text: String) -> Set<String> {
+        let normalized = text
+            .lowercased()
+            .replacingOccurrences(
+                of: #"[^a-z0-9@/#]+"#,
+                with: " ",
+                options: .regularExpression
+            )
+
+        return Set(
+            normalized
+                .split(whereSeparator: \.isWhitespace)
+                .map(String.init)
+        )
+    }
+
+    private func tokenOverlapRatio(source: Set<String>, reference: Set<String>) -> Double {
+        guard !source.isEmpty, !reference.isEmpty else { return 0 }
+        let overlapCount = source.intersection(reference).count
+        return Double(overlapCount) / Double(source.count)
     }
 
     // MARK: - Silence Detection

@@ -439,6 +439,21 @@ struct DictationOrchestratorTests {
         #expect(sut.appState.partialTranscript == "hello world")
     }
 
+    @Test("Chunk response drops bracketed non-speech tags from partialTranscript")
+    @MainActor func chunkResponseDropsBracketedNonSpeechTags() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(ASRChunkResponse(text: "[ Silence ]", language: "en"))
+        )
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let largeChunk = Data(repeating: 0x01, count: Constants.chunkAccumulationBytes + 1)
+        sut.mockAudio.simulateChunk(largeChunk)
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        #expect(sut.appState.partialTranscript == "")
+    }
+
     @Test("Stopping merges trailing buffered chunk response into partialTranscript")
     @MainActor func stopMergesTrailingBufferedChunkIntoTranscript() async throws {
         let sut = makeSUT(
@@ -566,6 +581,48 @@ struct DictationOrchestratorTests {
         #expect(sut.mockText.insertedTexts.first == "Um this is still untouched.")
     }
 
+    @Test("Final transcript strips bracketed non-speech tags before insertion")
+    @MainActor func finalTranscriptStripsBracketedNonSpeechTags() async throws {
+        let sut = makeSUT(
+            asrFinishResult: .success(
+                ASRFinishResponse(text: "hello [SOUND] world", language: "en")
+            ),
+            postProcessingMode: .off,
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let inserted = await waitUntil(timeoutNanoseconds: 4_000_000_000) {
+            sut.mockText.insertedTexts.count == 1
+        }
+        #expect(inserted)
+        #expect(sut.mockText.insertedTexts.first == "hello world")
+    }
+
+    @Test("Final transcript that is only a non-speech tag is not inserted")
+    @MainActor func finalTranscriptOnlyNonSpeechTagNotInserted() async throws {
+        let sut = makeSUT(
+            asrFinishResult: .success(
+                ASRFinishResponse(text: "[BLANK_AUDIO]", language: "en")
+            ),
+            postProcessingMode: .off,
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let isIdle = await waitUntil(timeoutNanoseconds: 4_000_000_000) {
+            sut.appState.dictationState == .idle
+        }
+        #expect(isIdle)
+        #expect(sut.mockText.insertedTexts.isEmpty)
+    }
+
     @Test("Final transcript uses LLM post-processing output when mode is LLM")
     @MainActor func finalTranscriptUsesLLMOutputWhenModeEnabled() async throws {
         let mockLLM = MockLocalLLMRuntimeManager()
@@ -661,6 +718,36 @@ struct DictationOrchestratorTests {
         sut.orchestrator.toggle()
 
         let inserted = await waitUntil(timeoutNanoseconds: 8_000_000_000) {
+            sut.mockText.insertedTexts.count == 1
+        }
+        #expect(inserted)
+        #expect(sut.mockText.insertedTexts.first == rawTranscript)
+    }
+
+    @Test("LLM mode falls back to raw transcript when rewrite output echoes instructions")
+    @MainActor func llmModeFallsBackWhenRewriteOutputEchoesInstructions() async throws {
+        let mockLLM = MockLocalLLMRuntimeManager()
+        let rawTranscript = "please review the failing test and suggest a fix"
+        let prompt = "Polish into a concise request for an AI coding agent. Preserve existing @mentions and /commands. Convert clear spoken forms like \"at <name>\" and \"slash <command>\" when intent is explicit."
+        mockLLM.postProcessResult = .success(
+            "@user, can you please rewrite the following transcript into a concise request for an AI coding agent? Make sure to preserve any existing @mentions and /commands. Convert clear spoken forms like \"at <name>\" and \"slash <command>\" when the intent is explicit."
+        )
+
+        let sut = makeSUT(
+            asrFinishResult: .success(
+                ASRFinishResponse(text: rawTranscript, language: "en")
+            ),
+            localLLMRuntimeManager: mockLLM,
+            postProcessingMode: .llm,
+            llmPostProcessingPrompt: prompt,
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let inserted = await waitUntil(timeoutNanoseconds: 4_000_000_000) {
             sut.mockText.insertedTexts.count == 1
         }
         #expect(inserted)

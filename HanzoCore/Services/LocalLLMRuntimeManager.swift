@@ -664,7 +664,7 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
                 ChatMessage(role: "system", content: prompt.system),
                 ChatMessage(role: "user", content: userMessage)
             ],
-            temperature: 0.2,
+            temperature: 0.0,
             maxTokens: maxTokens,
             stream: false
         )
