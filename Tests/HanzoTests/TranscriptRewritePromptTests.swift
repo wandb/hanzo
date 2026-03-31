@@ -31,6 +31,43 @@ struct TranscriptRewritePromptTests {
         #expect(template.contains("Do not add @mentions, /commands, or #channels if intent is unclear."))
     }
 
+    @Test("resource bundle resolver finds packaged app resources")
+    func resourceBundleResolverFindsPackagedAppResources() throws {
+        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("TranscriptRewritePromptTests.\(UUID().uuidString)", isDirectory: true)
+        let resourceRoot = tempRoot
+            .appendingPathComponent("Hanzo.app", isDirectory: true)
+            .appendingPathComponent("Contents", isDirectory: true)
+            .appendingPathComponent("Resources", isDirectory: true)
+        let bundleURL = resourceRoot.appendingPathComponent("Hanzo_HanzoCore.bundle", isDirectory: true)
+
+        try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let resolved = TranscriptRewritePrompt.resolveResourceBundleURL(candidateRoots: [resourceRoot])
+
+        #expect(resolved?.standardizedFileURL == bundleURL.standardizedFileURL)
+    }
+
+    @Test("resource bundle resolver finds SwiftPM sibling bundle")
+    func resourceBundleResolverFindsSwiftPMSiblingBundle() throws {
+        let tempRoot = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("TranscriptRewritePromptTests.\(UUID().uuidString)", isDirectory: true)
+        let debugRoot = tempRoot.appendingPathComponent("debug", isDirectory: true)
+        let xctestRoot = debugRoot.appendingPathComponent("HanzoPackageTests.xctest", isDirectory: true)
+        let bundleURL = debugRoot.appendingPathComponent("Hanzo_HanzoCore.bundle", isDirectory: true)
+
+        try FileManager.default.createDirectory(at: xctestRoot, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempRoot) }
+
+        let resolved = TranscriptRewritePrompt.resolveResourceBundleURL(
+            candidateRoots: [xctestRoot, xctestRoot.deletingLastPathComponent()]
+        )
+
+        #expect(resolved?.standardizedFileURL == bundleURL.standardizedFileURL)
+    }
+
     @Test("validation fails when transcript placeholder is missing")
     func validationFailsWhenTranscriptPlaceholderMissing() {
         let template = """
