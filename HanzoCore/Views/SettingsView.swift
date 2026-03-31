@@ -36,6 +36,7 @@ struct SettingsView: View {
     @State private var globalSilenceTimeout: Double = AppBehaviorSettings.globalSilenceTimeout()
     @State private var transcriptPostProcessingMode: TranscriptPostProcessingMode = AppBehaviorSettings.globalPostProcessingMode()
     @State private var llmPostProcessingPrompt: String = AppBehaviorSettings.globalLLMPostProcessingPrompt()
+    @State private var globalCommonTerms: String = AppBehaviorSettings.globalCommonTerms()
     @State private var rewritePromptTemplate: String = TranscriptRewritePrompt.activeTemplate()
     @State private var rewritePromptTemplateValidationError: String? = TranscriptRewritePrompt.validateTemplate(
         TranscriptRewritePrompt.activeTemplate()
@@ -56,6 +57,8 @@ struct SettingsView: View {
     private let menuInputWidth: CGFloat = 180
     private let postProcessingHelpText = "Automatically edits transcribed text for clarity and formatting using your local model. App-specific instructions override global defaults."
     private let instructionsHelpText = "Global auto edit instructions inserted into the template as {{instructions}}. Used only when an app has no app-specific instruction source."
+    private let commonTermsHelpText = "Preferred vocabulary for rewrite. One term per line. Injected only when your template includes {{common_terms}}."
+    private let appCommonTermsHelpText = "Per-app terms are merged after global terms. One term per line."
     private let rewriteTemplateHelpText = "Template used to build the auto edit request for the local model."
     private let localLLMContextHelpText = "Maximum context window for local auto edit inference. If the app is using too much memory, try lowering this setting."
     private let silenceTimeoutHelpText = "Stop recording after this much silence. Off disables it."
@@ -473,10 +476,17 @@ struct SettingsView: View {
                             scheduleRewriteTemplateValidation()
                         }
 
-                    Text("Placeholders: {{transcript}}, {{instructions}}, {{target_app}}, {{#instructions}}...{{/instructions}}, {{#target_app}}...{{/target_app}}")
+                    Text("Placeholders: {{transcript}}, {{instructions}}, {{target_app}}, {{common_terms}}, {{#instructions}}...{{/instructions}}, {{#target_app}}...{{/target_app}}, {{#common_terms}}...{{/common_terms}}")
                         .font(.system(.caption, design: .rounded))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if shouldShowCommonTermsTemplateWarning {
+                        Text("This custom template does not include {{common_terms}}, so Common terms will be ignored.")
+                            .font(.system(.caption, design: .rounded))
+                            .foregroundStyle(.orange)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
 
                     if let rewritePromptTemplateValidationError {
                         Text(rewritePromptTemplateValidationError)
@@ -515,6 +525,23 @@ struct SettingsView: View {
                 }
                 .onChange(of: llmPostProcessingPrompt) {
                     AppBehaviorSettings.setGlobalLLMPostProcessingPrompt(llmPostProcessingPrompt)
+                    onSave?()
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    settingLabel("Common terms", helpText: commonTermsHelpText)
+                    TextEditor(text: $globalCommonTerms)
+                        .font(.system(.body, design: .rounded))
+                        .scrollContentBackground(.hidden)
+                        .frame(height: 100)
+                        .padding(8)
+                        .background(.primary.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .frame(maxWidth: .infinity)
+                        .accessibilityLabel("Common terms")
+                }
+                .onChange(of: globalCommonTerms) {
+                    AppBehaviorSettings.setGlobalCommonTerms(globalCommonTerms)
                     onSave?()
                 }
             }
@@ -621,6 +648,19 @@ struct SettingsView: View {
                         }
                     }
                 }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    settingLabel("Common terms", helpText: appCommonTermsHelpText)
+                    TextEditor(text: appCommonTermsBinding(for: app))
+                        .font(.system(.body, design: .rounded))
+                        .scrollContentBackground(.hidden)
+                        .frame(height: 100)
+                        .padding(8)
+                        .background(.primary.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .frame(maxWidth: .infinity)
+                        .accessibilityLabel("Common terms for \(app.displayName)")
+                }
             }
 
             if !app.isBuiltIn {
@@ -706,6 +746,20 @@ struct SettingsView: View {
         }
     }
 
+    private func appCommonTermsBinding(for app: SupportedAppBehavior) -> Binding<String> {
+        Binding {
+            appBehaviorOverrides[app.bundleIdentifier]?.commonTerms ?? ""
+        } set: { newValue in
+            var appOverride = appBehaviorOverrides[app.bundleIdentifier] ?? AppBehaviorOverride()
+            if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                appOverride.commonTerms = nil
+            } else {
+                appOverride.commonTerms = newValue
+            }
+            persistOverride(appOverride, for: app.bundleIdentifier)
+        }
+    }
+
     private func resolvedLLMPrompt(for app: SupportedAppBehavior) -> String {
         if let appPrompt = appBehaviorOverrides[app.bundleIdentifier]?.llmPostProcessingPrompt {
             return appPrompt
@@ -743,6 +797,19 @@ struct SettingsView: View {
         } set: { isEnabled in
             transcriptPostProcessingMode = isEnabled ? .llm : .off
         }
+    }
+
+    private var shouldShowCommonTermsTemplateWarning: Bool {
+        let normalizedCurrentTemplate = rewritePromptTemplate.replacingOccurrences(of: "\r\n", with: "\n")
+        let normalizedDefaultTemplate = TranscriptRewritePrompt.defaultTemplate().replacingOccurrences(
+            of: "\r\n",
+            with: "\n"
+        )
+        let isCustomTemplate = normalizedCurrentTemplate != normalizedDefaultTemplate
+            || TranscriptRewritePrompt.customTemplate() != nil
+
+        guard isCustomTemplate else { return false }
+        return !TranscriptRewritePrompt.templateIncludesCommonTermsPlaceholder(rewritePromptTemplate)
     }
 
     private func scheduleRewriteTemplateValidation() {

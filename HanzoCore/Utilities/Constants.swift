@@ -91,6 +91,7 @@ enum Constants {
     static let transcriptPostProcessingModeKey = "transcriptPostProcessingMode"
     static let defaultTranscriptPostProcessingMode: TranscriptPostProcessingMode = .llm
     static let llmPostProcessingPromptKey = "llmPostProcessingPrompt"
+    static let commonTermsKey = "commonTerms"
     static let rewritePromptTemplateKey = "rewritePromptTemplate"
     static let defaultLLMPostProcessingPrompt = ""
 

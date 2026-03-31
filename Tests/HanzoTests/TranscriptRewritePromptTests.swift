@@ -29,6 +29,8 @@ struct TranscriptRewritePromptTests {
         #expect(template.contains("Preserve tokens starting with @, /, or #."))
         #expect(template.contains("follow app-specific patterns for mentions, commands, and channels"))
         #expect(template.contains("Do not add @mentions, /commands, or #channels if intent is unclear."))
+        #expect(template.contains("{{#common_terms}}"))
+        #expect(template.contains("{{common_terms}}"))
     }
 
     @Test("resource bundle resolver finds packaged app resources")
@@ -93,6 +95,21 @@ struct TranscriptRewritePromptTests {
         #expect(validationError == "Unsupported placeholder '{{foo}}'.")
     }
 
+    @Test("validation supports common_terms placeholder and section")
+    func validationSupportsCommonTermsPlaceholderAndSection() {
+        let template = """
+        System instructions.
+
+        {{#common_terms}}Preferred terms:
+        {{common_terms}}
+        {{/common_terms}}
+        Transcript: {{transcript}}
+        """
+
+        let validationError = TranscriptRewritePrompt.validateTemplate(template)
+        #expect(validationError == nil)
+    }
+
     @Test("render uses saved custom template and inserts dynamic values")
     func renderUsesSavedCustomTemplate() {
         withDefaults { defaults in
@@ -130,6 +147,51 @@ struct TranscriptRewritePromptTests {
             #expect(!withoutOptionalValues.user.contains("Target app:"))
             #expect(withoutOptionalValues.user.contains("hello world"))
         }
+    }
+
+    @Test("render includes common terms when provided")
+    func renderIncludesCommonTermsWhenProvided() {
+        let rendered = TranscriptRewritePrompt.render(
+            transcript: "fix lmm typo",
+            instructions: "Keep it concise.",
+            targetApp: "Cursor",
+            commonTerms: ["LLM", "PyTorch"]
+        )
+
+        #expect(rendered.user.contains("Common terms:"))
+        #expect(rendered.user.contains("LLM"))
+        #expect(rendered.user.contains("PyTorch"))
+    }
+
+    @Test("render omits common terms section when terms are empty")
+    func renderOmitsCommonTermsSectionWhenTermsEmpty() {
+        let rendered = TranscriptRewritePrompt.render(
+            transcript: "plain transcript",
+            instructions: nil,
+            targetApp: nil,
+            commonTerms: []
+        )
+
+        #expect(!rendered.user.contains("Common terms:"))
+    }
+
+    @Test("templateIncludesCommonTermsPlaceholder detects interpolation token")
+    func templateIncludesCommonTermsPlaceholderDetectsInterpolationToken() {
+        #expect(
+            TranscriptRewritePrompt.templateIncludesCommonTermsPlaceholder(
+                "System\\n\\n{{#common_terms}}x{{/common_terms}}\\n{{transcript}}"
+            ) == false
+        )
+        #expect(
+            TranscriptRewritePrompt.templateIncludesCommonTermsPlaceholder(
+                "System\\n\\n{{common_terms}}\\n{{transcript}}"
+            )
+        )
+        #expect(
+            !TranscriptRewritePrompt.templateIncludesCommonTermsPlaceholder(
+                "System\\n\\n{{transcript}}"
+            )
+        )
     }
 
     @Test("validation fails for legacy user_prompt placeholder")

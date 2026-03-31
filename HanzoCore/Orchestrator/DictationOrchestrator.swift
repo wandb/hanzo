@@ -30,6 +30,7 @@ final class DictationOrchestrator {
     private var configuredLocalLLMContextSize: Int
     private var transcriptPostProcessingMode: TranscriptPostProcessingMode
     private var llmPostProcessingPrompt: String
+    private var commonTerms: [String]
 
     // Auto-submit
     var autoSubmitMode: AutoSubmitMode
@@ -80,6 +81,7 @@ final class DictationOrchestrator {
         self.configuredLocalLLMContextSize = Constants.localLLMContextSize()
         self.transcriptPostProcessingMode = AppBehaviorSettings.globalPostProcessingMode()
         self.llmPostProcessingPrompt = AppBehaviorSettings.globalLLMPostProcessingPrompt()
+        self.commonTerms = CommonTerms.parse(AppBehaviorSettings.globalCommonTerms())
 
         appState.autoSubmitMode = self.autoSubmitMode
         appState.silenceTimeout = self.silenceTimeout
@@ -621,6 +623,7 @@ final class DictationOrchestrator {
         silenceTimeout = resolved.silenceTimeout
         transcriptPostProcessingMode = resolved.postProcessingMode
         llmPostProcessingPrompt = resolved.llmPostProcessingPrompt
+        commonTerms = resolved.commonTerms
         appState.autoSubmitMode = resolved.autoSubmitMode
         appState.silenceTimeout = resolved.silenceTimeout
         appState.activeTargetBundleIdentifier = targetBundleIdentifier
@@ -719,7 +722,8 @@ final class DictationOrchestrator {
                     let rewritten = try await self.localLLMRuntimeManager.postProcess(
                         text: text,
                         prompt: prompt,
-                        targetApp: targetAppName
+                        targetApp: targetAppName,
+                        commonTerms: commonTerms
                     )
                     return .success(rewritten)
                 } catch {

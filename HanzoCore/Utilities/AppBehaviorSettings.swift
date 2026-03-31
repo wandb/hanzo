@@ -18,21 +18,28 @@ struct AppBehaviorOverride: Codable, Equatable {
     var silenceTimeout: Double?
     var postProcessingMode: TranscriptPostProcessingMode?
     var llmPostProcessingPrompt: String?
+    var commonTerms: String?
 
     init(
         autoSubmitMode: AutoSubmitMode? = nil,
         silenceTimeout: Double? = nil,
         postProcessingMode: TranscriptPostProcessingMode? = nil,
-        llmPostProcessingPrompt: String? = nil
+        llmPostProcessingPrompt: String? = nil,
+        commonTerms: String? = nil
     ) {
         self.autoSubmitMode = autoSubmitMode
         self.silenceTimeout = silenceTimeout
         self.postProcessingMode = postProcessingMode
         self.llmPostProcessingPrompt = llmPostProcessingPrompt
+        self.commonTerms = commonTerms
     }
 
     var hasOverrides: Bool {
-        autoSubmitMode != nil || silenceTimeout != nil || postProcessingMode != nil || llmPostProcessingPrompt != nil
+        autoSubmitMode != nil
+            || silenceTimeout != nil
+            || postProcessingMode != nil
+            || llmPostProcessingPrompt != nil
+            || commonTerms != nil
     }
 }
 
@@ -41,6 +48,7 @@ struct ResolvedAppBehavior {
     let silenceTimeout: Double
     let postProcessingMode: TranscriptPostProcessingMode
     let llmPostProcessingPrompt: String
+    let commonTerms: [String]
     let isUsingAppOverride: Bool
 }
 
@@ -222,6 +230,19 @@ enum AppBehaviorSettings {
         )
     }
 
+    static func globalCommonTerms(defaults: UserDefaults = .standard) -> String {
+        defaults.string(forKey: Constants.commonTermsKey) ?? ""
+    }
+
+    static func setGlobalCommonTerms(_ terms: String, defaults: UserDefaults = .standard) {
+        let normalized = terms.replacingOccurrences(of: "\r\n", with: "\n")
+        if normalized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            defaults.removeObject(forKey: Constants.commonTermsKey)
+            return
+        }
+        defaults.set(normalized, forKey: Constants.commonTermsKey)
+    }
+
     static func builtInDefaultLLMPostProcessingPrompt(for bundleIdentifier: String) -> String? {
         builtInLLMPostProcessingPromptDefaults[bundleIdentifier]
     }
@@ -287,6 +308,7 @@ enum AppBehaviorSettings {
         let globalSilenceTimeout = globalSilenceTimeout(defaults: defaults)
         let globalPostProcessing = globalPostProcessingMode(defaults: defaults)
         let globalLLMPrompt = globalLLMPostProcessingPrompt(defaults: defaults)
+        let globalCommonTermsRaw = globalCommonTerms(defaults: defaults)
 
         guard let bundleIdentifier,
               isSupported(bundleIdentifier: bundleIdentifier, defaults: defaults) else {
@@ -295,6 +317,7 @@ enum AppBehaviorSettings {
                 silenceTimeout: globalSilenceTimeout,
                 postProcessingMode: globalPostProcessing,
                 llmPostProcessingPrompt: globalLLMPrompt,
+                commonTerms: CommonTerms.parse(globalCommonTermsRaw),
                 isUsingAppOverride: false
             )
         }
@@ -306,6 +329,10 @@ enum AppBehaviorSettings {
         let resolvedLLMPrompt = appOverride?.llmPostProcessingPrompt
             ?? builtInDefaultLLMPostProcessingPrompt(for: bundleIdentifier)
             ?? globalLLMPrompt
+        let resolvedCommonTerms = CommonTerms.merge(
+            globalRaw: globalCommonTermsRaw,
+            appRaw: appOverride?.commonTerms
+        )
         let isUsingAppOverride = appOverride?.hasOverrides == true
 
         return ResolvedAppBehavior(
@@ -313,6 +340,7 @@ enum AppBehaviorSettings {
             silenceTimeout: resolvedSilenceTimeout,
             postProcessingMode: resolvedPostProcessing,
             llmPostProcessingPrompt: resolvedLLMPrompt,
+            commonTerms: resolvedCommonTerms,
             isUsingAppOverride: isUsingAppOverride
         )
     }

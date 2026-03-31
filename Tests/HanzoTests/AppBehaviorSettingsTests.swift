@@ -233,6 +233,59 @@ struct AppBehaviorSettingsTests {
         }
     }
 
+    @Test("global common terms round trip")
+    func globalCommonTermsRoundTrip() {
+        withDefaults { defaults in
+            AppBehaviorSettings.setGlobalCommonTerms("LLM\nPyTorch", defaults: defaults)
+            #expect(AppBehaviorSettings.globalCommonTerms(defaults: defaults) == "LLM\nPyTorch")
+        }
+    }
+
+    @Test("resolvedBehavior merges global and app common terms with dedupe")
+    func resolvedBehaviorMergesGlobalAndAppCommonTerms() {
+        withDefaults { defaults in
+            let bundleIdentifier = "com.example.CustomApp"
+            _ = AppBehaviorSettings.addCustomApp(
+                bundleIdentifier: bundleIdentifier,
+                displayName: "Custom App",
+                defaults: defaults
+            )
+            AppBehaviorSettings.setGlobalCommonTerms("LLM\nPyTorch\nLLM", defaults: defaults)
+            AppBehaviorSettings.saveOverride(
+                AppBehaviorOverride(commonTerms: "standup\nLLM\nretro"),
+                for: bundleIdentifier,
+                defaults: defaults
+            )
+
+            let resolved = AppBehaviorSettings.resolvedBehavior(
+                for: bundleIdentifier,
+                defaults: defaults
+            )
+
+            #expect(resolved.commonTerms == ["LLM", "PyTorch", "standup", "retro"])
+        }
+    }
+
+    @Test("resolvedBehavior falls back to global common terms when app terms missing")
+    func resolvedBehaviorFallsBackToGlobalCommonTerms() {
+        withDefaults { defaults in
+            let bundleIdentifier = "com.example.CustomApp"
+            _ = AppBehaviorSettings.addCustomApp(
+                bundleIdentifier: bundleIdentifier,
+                displayName: "Custom App",
+                defaults: defaults
+            )
+            AppBehaviorSettings.setGlobalCommonTerms("LLM\nPyTorch", defaults: defaults)
+
+            let resolved = AppBehaviorSettings.resolvedBehavior(
+                for: bundleIdentifier,
+                defaults: defaults
+            )
+
+            #expect(resolved.commonTerms == ["LLM", "PyTorch"])
+        }
+    }
+
     @Test("Conductor bundle identifier is supported")
     func conductorBundleIdentifierIsSupported() {
         withDefaults { defaults in

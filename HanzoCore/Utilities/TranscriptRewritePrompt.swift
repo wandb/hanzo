@@ -16,7 +16,9 @@ enum TranscriptRewritePrompt {
     {{#target_app}}App: {{target_app}}
     {{/target_app}}{{#instructions}}Instructions:
     {{instructions}}
-    {{/instructions}}
+    {{/instructions}}{{#common_terms}}Common terms:
+    {{common_terms}}
+    {{/common_terms}}
 
     Transcript:
     {{transcript}}
@@ -24,11 +26,13 @@ enum TranscriptRewritePrompt {
     private static let allowedInterpolationKeys: Set<String> = [
         "transcript",
         "instructions",
-        "target_app"
+        "target_app",
+        "common_terms"
     ]
     private static let allowedConditionalKeys: Set<String> = [
         "instructions",
-        "target_app"
+        "target_app",
+        "common_terms"
     ]
     private final class BundleLocator {}
 
@@ -149,7 +153,8 @@ enum TranscriptRewritePrompt {
             variables: [
                 "transcript": sampleTranscript,
                 "instructions": "Use a concise style.",
-                "target_app": "Slack"
+                "target_app": "Slack",
+                "common_terms": "LLM\nPyTorch"
             ]
         )
         let renderedWithoutOptionalVariables = renderTemplate(
@@ -185,10 +190,14 @@ enum TranscriptRewritePrompt {
         transcript: String,
         instructions: String? = nil,
         targetApp: String? = nil,
+        commonTerms: [String] = [],
         templateOverride: String? = nil,
         defaults: UserDefaults = .standard
     ) -> (system: String, user: String) {
         let normalizedInstructions = (instructions ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedCommonTerms = commonTerms
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
 
         var vars: [String: String] = [
             "transcript": transcript
@@ -198,6 +207,9 @@ enum TranscriptRewritePrompt {
         }
         if let targetApp, !targetApp.isEmpty {
             vars["target_app"] = targetApp
+        }
+        if !normalizedCommonTerms.isEmpty {
+            vars["common_terms"] = normalizedCommonTerms.joined(separator: "\n")
         }
 
         let candidateTemplate = templateOverride ?? activeTemplate(defaults: defaults)
@@ -212,6 +224,22 @@ enum TranscriptRewritePrompt {
 
         return (system.trimmingCharacters(in: .whitespacesAndNewlines),
                 user.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    static func templateIncludesCommonTermsPlaceholder(_ template: String) -> Bool {
+        let tokenPattern = #"\{\{([^{}]+)\}\}"#
+        guard let tokenRegex = try? NSRegularExpression(pattern: tokenPattern) else {
+            return false
+        }
+
+        let nsRange = NSRange(template.startIndex..., in: template)
+        return tokenRegex.matches(in: template, range: nsRange).contains { match in
+            guard let tokenRange = Range(match.range(at: 1), in: template) else {
+                return false
+            }
+            let token = String(template[tokenRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            return token == "common_terms"
+        }
     }
 
     // MARK: - Template Loading
@@ -290,7 +318,7 @@ enum TranscriptRewritePrompt {
     private static func renderTemplate(_ template: String, variables: [String: String]) -> String {
         var result = template
 
-        // Conditional sections: {{#key}}...{{/key}} — kept if key is present, removed otherwise
+        // Conditional sections: {{#key}}...{{/key}} — kept only when key resolves to non-empty text.
         let sectionPattern = #"\{\{#(\w+)\}\}(.*?)\{\{/\1\}\}"#
         while let regex = try? NSRegularExpression(pattern: sectionPattern, options: .dotMatchesLineSeparators),
               let match = regex.firstMatch(in: result, range: NSRange(result.startIndex..., in: result)) {
@@ -300,7 +328,7 @@ enum TranscriptRewritePrompt {
             let key = String(result[keyRange])
             let body = String(result[bodyRange])
 
-            if variables[key] != nil {
+            if let value = variables[key], !value.isEmpty {
                 result.replaceSubrange(fullRange, with: body)
             } else {
                 result.replaceSubrange(fullRange, with: "")
