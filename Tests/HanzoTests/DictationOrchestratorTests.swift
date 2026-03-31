@@ -547,6 +547,17 @@ struct DictationOrchestratorTests {
 
     @Test("Final transcript is unchanged when post-processing mode is off")
     @MainActor func finalTranscriptUnchangedWhenPostProcessingIsOff() async throws {
+        let defaults = UserDefaults.standard
+        let originalCommonTerms = defaults.string(forKey: Constants.commonTermsKey)
+        AppBehaviorSettings.setGlobalCommonTerms("LLM\nPyTorch")
+        defer {
+            if let originalCommonTerms {
+                defaults.set(originalCommonTerms, forKey: Constants.commonTermsKey)
+            } else {
+                defaults.removeObject(forKey: Constants.commonTermsKey)
+            }
+        }
+
         let sut = makeSUT(
             asrFinishResult: .success(
                 ASRFinishResponse(text: "Um this is still untouched.", language: "en")
@@ -564,6 +575,7 @@ struct DictationOrchestratorTests {
         }
         #expect(inserted)
         #expect(sut.mockText.insertedTexts.first == "Um this is still untouched.")
+        #expect(sut.mockLLM.postProcessCallCount == 0)
     }
 
     @Test("Final transcript uses LLM post-processing output when mode is LLM")
@@ -609,6 +621,104 @@ struct DictationOrchestratorTests {
         #expect(mockLLM.lastInputText == rawTranscript)
         #expect(mockLLM.lastPrompt == "Make this concise and professional.")
         #expect(mockLLM.lastTargetApp == expectedTargetApp)
+        #expect(mockLLM.lastCommonTerms == [])
+    }
+
+    @Test("LLM mode passes global common terms to local rewrite")
+    @MainActor func llmModePassesGlobalCommonTerms() async throws {
+        let defaults = UserDefaults.standard
+        let originalCommonTerms = defaults.string(forKey: Constants.commonTermsKey)
+        AppBehaviorSettings.setGlobalCommonTerms("LLM\nPyTorch\nLLM")
+        defer {
+            if let originalCommonTerms {
+                defaults.set(originalCommonTerms, forKey: Constants.commonTermsKey)
+            } else {
+                defaults.removeObject(forKey: Constants.commonTermsKey)
+            }
+        }
+
+        let mockLLM = MockLocalLLMRuntimeManager()
+        mockLLM.postProcessResult = .success("Normalized output")
+        let sut = makeSUT(
+            asrFinishResult: .success(
+                ASRFinishResponse(text: "raw transcript", language: "en")
+            ),
+            localLLMRuntimeManager: mockLLM,
+            postProcessingMode: .llm,
+            llmPostProcessingPrompt: "Keep terms accurate.",
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let inserted = await waitUntil(timeoutNanoseconds: 4_000_000_000) {
+            sut.mockText.insertedTexts.count == 1
+        }
+        #expect(inserted)
+        #expect(mockLLM.lastCommonTerms == ["LLM", "PyTorch"])
+    }
+
+    @Test("LLM mode passes merged global and app common terms when app override exists")
+    @MainActor func llmModePassesMergedGlobalAndAppCommonTerms() async throws {
+        guard let bundleIdentifier = NSRunningApplication.current.bundleIdentifier else {
+            return
+        }
+
+        let defaults = UserDefaults.standard
+        let originalCommonTerms = defaults.string(forKey: Constants.commonTermsKey)
+        let originalOverrides = defaults.data(forKey: Constants.appBehaviorOverridesKey)
+        let originalCustomApps = defaults.data(forKey: Constants.appBehaviorCustomAppsKey)
+        defer {
+            if let originalCommonTerms {
+                defaults.set(originalCommonTerms, forKey: Constants.commonTermsKey)
+            } else {
+                defaults.removeObject(forKey: Constants.commonTermsKey)
+            }
+            if let originalOverrides {
+                defaults.set(originalOverrides, forKey: Constants.appBehaviorOverridesKey)
+            } else {
+                defaults.removeObject(forKey: Constants.appBehaviorOverridesKey)
+            }
+            if let originalCustomApps {
+                defaults.set(originalCustomApps, forKey: Constants.appBehaviorCustomAppsKey)
+            } else {
+                defaults.removeObject(forKey: Constants.appBehaviorCustomAppsKey)
+            }
+        }
+
+        _ = AppBehaviorSettings.addCustomApp(
+            bundleIdentifier: bundleIdentifier,
+            displayName: "Current App"
+        )
+        AppBehaviorSettings.setGlobalCommonTerms("LLM\nPyTorch")
+        AppBehaviorSettings.saveOverride(
+            AppBehaviorOverride(commonTerms: "standup\nLLM\nretro"),
+            for: bundleIdentifier
+        )
+
+        let mockLLM = MockLocalLLMRuntimeManager()
+        mockLLM.postProcessResult = .success("Merged output")
+        let sut = makeSUT(
+            asrFinishResult: .success(
+                ASRFinishResponse(text: "raw transcript", language: "en")
+            ),
+            localLLMRuntimeManager: mockLLM,
+            postProcessingMode: .llm,
+            llmPostProcessingPrompt: "Use preferred terms.",
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let inserted = await waitUntil(timeoutNanoseconds: 4_000_000_000) {
+            sut.mockText.insertedTexts.count == 1
+        }
+        #expect(inserted)
+        #expect(mockLLM.lastCommonTerms == ["LLM", "PyTorch", "standup", "retro"])
     }
 
     @Test("LLM mode falls back to raw transcript when local LLM processing fails")

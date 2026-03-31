@@ -117,7 +117,7 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
         _ = try await ensureModelIsAvailable(progressHandler: progressHandler)
     }
 
-    func postProcess(text: String, prompt: String, targetApp: String?) async throws -> String {
+    func postProcess(text: String, prompt: String, targetApp: String?, commonTerms: [String]) async throws -> String {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return "" }
 
@@ -126,7 +126,8 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
         let rewritten = try await requestRewrite(
             transcript: trimmedText,
             instructions: prompt,
-            targetApp: targetApp
+            targetApp: targetApp,
+            commonTerms: commonTerms
         )
         let cleaned = sanitizeModelResponse(rewritten)
         return cleaned.isEmpty ? trimmedText : cleaned
@@ -639,7 +640,8 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
     private func requestRewrite(
         transcript: String,
         instructions: String,
-        targetApp: String?
+        targetApp: String?,
+        commonTerms: [String]
     ) async throws -> String {
         guard let url = URL(string: "/v1/chat/completions", relativeTo: serverBaseURL()) else {
             throw LocalLLMRuntimeError.invalidServerResponse
@@ -648,7 +650,8 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
         let prompt = TranscriptRewritePrompt.render(
             transcript: transcript,
             instructions: instructions,
-            targetApp: targetApp
+            targetApp: targetApp,
+            commonTerms: commonTerms
         )
 
         let userMessage = "/no_think\n" + prompt.user
@@ -742,7 +745,8 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
             _ = try await requestRewrite(
                 transcript: "Test transcript.",
                 instructions: "Return this transcript unchanged.",
-                targetApp: nil
+                targetApp: nil,
+                commonTerms: []
             )
             hasPrimedInference = true
             let duration = Date().timeIntervalSince(start)

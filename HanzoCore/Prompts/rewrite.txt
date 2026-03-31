@@ -11,7 +11,9 @@ Rewrite context:
 {{#target_app}}App: {{target_app}}
 {{/target_app}}{{#instructions}}Instructions:
 {{instructions}}
-{{/instructions}}
+{{/instructions}}{{#common_terms}}Common terms:
+{{common_terms}}
+{{/common_terms}}
 
 Transcript:
 {{transcript}}
