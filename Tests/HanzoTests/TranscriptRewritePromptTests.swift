@@ -175,12 +175,12 @@ struct TranscriptRewritePromptTests {
         #expect(!rendered.user.contains("Common terms:"))
     }
 
-    @Test("templateIncludesCommonTermsPlaceholder detects tokens")
-    func templateIncludesCommonTermsPlaceholderDetectsTokens() {
+    @Test("templateIncludesCommonTermsPlaceholder detects interpolation token")
+    func templateIncludesCommonTermsPlaceholderDetectsInterpolationToken() {
         #expect(
             TranscriptRewritePrompt.templateIncludesCommonTermsPlaceholder(
                 "System\\n\\n{{#common_terms}}x{{/common_terms}}\\n{{transcript}}"
-            )
+            ) == false
         )
         #expect(
             TranscriptRewritePrompt.templateIncludesCommonTermsPlaceholder(

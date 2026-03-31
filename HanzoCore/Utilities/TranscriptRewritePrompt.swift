@@ -239,8 +239,6 @@ enum TranscriptRewritePrompt {
             }
             let token = String(template[tokenRange]).trimmingCharacters(in: .whitespacesAndNewlines)
             return token == "common_terms"
-                || token == "#common_terms"
-                || token == "/common_terms"
         }
     }
 
