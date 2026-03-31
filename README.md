@@ -1,5 +1,9 @@
 # Hanzo
 
+<p align="center">
+  <img src="HanzoCore/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" alt="Hanzo logo" width="128" />
+</p>
+
 macOS menu bar dictation app. Press a hotkey, speak, and transcribed text is inserted into whatever app you're using.
 
 Hanzo captures audio via a global hotkey (default: Ctrl + Space), transcribes with local Whisper by default, and pastes the result into the active application.
