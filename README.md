@@ -6,7 +6,7 @@
 
 Typing is too slow when you are driving coding agents all day. Dictation is faster, but most voice tools send your raw speech to third-party servers.
 
-Hanzo keeps that workflow local: what you say stays on your laptop, transcribed with local Whisper, rewritten with a local model, and customized per app before insertion.
+Hanzo keeps that workflow local: what you say stays on your laptop, transcribed with local Whisper, rewritten with a local model, and customized per-app before insertion.
 
 Requires an Apple Silicon Mac running macOS 15+.
 
@@ -15,7 +15,7 @@ Requires an Apple Silicon Mac running macOS 15+.
 ## Why Hanzo
 
 - **Faster than typing** — dictation is the quickest way to drive coding agents and chat tools.
-- **Private by default** — transcription and rewrite run entirely on your Mac. Nothing leaves your machine unless you opt in.
+- **Private by default** — audio and transcripts stay on your Mac. Nothing is sent to any server unless you explicitly enable a custom endpoint.
 - **Smart per-app output** — different rewrite behavior for terminals, editors, Slack, ChatGPT, and more.
 - **Configurable** — tune silence timeout, auto-submit, global rewrite style, and domain-specific vocabulary.
 
