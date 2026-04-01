@@ -17,7 +17,7 @@ By design, models are still first-run downloads. Release artifacts do not embed 
 Unsigned dry run:
 
 ```sh
-./scripts/release.sh --version 1.0.0 --build-number 1 --unsigned
+./scripts/release.sh --version 1.0.0 --build-number <next-build-number> --unsigned
 ```
 
 Fast unsigned repeat build:
@@ -48,7 +48,24 @@ Use `./scripts/version.sh` to track and bump versions in `Info.plist`:
 ./scripts/version.sh show
 ./scripts/version.sh bump-build
 ./scripts/version.sh bump-patch
-./scripts/version.sh set --version 1.2.0 --build-number 1
+./scripts/version.sh set --version 1.2.0 --build-number <next-build-number>
+```
+
+`bump-build`, `bump-patch`, `bump-minor`, and `bump-major` all increment `CFBundleVersion` so build numbers stay monotonic for Sparkle.
+
+### Sparkle build number rule (important)
+
+Sparkle compares `CFBundleVersion` for update eligibility. `CFBundleVersion` must be monotonically increasing across all public releases, even when `CFBundleShortVersionString` changes.
+
+- Do not reset `CFBundleVersion` to `1` for a new patch/minor/major version.
+- Choose a build number greater than the last shipped build number.
+- Example: if `1.0.2` shipped with `CFBundleVersion=4`, then `1.0.3` must use `CFBundleVersion=5` or higher.
+
+Recommended release prep commands:
+
+```sh
+./scripts/version.sh show
+./scripts/version.sh set --version 1.0.3 --build-number 5
 ```
 
 Typical local packaging loop when you want signed artifacts without notarization:
@@ -58,7 +75,7 @@ Typical local packaging loop when you want signed artifacts without notarization
 ./scripts/release.sh --skip-notarize
 ```
 
-For GitHub tag releases, keep tags aligned with `CFBundleShortVersionString` (e.g. tag `v1.2.0` when app version is `1.2.0`).
+For GitHub tag releases, keep tags aligned with `CFBundleShortVersionString` (e.g. tag `v1.2.0` when app version is `1.2.0`) and ensure `CFBundleVersion` is higher than the previous shipped release.
 
 ## Recommended operating model
 

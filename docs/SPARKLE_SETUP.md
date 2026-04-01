@@ -79,13 +79,13 @@ Hanzo uses the same App Store Connect API key model for both local notarization 
 ### 1. Prepare the version
 
 ```sh
-./scripts/version.sh set --version 1.0.0 --build-number 1
+./scripts/version.sh set --version 1.0.0 --build-number <next-build-number>
 git commit -am "Release 1.0.0"
 git tag v1.0.0
 git push origin main --tags
 ```
 
-Match the Git tag to `CFBundleShortVersionString`. Sparkle compares `CFBundleVersion`, so keep that incrementing on every release.
+Match the Git tag to `CFBundleShortVersionString`. Sparkle compares `CFBundleVersion`, so keep that incrementing on every release and never reset it to `1` for a new semantic version.
 
 ### 2. What GitHub Actions does
 
