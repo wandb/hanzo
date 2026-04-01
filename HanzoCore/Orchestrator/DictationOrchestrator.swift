@@ -779,7 +779,7 @@ final class DictationOrchestrator {
             }
         }
 
-        let averageLevel = levels.isEmpty ? 0 : levels.reduce(0, +) / Float(levels.count)
+        let averageLevel = silenceSignalLevel(for: levels)
         let elapsedSinceLastEvaluation: TimeInterval
         if let lastEvaluation = lastSilenceEvaluationAt {
             let elapsed = max(0, now.timeIntervalSince(lastEvaluation))
@@ -793,10 +793,28 @@ final class DictationOrchestrator {
         }
         lastSilenceEvaluationAt = now
 
-        let ambientSampleCap = max(
+        let transcriptGrace = max(
+            Constants.silenceTranscriptActivityGraceMinimumSeconds,
+            silenceTimeout * Constants.silenceTranscriptActivityGraceMultiplier
+        )
+        let clampedTranscriptGrace = min(
+            transcriptGrace,
+            Constants.silenceTranscriptActivityGraceMaximumSeconds
+        )
+        let transcriptRecentlyUpdated = lastPartialTranscriptUpdateAt
+            .map { now.timeIntervalSince($0) < clampedTranscriptGrace } ?? false
+        let shouldRelaxAmbientSampleCap = !appState.partialTranscript.isEmpty && !transcriptRecentlyUpdated
+
+        var ambientSampleCap = max(
             Constants.silenceAbsoluteFloor * 2,
             peakSpeechLevel * Constants.silenceAmbientTrackingPeakFraction
         )
+        if shouldRelaxAmbientSampleCap {
+            ambientSampleCap = max(
+                ambientSampleCap,
+                peakSpeechLevel * Constants.silenceAmbientTrackingRelaxedPeakFraction
+            )
+        }
         if averageLevel <= ambientSampleCap {
             let riseAlpha = exponentialSmoothingAlpha(
                 ratePerSecond: Constants.silenceAmbientTrackingRisePerSecond,
@@ -806,7 +824,12 @@ final class DictationOrchestrator {
                 ratePerSecond: Constants.silenceAmbientTrackingFallPerSecond,
                 elapsed: elapsedSinceLastEvaluation
             )
-            let alpha = averageLevel > ambientNoiseLevel ? riseAlpha : fallAlpha
+            let alpha: Float
+            if averageLevel > ambientNoiseLevel {
+                alpha = shouldRelaxAmbientSampleCap ? max(riseAlpha, fallAlpha) : riseAlpha
+            } else {
+                alpha = fallAlpha
+            }
             ambientNoiseLevel += (averageLevel - ambientNoiseLevel) * alpha
         }
         ambientNoiseLevel = max(Constants.silenceAbsoluteFloor, ambientNoiseLevel)
@@ -838,17 +861,7 @@ final class DictationOrchestrator {
         // Audio is below threshold — only start timer after words have been transcribed
         guard !appState.partialTranscript.isEmpty else { return }
 
-        let transcriptGrace = max(
-            Constants.silenceTranscriptActivityGraceMinimumSeconds,
-            silenceTimeout * Constants.silenceTranscriptActivityGraceMultiplier
-        )
-        let clampedTranscriptGrace = min(
-            transcriptGrace,
-            Constants.silenceTranscriptActivityGraceMaximumSeconds
-        )
-        if let lastTranscriptUpdateAt = lastPartialTranscriptUpdateAt,
-           now.timeIntervalSince(lastTranscriptUpdateAt) < clampedTranscriptGrace,
-           silenceStartTime == nil {
+        if transcriptRecentlyUpdated && silenceStartTime == nil {
             return
         }
 
@@ -878,5 +891,25 @@ final class DictationOrchestrator {
         let clampedRate = min(max(ratePerSecond, 0), 1)
         guard clampedRate < 1 else { return 1 }
         return 1 - Float(pow(Double(1 - clampedRate), elapsed))
+    }
+
+    private func silenceSignalLevel(for levels: [Float]) -> Float {
+        guard !levels.isEmpty else { return 0 }
+
+        let weights = Constants.silenceSpeechBandWeights
+        guard levels.count == weights.count else {
+            return levels.reduce(0, +) / Float(levels.count)
+        }
+
+        let weightTotal = weights.reduce(0, +)
+        guard weightTotal > 0 else {
+            return levels.reduce(0, +) / Float(levels.count)
+        }
+
+        var weightedSum: Float = 0
+        for (level, weight) in zip(levels, weights) {
+            weightedSum += level * weight
+        }
+        return weightedSum / weightTotal
     }
 }

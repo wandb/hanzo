@@ -115,6 +115,8 @@ enum Constants {
     static let silenceAmbientTrackingRisePerSecond: Float = 0.35
     static let silenceAmbientTrackingFallPerSecond: Float = 0.85
     static let silenceAmbientTrackingPeakFraction: Float = 0.65
+    static let silenceAmbientTrackingRelaxedPeakFraction: Float = 0.90
+    static let silenceSpeechBandWeights: [Float] = [0.0, 0.15, 0.45, 1.0, 1.0, 0.8, 0.35]
     static let silenceTranscriptActivityGraceMultiplier: Double = 0.35
     static let silenceTranscriptActivityGraceMinimumSeconds: Double = 0.15
     static let silenceTranscriptActivityGraceMaximumSeconds: Double = 0.45

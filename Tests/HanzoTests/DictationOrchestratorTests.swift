@@ -873,6 +873,57 @@ struct DictationOrchestratorTests {
         #expect(sut.mockAudio.stopCaptureCalled == true)
     }
 
+    @Test("Silence auto-close still triggers when quiet baseline is high relative to speech peak")
+    @MainActor func silenceAutoCloseTriggersWithHighRelativeBaseline() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.silenceTimeout = 0.2
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // Built-in mics can have elevated steady background where "quiet"
+        // sits close to a short speech peak.
+        sut.mockAudio.simulateLevels([0.042, 0.045, 0.043, 0.041, 0.044, 0.043, 0.042])
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.appState.partialTranscript = "hello"
+
+        let elevatedQuietLevels: [Float] = [0.030, 0.031, 0.029, 0.030, 0.031, 0.030, 0.029]
+        for _ in 0..<26 {
+            sut.mockAudio.simulateLevels(elevatedQuietLevels)
+            try await Task.sleep(nanoseconds: 50_000_000)
+            if sut.appState.dictationState != .listening {
+                break
+            }
+        }
+
+        #expect(sut.appState.dictationState != .listening)
+        #expect(sut.mockAudio.stopCaptureCalled == true)
+    }
+
+    @Test("Silence auto-close ignores low-frequency rumble that lacks speech-band energy")
+    @MainActor func silenceAutoCloseIgnoresLowFrequencyRumble() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.silenceTimeout = 0.2
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // Speech has broad mid-band energy, unlike fan or airflow rumble.
+        sut.mockAudio.simulateLevels([0.01, 0.025, 0.05, 0.08, 0.09, 0.06, 0.02])
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.appState.partialTranscript = "hello"
+
+        let rumbleLevels: [Float] = [0.055, 0.045, 0.018, 0.006, 0.004, 0.003, 0.002]
+        for _ in 0..<26 {
+            sut.mockAudio.simulateLevels(rumbleLevels)
+            try await Task.sleep(nanoseconds: 50_000_000)
+            if sut.appState.dictationState != .listening {
+                break
+            }
+        }
+
+        #expect(sut.appState.dictationState != .listening)
+        #expect(sut.mockAudio.stopCaptureCalled == true)
+    }
+
     @Test("Silence auto-close is not excessively delayed by ambient jitter")
     @MainActor func silenceAutoCloseIsNotDelayedByAmbientJitter() async throws {
         let sut = makeSUT()
