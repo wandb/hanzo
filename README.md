@@ -4,26 +4,49 @@
   <img src="HanzoCore/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" alt="Hanzo logo" width="128" />
 </p>
 
-macOS menu bar dictation app. Press a hotkey, speak, and transcribed text is inserted into whatever app you're using.
+Typing is too slow when you are driving coding agents all day. Dictation is faster, but most voice tools send your raw speech to third-party servers.
 
-Hanzo captures audio via a global hotkey (default: Ctrl + Space), transcribes with local Whisper by default, and pastes the result into the active application.
+Hanzo keeps that workflow local: what you say stays on your laptop, transcribed with local Whisper, rewritten with a local model, and customized per-app before insertion.
 
-## Requirements
+Requires an Apple Silicon Mac running macOS 15+.
 
-- macOS 15+
+[![Download](https://img.shields.io/github/v/release/wandb/hanzo?label=Download&style=for-the-badge)](https://github.com/wandb/hanzo/releases/latest)
+
+## Why Hanzo
+
+- **Faster than typing** — dictation is the quickest way to drive coding agents and chat tools.
+- **Private by default** — audio and transcripts stay on your Mac. Nothing is sent to any server unless you explicitly enable a custom endpoint.
+- **Smart per-app output** — different rewrite behavior for terminals, editors, Slack, ChatGPT, and more.
+- **Configurable** — tune silence timeout, auto-submit, global rewrite style, and domain-specific vocabulary.
+
+## How It Works
+
+1. Press your hotkey (`Ctrl + Space` by default) to start recording.
+2. Hanzo transcribes locally with Whisper.
+3. A local rewrite model polishes the transcript for the active app.
+4. The final text is inserted at your cursor, with optional auto-submit.
+
+---
+
+## Developer Guide
+
+If you want to build, fork, or contribute, everything below is for you.
+
+### Requirements
+
+- Apple Silicon Mac, macOS 15+
 - Swift 6.0 toolchain
-- [direnv](https://direnv.net/) (`brew install direnv`) — manages build-time env vars
-- Microphone permission
-- Accessibility permission (for text insertion)
+- [direnv](https://direnv.net/) (`brew install direnv`)
+- Microphone and Accessibility permissions
 
-## Quick start
+### Quick Start
 
 ```sh
 # 1. Install direnv and hook it into your shell
 brew install direnv
-# Add the direnv hook to your shell profile — see https://direnv.net/docs/hook.html
+# Add the direnv hook to your shell profile — https://direnv.net/docs/hook.html
 
-# 2. Set up build secrets (shared across git worktrees)
+# 2. Set up shared build env file (works across git worktrees)
 mkdir -p ~/.config/hanzo
 cp .env.build.example ~/.config/hanzo/.env.build
 # Optional: set overrides in ~/.config/hanzo/.env.build (for example HANZO_LLAMA_SERVER_PATH)
@@ -31,51 +54,50 @@ cp .env.build.example ~/.config/hanzo/.env.build
 # 3. Allow direnv in this worktree (run once per worktree)
 direnv allow
 
-# 4. Build and run
+# 4. Build and launch
 ./scripts/dev-run.sh
 ```
 
-This builds the project, assembles the `.app` bundle at `~/.local/share/hanzo/Hanzo Dev.app`, and launches it. Dev builds use app name `Hanzo Dev` and bundle identifier `com.hanzo.app.dev` (override with `HANZO_DEV_APP_NAME`, `HANZO_DEV_APP_ROOT`, and `HANZO_DEV_BUNDLE_IDENTIFIER`) so they can run alongside the distributed app with separate macOS permissions and settings. The fixed bundle path ensures macOS retains permissions across git worktrees. An onboarding wizard will guide you through granting permissions and preparing the on-device Whisper model on first launch.
+This builds and launches `~/.local/share/hanzo/Hanzo Dev.app` (bundle id `com.hanzo.app.dev`). The fixed bundle path lets macOS retain permissions across worktrees.
 
-`scripts/dev-run.sh` also bundles the local LLM runtime (`llama-server` + dylibs). If no local runtime is found, it auto-downloads a pinned llama.cpp macOS arm64 release into `~/.cache/hanzo/llama.cpp/` and reuses it on subsequent runs.
+The dev script bundles local LLM runtime binaries (`llama-server` + dylibs). If not found locally, it downloads a pinned `llama.cpp` release into `~/.cache/hanzo/llama.cpp/`.
 
-Hanzo runs in the menu bar — there is no dock icon.
-
-## Other commands
+### Commands
 
 | Command | Description |
 |---|---|
+| `./scripts/dev-run.sh` | Build and launch |
 | `./scripts/dev-run.sh --reset-models` | Clear downloaded models before building |
-| `./scripts/dev-run.sh --reset-permissions` | Reset Microphone & Accessibility permissions (useful for testing onboarding) |
-| `./scripts/dev-run.sh --reset-settings` | Clear app UserDefaults (onboarding, provider/mode selections, hotkey, overrides) |
-| `./scripts/dev-run.sh --no-launch` | Build and assemble the app bundle without launching it |
-| `./scripts/version.sh show` | Print `CFBundleShortVersionString` and `CFBundleVersion` |
-| `./scripts/version.sh bump-build` | Increment `CFBundleVersion` in `HanzoCore/Info.plist` |
-| `./scripts/release-unsigned.sh` | One-command unsigned DMG/ZIP build into `dist/` |
-| `swift build --disable-keychain` | Build without launching |
-| `swift test --disable-keychain` | Run the test suite |
-| `pkill -x Hanzo` | Kill the running app |
+| `./scripts/dev-run.sh --reset-permissions` | Reset Microphone and Accessibility permissions |
+| `./scripts/dev-run.sh --reset-settings` | Clear app UserDefaults |
+| `./scripts/dev-run.sh --no-launch` | Build and assemble without launching |
+| `swift build --disable-keychain` | Build only |
+| `swift test --disable-keychain` | Run all tests |
+| `./scripts/version.sh show` | Print current version and build number |
+| `./scripts/version.sh bump-build` | Increment build number |
+| `./scripts/release-unsigned.sh` | Build unsigned DMG/ZIP into `dist/` |
 
-## Distribution
+### Local Models
 
-- Release process, signing, notarization, and Sparkle update setup are documented in `docs/RELEASING.md`.
-- Typical unsigned local release loop:
-  - `./scripts/version.sh bump-build`
-  - `./scripts/release-unsigned.sh`
-- Signed + notarized local release:
-  - `./scripts/version.sh bump-build`
-  - `./scripts/release.sh`
+- **ASR (default):** WhisperKit `base.en` from `argmaxinc/whisperkit-coreml`
+- **Rewrite (default):** `Qwen3-4B-Q4_K_M.gguf` via bundled `llama-server`
+- **Custom ASR:** optional server endpoint + password, configured in Settings
 
-## Configuration
+### Distribution
 
-- **Hotkey** — Configurable in the app settings (default: Ctrl + Space)
-- **ASR provider** — `Local (Whisper)` (default) or `Custom Server`
-- **Custom server endpoint + password** — Configurable in Settings when `Custom Server` is selected
-- **App-specific behavior** — Configure per-app auto-submit and silence timeout overrides (global values remain fallback defaults)
-- **Local model** — Uses `base.en` from `argmaxinc/whisperkit-coreml`, downloaded on first use
-- **Local LLM post-processing** — Uses bundled `llama-server` + `Qwen3-4B-Q4_K_M.gguf` (downloaded on first use)
+See `docs/RELEASING.md` for signing, notarization, and Sparkle update setup.
 
-## Example Servers
+```sh
+# Unsigned local release
+./scripts/version.sh bump-build
+./scripts/release-unsigned.sh
 
-- `reference/` includes the Qwen3 reference server for Custom Server mode
-- `LocalASRHelper/` remains an example local Qwen3 server helper for users who want to run their own runtime
+# Signed + notarized
+./scripts/version.sh bump-build
+./scripts/release.sh
+```
+
+### Example Servers
+
+- `reference/` — Qwen3 reference server for Custom Server mode
+- `LocalASRHelper/` — example local Qwen3 helper runtime
