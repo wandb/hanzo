@@ -898,6 +898,12 @@ final class DictationOrchestrator {
 
         let weights = Constants.silenceSpeechBandWeights
         guard levels.count == weights.count else {
+            assertionFailure(
+                "silenceSignalLevel: levels.count (\(levels.count)) != silenceSpeechBandWeights.count (\(weights.count)); falling back to unweighted mean."
+            )
+            logger.warn(
+                "silenceSignalLevel band-count mismatch: levels.count=\(levels.count), weights.count=\(weights.count); falling back to unweighted mean."
+            )
             return levels.reduce(0, +) / Float(levels.count)
         }
 

@@ -116,6 +116,8 @@ enum Constants {
     static let silenceAmbientTrackingFallPerSecond: Float = 0.85
     static let silenceAmbientTrackingPeakFraction: Float = 0.65
     static let silenceAmbientTrackingRelaxedPeakFraction: Float = 0.90
+    // Per-band weights for the 7 FFT bands emitted by the audio capture service (low to high frequency).
+    // Keep the count and ordering in sync with AudioCaptureService.bandEdges.
     static let silenceSpeechBandWeights: [Float] = [0.0, 0.15, 0.45, 1.0, 1.0, 0.8, 0.35]
     static let silenceTranscriptActivityGraceMultiplier: Double = 0.35
     static let silenceTranscriptActivityGraceMinimumSeconds: Double = 0.15
