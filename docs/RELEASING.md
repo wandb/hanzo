@@ -51,6 +51,8 @@ Use `./scripts/version.sh` to track and bump versions in `Info.plist`:
 ./scripts/version.sh set --version 1.2.0 --build-number <next-build-number>
 ```
 
+`bump-build`, `bump-patch`, `bump-minor`, and `bump-major` all increment `CFBundleVersion` so build numbers stay monotonic for Sparkle.
+
 ### Sparkle build number rule (important)
 
 Sparkle compares `CFBundleVersion` for update eligibility. `CFBundleVersion` must be monotonically increasing across all public releases, even when `CFBundleShortVersionString` changes.

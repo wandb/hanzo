@@ -21,7 +21,7 @@ Usage:
 Notes:
   - Semantic version commands expect version format x.y.z.
   - bump-build increments CFBundleVersion only.
-  - bump-patch/minor/major reset CFBundleVersion to 1.
+  - bump-patch/minor/major bump semantic version and increment CFBundleVersion.
 EOF
 }
 
@@ -88,8 +88,11 @@ bump_build() {
 
 bump_semver() {
     local part="$1"
-    local version major minor patch next_version
+    local version build_number next_build major minor patch next_version
     version="$(read_version)"
+    build_number="$(read_build_number)"
+    is_uint "$build_number" || die "Current build number is not an integer: '$build_number'"
+    next_build=$((10#$build_number + 1))
     read -r major minor patch <<<"$(parse_semver "$version")"
 
     case "$part" in
@@ -111,7 +114,7 @@ bump_semver() {
     esac
 
     next_version="$major.$minor.$patch"
-    set_values "$next_version" "1"
+    set_values "$next_version" "$next_build"
     show_values
 }
 
