@@ -847,6 +847,38 @@ struct DictationOrchestratorTests {
         #expect(sut.mockAudio.stopCaptureCalled == true)
     }
 
+    @Test("Silence auto-close waits for sustained quiet before arming the countdown")
+    @MainActor func silenceAutoCloseWaitsForSustainedQuietBeforeArming() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.silenceTimeout = 0.25
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        sut.mockAudio.simulateLevels([0.1, 0.15, 0.12, 0.08, 0.1, 0.09, 0.11])
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.appState.partialTranscript = "hello world"
+
+        let silentLevels: [Float] = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]
+
+        for _ in 0..<8 {
+            sut.mockAudio.simulateLevels(silentLevels)
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        #expect(sut.appState.dictationState == .listening)
+
+        for _ in 0..<16 {
+            sut.mockAudio.simulateLevels(silentLevels)
+            try await Task.sleep(nanoseconds: 50_000_000)
+            if sut.appState.dictationState != .listening {
+                break
+            }
+        }
+
+        #expect(sut.appState.dictationState != .listening)
+        #expect(sut.mockAudio.stopCaptureCalled == true)
+    }
+
     @Test("Silence auto-close triggers despite steady ambient noise")
     @MainActor func silenceAutoCloseTriggersWithAmbientNoise() async throws {
         let sut = makeSUT()
@@ -951,7 +983,7 @@ struct DictationOrchestratorTests {
 
         #expect(sut.appState.dictationState != .listening)
         #expect(stopIteration != nil)
-        #expect((stopIteration ?? Int.max) <= 12)
+        #expect((stopIteration ?? Int.max) <= 21)
     }
 
     @Test("Silence auto-close ignores borderline ambient bumps")
@@ -981,7 +1013,7 @@ struct DictationOrchestratorTests {
 
         #expect(sut.appState.dictationState != .listening)
         #expect(stopIteration != nil)
-        #expect((stopIteration ?? Int.max) <= 12)
+        #expect((stopIteration ?? Int.max) <= 21)
     }
 
     @Test("Silence auto-close does not trigger before speech")
@@ -1054,7 +1086,7 @@ struct DictationOrchestratorTests {
         // session alive for much longer than the configured timeout.
         sut.appState.partialTranscript = "hello world"
         var stopIteration: Int?
-        for i in 0..<14 {
+        for i in 0..<26 {
             if i == 2 {
                 sut.appState.partialTranscript = "hello world again"
             }
@@ -1068,55 +1100,28 @@ struct DictationOrchestratorTests {
 
         #expect(sut.appState.dictationState != .listening)
         #expect(stopIteration != nil)
-        #expect((stopIteration ?? Int.max) <= 10)
+        #expect((stopIteration ?? Int.max) <= 22)
     }
 
-    @Test("Silence auto-close does not trigger while soft speech continues with delayed partial updates")
-    @MainActor func silenceAutoCloseIgnoresSoftOngoingSpeechWithDelayedPartials() async throws {
+    @Test("Silence auto-close does not trigger while low-energy moving speech continues")
+    @MainActor func silenceAutoCloseIgnoresLowEnergyMovingSpeech() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 0.3
-        sut.orchestrator.toggle()
-        try await Task.sleep(nanoseconds: 50_000_000)
-
-        // Establish an initial speech peak and first transcript token.
-        sut.mockAudio.simulateLevels([0.03, 0.05, 0.08, 0.11, 0.1, 0.07, 0.03])
-        try await Task.sleep(nanoseconds: 50_000_000)
-        sut.appState.partialTranscript = "hello"
-
-        // User keeps speaking softly; partial updates arrive intermittently.
-        let softSpeechLevels: [Float] = [0.004, 0.008, 0.014, 0.019, 0.017, 0.010, 0.004]
-        for i in 0..<16 {
-            if i == 6 {
-                sut.appState.partialTranscript = "hello world"
-            } else if i == 12 {
-                sut.appState.partialTranscript = "hello world again"
-            }
-
-            sut.mockAudio.simulateLevels(softSpeechLevels)
-            try await Task.sleep(nanoseconds: 50_000_000)
-
-            if sut.appState.dictationState != .listening {
-                break
-            }
+        sut.mockASR.sendChunkHandler = { _, _ in
+            ASRChunkResponse(text: "hello", language: "en")
         }
 
-        #expect(sut.appState.dictationState == .listening)
-        #expect(sut.mockAudio.stopCaptureCalled == false)
-    }
-
-    @Test("Silence auto-close does not trigger while repeated identical partials arrive during soft speech")
-    @MainActor func silenceAutoCloseIgnoresRepeatedIdenticalPartialsDuringSoftSpeech() async throws {
-        let sut = makeSUT(
-            asrChunkResult: .success(
-                ASRChunkResponse(text: "hello", language: "en")
-            )
-        )
         sut.orchestrator.silenceTimeout = 0.3
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
         let chunk = Data(repeating: 0, count: Constants.chunkAccumulationBytes)
-        sut.mockAudio.simulateLevels([0.03, 0.05, 0.08, 0.11, 0.1, 0.07, 0.03])
+        let speechPeak: [Float] = [0.08, 0.12, 0.19, 0.28, 0.26, 0.18, 0.09]
+        let movingA: [Float] = [0.025, 0.034, 0.032, 0.034, 0.032, 0.032, 0.032]
+        let movingB: [Float] = [0.030, 0.027, 0.023, 0.027, 0.029, 0.028, 0.030]
+        let movingC: [Float] = [0.035, 0.034, 0.026, 0.033, 0.036, 0.033, 0.026]
+        let movingSequence = [movingA, movingB, movingC, movingB]
+
+        sut.mockAudio.simulateLevels(speechPeak)
         sut.mockAudio.simulateChunk(chunk)
 
         let gotInitialPartial = await waitUntil(timeoutNanoseconds: 500_000_000) {
@@ -1124,9 +1129,8 @@ struct DictationOrchestratorTests {
         }
         #expect(gotInitialPartial)
 
-        let softSpeechLevels: [Float] = [0.004, 0.008, 0.014, 0.019, 0.017, 0.010, 0.004]
-        for _ in 0..<8 {
-            sut.mockAudio.simulateLevels(softSpeechLevels)
+        for i in 0..<12 {
+            sut.mockAudio.simulateLevels(movingSequence[i % movingSequence.count])
             sut.mockAudio.simulateChunk(chunk)
             try await Task.sleep(nanoseconds: 100_000_000)
 
@@ -1139,19 +1143,117 @@ struct DictationOrchestratorTests {
         #expect(sut.mockAudio.stopCaptureCalled == false)
     }
 
+    @Test("Low-dominance moving speech keeps the session alive after transcript content goes stale")
+    @MainActor func silenceAutoCloseIgnoresLowDominanceMovingSpeechAfterTranscriptGrowthStales() async throws {
+        let sut = makeSUT()
+        sut.mockASR.sendChunkHandler = { _, _ in
+            ASRChunkResponse(text: "hello", language: "en")
+        }
+
+        sut.orchestrator.silenceTimeout = 0.3
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let chunk = Data(repeating: 0, count: Constants.chunkAccumulationBytes)
+        let speechPeak: [Float] = [0.08, 0.12, 0.19, 0.28, 0.26, 0.18, 0.09]
+        let movingA: [Float] = [0.025, 0.034, 0.032, 0.034, 0.032, 0.032, 0.032]
+        let movingB: [Float] = [0.030, 0.027, 0.023, 0.027, 0.029, 0.028, 0.030]
+        let movingC: [Float] = [0.035, 0.034, 0.026, 0.033, 0.036, 0.033, 0.026]
+        let movingSequence = [movingA, movingB, movingC]
+
+        sut.mockAudio.simulateLevels(speechPeak)
+        sut.mockAudio.simulateChunk(chunk)
+
+        let gotInitialPartial = await waitUntil(timeoutNanoseconds: 500_000_000) {
+            sut.appState.partialTranscript == "hello"
+        }
+        #expect(gotInitialPartial)
+
+        for i in 0..<24 {
+            sut.mockAudio.simulateLevels(movingSequence[i % movingSequence.count])
+            sut.mockAudio.simulateChunk(chunk)
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+
+        #expect(sut.appState.dictationState == .listening)
+        #expect(sut.mockAudio.stopCaptureCalled == false)
+        #expect(
+            !sut.mockLogger.infoMessages.contains {
+                $0.contains("Silence auto-close after")
+            }
+        )
+    }
+
+    @Test("Continuation audio clears a running silence timer when motion resumes")
+    @MainActor func silenceAutoCloseClearsRunningTimerForMovingContinuationAudio() async throws {
+        let sut = makeSUT()
+        sut.mockASR.sendChunkHandler = { _, _ in
+            ASRChunkResponse(text: "hello", language: "en")
+        }
+
+        sut.orchestrator.silenceTimeout = 0.35
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let chunk = Data(repeating: 0, count: Constants.chunkAccumulationBytes)
+        let speechPeak: [Float] = [0.08, 0.12, 0.19, 0.28, 0.26, 0.18, 0.09]
+        let lowNoiseLevels: [Float] = [0.0051, 0.0052, 0.0050, 0.0051, 0.0052, 0.0051, 0.0050]
+        let movingA: [Float] = [0.025, 0.027, 0.027, 0.022, 0.026, 0.021, 0.024]
+        let movingB: [Float] = [0.018, 0.024, 0.023, 0.025, 0.017, 0.023, 0.024]
+        let movingC: [Float] = [0.028, 0.023, 0.027, 0.022, 0.025, 0.029, 0.028]
+        let movingSequence = [movingA, movingB, movingC]
+
+        sut.mockAudio.simulateLevels(speechPeak)
+        sut.mockAudio.simulateChunk(chunk)
+
+        let gotInitialPartial = await waitUntil(timeoutNanoseconds: 500_000_000) {
+            sut.appState.partialTranscript == "hello"
+        }
+        #expect(gotInitialPartial)
+
+        var sawTimerStart = false
+        for _ in 0..<8 {
+            sut.mockAudio.simulateLevels(lowNoiseLevels)
+            sut.mockAudio.simulateChunk(chunk)
+            try await Task.sleep(nanoseconds: 100_000_000)
+
+            sawTimerStart = sut.mockLogger.infoMessages.contains {
+                $0.contains("Silence timer started")
+            }
+            if sawTimerStart || sut.appState.dictationState != .listening {
+                break
+            }
+        }
+
+        #expect(sawTimerStart)
+        #expect(sut.appState.dictationState == .listening)
+
+        for levels in movingSequence {
+            sut.mockAudio.simulateLevels(levels)
+            sut.mockAudio.simulateChunk(chunk)
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+
+        #expect(sut.appState.dictationState == .listening)
+        #expect(
+            sut.mockLogger.infoMessages.contains {
+                $0.contains("Silence timer cleared by continuation audio")
+            }
+        )
+    }
+
     @Test("Silence auto-close still triggers during low-level noise despite repeated identical partials")
     @MainActor func silenceAutoCloseStillTriggersWithRepeatedIdenticalPartialsInLowNoise() async throws {
-        let sut = makeSUT(
-            asrChunkResult: .success(
-                ASRChunkResponse(text: "hello", language: "en")
-            )
-        )
+        let sut = makeSUT()
+        sut.mockASR.sendChunkHandler = { _, _ in
+            ASRChunkResponse(text: "hello", language: "en")
+        }
         sut.orchestrator.silenceTimeout = 0.25
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
         let chunk = Data(repeating: 0, count: Constants.chunkAccumulationBytes)
-        sut.mockAudio.simulateLevels([0.03, 0.05, 0.08, 0.11, 0.1, 0.07, 0.03])
+        sut.mockAudio.simulateLevels([0.08, 0.12, 0.19, 0.28, 0.26, 0.18, 0.09])
         sut.mockAudio.simulateChunk(chunk)
 
         let gotInitialPartial = await waitUntil(timeoutNanoseconds: 500_000_000) {
@@ -1168,6 +1270,158 @@ struct DictationOrchestratorTests {
             if sut.appState.dictationState != .listening {
                 break
             }
+        }
+
+        #expect(sut.appState.dictationState != .listening)
+        #expect(sut.mockAudio.stopCaptureCalled == true)
+        #expect(
+            sut.mockLogger.infoMessages.contains {
+                $0.contains("Silence auto-close after")
+                    && $0.contains("audioMotion")
+                    && $0.contains("motionThreshold")
+                    && $0.contains("silenceState candidateSilence")
+            }
+        )
+    }
+
+    @Test("Silence auto-close still triggers during steady fan-like noise")
+    @MainActor func silenceAutoCloseStillTriggersWithSteadyFanLikeNoise() async throws {
+        let sut = makeSUT()
+        sut.mockASR.sendChunkHandler = { _, _ in
+            ASRChunkResponse(text: "hello", language: "en")
+        }
+        sut.orchestrator.silenceTimeout = 0.25
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let chunk = Data(repeating: 0, count: Constants.chunkAccumulationBytes)
+        let speechPeak: [Float] = [0.08, 0.12, 0.19, 0.28, 0.26, 0.18, 0.09]
+        let fanLikeLevels: [Float] = [0.040, 0.038, 0.034, 0.028, 0.024, 0.020, 0.018]
+
+        sut.mockAudio.simulateLevels(speechPeak)
+        sut.mockAudio.simulateChunk(chunk)
+
+        let gotInitialPartial = await waitUntil(timeoutNanoseconds: 500_000_000) {
+            sut.appState.partialTranscript == "hello"
+        }
+        #expect(gotInitialPartial)
+
+        for _ in 0..<14 {
+            sut.mockAudio.simulateLevels(fanLikeLevels)
+            sut.mockAudio.simulateChunk(chunk)
+            try await Task.sleep(nanoseconds: 100_000_000)
+
+            if sut.appState.dictationState != .listening {
+                break
+            }
+        }
+
+        #expect(sut.appState.dictationState != .listening)
+        #expect(sut.mockAudio.stopCaptureCalled == true)
+        #expect(
+            sut.mockLogger.infoMessages.contains {
+                $0.contains("Silence auto-close after")
+                    && $0.contains("audioMotion")
+                    && $0.contains("motionThreshold")
+                    && $0.contains("silenceState candidateSilence")
+            }
+        )
+    }
+
+    @Test("Moving low-energy broadband audio stays alive while steady low-energy broadband closes")
+    @MainActor func silenceAutoCloseDistinguishesMovingFromSteadyLowEnergyBroadband() async throws {
+        let movingSUT = makeSUT()
+        movingSUT.mockASR.sendChunkHandler = { _, _ in
+            ASRChunkResponse(text: "hello", language: "en")
+        }
+        movingSUT.orchestrator.silenceTimeout = 0.25
+        movingSUT.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let chunk = Data(repeating: 0, count: Constants.chunkAccumulationBytes)
+        let speechPeak: [Float] = [0.08, 0.12, 0.19, 0.28, 0.26, 0.18, 0.09]
+        let movingA: [Float] = [0.025, 0.034, 0.032, 0.034, 0.032, 0.032, 0.032]
+        let movingB: [Float] = [0.030, 0.027, 0.023, 0.027, 0.029, 0.028, 0.030]
+        let movingC: [Float] = [0.035, 0.034, 0.026, 0.033, 0.036, 0.033, 0.026]
+        let movingSequence = [movingA, movingB, movingC]
+
+        movingSUT.mockAudio.simulateLevels(speechPeak)
+        movingSUT.mockAudio.simulateChunk(chunk)
+        let gotMovingPartial = await waitUntil(timeoutNanoseconds: 500_000_000) {
+            movingSUT.appState.partialTranscript == "hello"
+        }
+        #expect(gotMovingPartial)
+
+        for i in 0..<12 {
+            movingSUT.mockAudio.simulateLevels(movingSequence[i % movingSequence.count])
+            movingSUT.mockAudio.simulateChunk(chunk)
+            try await Task.sleep(nanoseconds: 100_000_000)
+            if movingSUT.appState.dictationState != .listening {
+                break
+            }
+        }
+
+        #expect(movingSUT.appState.dictationState == .listening)
+
+        let steadySUT = makeSUT()
+        steadySUT.mockASR.sendChunkHandler = { _, _ in
+            ASRChunkResponse(text: "hello", language: "en")
+        }
+        steadySUT.orchestrator.silenceTimeout = 0.25
+        steadySUT.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let steadyBroadbandLevels: [Float] = [0.030, 0.030, 0.030, 0.030, 0.030, 0.030, 0.030]
+
+        steadySUT.mockAudio.simulateLevels(speechPeak)
+        steadySUT.mockAudio.simulateChunk(chunk)
+        let gotSteadyPartial = await waitUntil(timeoutNanoseconds: 500_000_000) {
+            steadySUT.appState.partialTranscript == "hello"
+        }
+        #expect(gotSteadyPartial)
+
+        for _ in 0..<14 {
+            steadySUT.mockAudio.simulateLevels(steadyBroadbandLevels)
+            steadySUT.mockAudio.simulateChunk(chunk)
+            try await Task.sleep(nanoseconds: 100_000_000)
+            if steadySUT.appState.dictationState != .listening {
+                break
+            }
+        }
+
+        #expect(steadySUT.appState.dictationState != .listening)
+        #expect(steadySUT.mockAudio.stopCaptureCalled == true)
+    }
+
+    @Test("Silence auto-close stays within the configured motion linger bound")
+    @MainActor func silenceAutoCloseStaysWithinMotionLingerBound() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.silenceTimeout = 0.25
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let speechPeak: [Float] = [0.08, 0.12, 0.19, 0.28, 0.26, 0.18, 0.09]
+        let silentLevels: [Float] = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]
+
+        sut.mockAudio.simulateLevels(speechPeak)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.appState.partialTranscript = "hello"
+
+        let lingerBound = sut.orchestrator.silenceTimeout
+            + min(
+                max(
+                    sut.orchestrator.silenceTimeout * Constants.silenceTimerArmDelayTimeoutFraction,
+                    Constants.silenceTimerArmDelayMinimumSeconds
+                ),
+                Constants.silenceTimerArmDelayMaximumSeconds
+            )
+            + Constants.silenceMotionWindowSeconds
+            + 0.15
+
+        let deadline = Date().addingTimeInterval(lingerBound)
+        while Date() < deadline && sut.appState.dictationState == .listening {
+            sut.mockAudio.simulateLevels(silentLevels)
+            try await Task.sleep(nanoseconds: 25_000_000)
         }
 
         #expect(sut.appState.dictationState != .listening)

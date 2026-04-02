@@ -122,13 +122,18 @@ enum Constants {
     static let silenceTranscriptActivityGraceMultiplier: Double = 0.35
     static let silenceTranscriptActivityGraceMinimumSeconds: Double = 0.15
     static let silenceTranscriptActivityGraceMaximumSeconds: Double = 0.45
-    // Allow repeated non-advancing partials to briefly count as transcript activity.
-    // This covers the ~250ms chunk cadence plus a small amount of transport jitter.
-    static let silenceTranscriptSignalGraceMinimumSeconds: Double = 0.4
-    static let silenceTranscriptSpeechResetMinimumLevelMultiplier: Float = 1.1
-    // Treat transcript activity as ongoing speech only when the weighted speech
-    // bands still stand out from the overall spectrum.
-    static let silenceTranscriptSpeechBandDominanceThreshold: Float = 1.15
+    static let silenceTranscriptPacketIntervalEWMASmoothing: Double = 0.35
+    static let silenceTranscriptContinuationMinimumLevelMultiplier: Float = 1.1
+    static let silenceTranscriptContinuationThresholdMultiplier: Float = 0.45
+    static let silenceTranscriptContinuationThresholdOffset: Float = 0.0015
+    static let silenceMotionWindowSeconds: Double = 0.6
+    static let silenceMotionAbsoluteFloor: Float = 0.0020
+    static let silenceMotionThresholdMultiplier: Float = 0.18
+    static let silenceMotionContinuationSignalOffset: Float = 0.0060
+    static let silenceMotionContinuationThresholdMinimumFraction: Float = 0.60
+    static let silenceTimerArmDelayMinimumSeconds: Double = 0.15
+    static let silenceTimerArmDelayMaximumSeconds: Double = 0.30
+    static let silenceTimerArmDelayTimeoutFraction: Double = 0.15
 
     // App-specific behavior overrides
     static let appBehaviorOverridesKey = "appBehaviorOverrides"
