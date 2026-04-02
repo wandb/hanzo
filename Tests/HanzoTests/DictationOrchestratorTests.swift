@@ -98,6 +98,16 @@ struct DictationOrchestratorTests {
         return condition()
     }
 
+    @MainActor
+    func sendLargeChunk(
+        _ sut: SUT,
+        settleNanoseconds: UInt64 = 100_000_000
+    ) async throws {
+        let largeChunk = Data(repeating: 0x01, count: Constants.chunkAccumulationBytes + 1)
+        sut.mockAudio.simulateChunk(largeChunk)
+        try await Task.sleep(nanoseconds: settleNanoseconds)
+    }
+
     // MARK: - Initial State
 
     @Test("Initial state is idle")
@@ -432,11 +442,119 @@ struct DictationOrchestratorTests {
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
-        let largeChunk = Data(repeating: 0x01, count: Constants.chunkAccumulationBytes + 1)
-        sut.mockAudio.simulateChunk(largeChunk)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        try await sendLargeChunk(sut)
 
         #expect(sut.appState.partialTranscript == "hello world")
+    }
+
+    // MARK: - Leading Non-Speech Markers
+
+    @Test("Leading non-speech marker detection matches only whole-response markers")
+    func leadingNonSpeechMarkerDetectionMatchesWholeResponseOnly() {
+        for marker in ["[ Silence ]", "[BLANK_AUDIO]", "[blank audio]", "[blank-audio]"] {
+            #expect(DictationOrchestrator.isLeadingNonSpeechMarker(marker))
+        }
+
+        for nonMarker in ["silence", "blank audio", "hello", "hello [BLANK_AUDIO]", "[TODO]"] {
+            #expect(!DictationOrchestrator.isLeadingNonSpeechMarker(nonMarker))
+        }
+    }
+
+    @Test("Leading marker-only partials do not update the visible transcript")
+    @MainActor func leadingMarkerOnlyPartialDoesNotUpdateVisibleTranscript() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(ASRChunkResponse(text: "[BLANK_AUDIO]", language: "en"))
+        )
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+
+        #expect(sut.appState.partialTranscript == "")
+        #expect(sut.appState.dictationState == .listening)
+    }
+
+    @Test("Leading marker-only sessions do not arm auto-close")
+    @MainActor func leadingMarkerOnlySessionsDoNotArmAutoClose() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(ASRChunkResponse(text: "[BLANK_AUDIO]", language: "en"))
+        )
+        sut.orchestrator.silenceTimeout = 0.2
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+        #expect(sut.appState.partialTranscript == "")
+
+        let silentLevels: [Float] = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]
+        for _ in 0..<10 {
+            sut.mockAudio.simulateLevels(silentLevels)
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+
+        #expect(sut.appState.dictationState == .listening)
+        #expect(sut.mockAudio.stopCaptureCalled == false)
+        #expect(!sut.mockLogger.infoMessages.contains(where: { $0.contains("Silence timer started") }))
+        #expect(!sut.mockLogger.infoMessages.contains(where: { $0.contains("Silence auto-close after") }))
+    }
+
+    @Test("First real speech after leading markers appears normally")
+    @MainActor func firstRealSpeechAfterLeadingMarkersAppearsNormally() async throws {
+        let sut = makeSUT()
+        var chunkResponses = [
+            ASRChunkResponse(text: "[BLANK_AUDIO]", language: "en"),
+            ASRChunkResponse(text: "[ Silence ]", language: "en"),
+            ASRChunkResponse(text: "hello world", language: "en"),
+        ]
+        sut.mockASR.sendChunkHandler = { _, _ in
+            chunkResponses.removeFirst()
+        }
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+        #expect(sut.appState.partialTranscript == "")
+
+        try await sendLargeChunk(sut)
+        #expect(sut.appState.partialTranscript == "")
+
+        try await sendLargeChunk(sut)
+
+        let showedSpeech = await waitUntil {
+            sut.appState.partialTranscript == "hello world"
+        }
+        #expect(showedSpeech)
+        #expect(sut.appState.partialTranscript == "hello world")
+    }
+
+    @Test("Manual stop on a leading marker-only final inserts nothing")
+    @MainActor func manualStopOnLeadingMarkerOnlyFinalInsertsNothing() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(ASRChunkResponse(text: "[BLANK_AUDIO]", language: "en")),
+            asrFinishResult: .success(ASRFinishResponse(text: "[BLANK_AUDIO]", language: "en")),
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+        #expect(sut.appState.partialTranscript == "")
+
+        sut.orchestrator.toggle()
+
+        let returnedToIdle = await waitUntil(timeoutNanoseconds: 3_000_000_000) {
+            sut.appState.dictationState == .idle
+        }
+        #expect(returnedToIdle)
+        #expect(sut.mockText.insertedTexts.isEmpty)
+        #expect(sut.mockText.returnSimulated == false)
+        #expect(sut.mockText.cmdReturnSimulated == false)
+        #expect(
+            sut.mockLogger.infoMessages.contains {
+                $0.contains("Final transcription contained only a leading non-speech marker; skipping insertion")
+            }
+        )
     }
 
     @Test("Stopping merges trailing buffered chunk response into partialTranscript")

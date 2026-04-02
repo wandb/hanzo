@@ -47,6 +47,7 @@ final class DictationOrchestrator {
     private var lastTranscriptActivityAt: Date?
     private var lastTranscriptPacketAt: Date?
     private var transcriptPacketIntervalEWMA: TimeInterval?
+    private var hasObservedMeaningfulTranscript = false
     private var previousAudioLevels: [Float]?
     private var recentAudioMotionSamples: [(timestamp: Date, motion: Float)] = []
 
@@ -221,6 +222,7 @@ final class DictationOrchestrator {
         lastTranscriptActivityAt = nil
         lastTranscriptPacketAt = nil
         transcriptPacketIntervalEWMA = nil
+        hasObservedMeaningfulTranscript = false
         previousAudioLevels = nil
         recentAudioMotionSamples.removeAll()
         applyEffectiveBehavior(for: nil)
@@ -293,6 +295,7 @@ final class DictationOrchestrator {
         lastTranscriptActivityAt = nil
         lastTranscriptPacketAt = nil
         transcriptPacketIntervalEWMA = nil
+        hasObservedMeaningfulTranscript = false
         previousAudioLevels = nil
         recentAudioMotionSamples.removeAll()
 
@@ -385,10 +388,20 @@ final class DictationOrchestrator {
                 let targetApp = previousApp
                 let targetAppName = resolvedTargetAppDisplayName(for: targetApp)
                 let rawFinalText = finalResponse.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                let finalText = await postProcessFinalTranscript(
-                    rawFinalText,
-                    targetAppName: targetAppName
-                )
+                let finalText: String
+                if !hasObservedMeaningfulTranscript,
+                   appState.partialTranscript.isEmpty,
+                   Self.isLeadingNonSpeechMarker(rawFinalText) {
+                    logger.info(
+                        "Final transcription contained only a leading non-speech marker; skipping insertion"
+                    )
+                    finalText = ""
+                } else {
+                    finalText = await postProcessFinalTranscript(
+                        rawFinalText,
+                        targetAppName: targetAppName
+                    )
+                }
                 sessionId = nil
                 previousApp = nil
                 activeSessionTargetBundleIdentifier = nil
@@ -512,6 +525,7 @@ final class DictationOrchestrator {
         lastTranscriptActivityAt = nil
         lastTranscriptPacketAt = nil
         transcriptPacketIntervalEWMA = nil
+        hasObservedMeaningfulTranscript = false
         previousAudioLevels = nil
         recentAudioMotionSamples.removeAll()
         activeSessionTargetBundleIdentifier = nil
@@ -932,7 +946,8 @@ final class DictationOrchestrator {
             break
         }
 
-        // Audio is below threshold — only start timer after words have been transcribed
+        // Audio is below threshold — only start timer after meaningful transcript
+        // content has appeared. Leading non-speech ASR markers are ignored.
         guard !appState.partialTranscript.isEmpty else {
             silenceCandidateStartTime = nil
             return
@@ -982,9 +997,22 @@ final class DictationOrchestrator {
     }
 
     private func applyIncomingPartialTranscript(_ incomingText: String, at now: Date) {
+        let trimmedIncomingText = incomingText.trimmingCharacters(in: .whitespacesAndNewlines)
         let previousPartial = appState.partialTranscript
         let transcriptStaleness = lastTranscriptContentUpdateAt
             .map { now.timeIntervalSince($0) } ?? .greatestFiniteMagnitude
+        let hasPacketText = !trimmedIncomingText.isEmpty
+
+        if hasPacketText {
+            noteTranscriptPacketActivity(at: now)
+        }
+
+        if !hasObservedMeaningfulTranscript,
+           previousPartial.isEmpty,
+           Self.isLeadingNonSpeechMarker(trimmedIncomingText) {
+            return
+        }
+
         let allowAggressiveRecovery = transcriptStaleness
             >= Constants.partialTranscriptAggressiveRecoveryAfterSeconds
         let mergedPartial = PartialTranscriptMerger.merge(
@@ -992,18 +1020,38 @@ final class DictationOrchestrator {
             incoming: incomingText,
             allowAggressiveRecovery: allowAggressiveRecovery
         )
-        let hasPacketText = !incomingText
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .isEmpty
-
-        if hasPacketText {
-            noteTranscriptPacketActivity(at: now)
-        }
 
         guard mergedPartial != previousPartial else { return }
         appState.partialTranscript = mergedPartial
         lastTranscriptContentUpdateAt = now
         lastObservedPartialTranscript = mergedPartial
+        if !mergedPartial.isEmpty {
+            hasObservedMeaningfulTranscript = true
+        }
+    }
+
+    static func isLeadingNonSpeechMarker(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.first == "[", trimmed.last == "]" else { return false }
+
+        let innerText = trimmed.dropFirst().dropLast()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !innerText.isEmpty else { return false }
+
+        let normalized = innerText
+            .lowercased()
+            .replacingOccurrences(
+                of: #"[\s_-]+"#,
+                with: "_",
+                options: .regularExpression
+            )
+
+        switch normalized {
+        case "silence", "blank_audio":
+            return true
+        default:
+            return false
+        }
     }
 
     private func speechBandDominance(for levels: [Float], signalLevel: Float) -> Float {
