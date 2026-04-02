@@ -9,6 +9,7 @@ final class MockASRClient: ASRClientProtocol {
     var finishStreamResult: Result<ASRFinishResponse, Error> = .success(
         ASRFinishResponse(text: "final text", language: "en")
     )
+    var sendChunkHandler: ((String, Data) throws -> ASRChunkResponse)?
 
     var startStreamCallCount = 0
     var sendChunkCalls: [(sessionId: String, pcmData: Data)] = []
@@ -21,6 +22,9 @@ final class MockASRClient: ASRClientProtocol {
 
     func sendChunk(sessionId: String, pcmData: Data) async throws -> ASRChunkResponse {
         sendChunkCalls.append((sessionId: sessionId, pcmData: pcmData))
+        if let sendChunkHandler {
+            return try sendChunkHandler(sessionId, pcmData)
+        }
         return try sendChunkResult.get()
     }
 

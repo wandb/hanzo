@@ -41,9 +41,15 @@ final class DictationOrchestrator {
     private var peakSpeechLevel: Float = 0
     private var ambientNoiseLevel: Float = Constants.silenceAbsoluteFloor
     private var lastSilenceEvaluationAt: Date?
+    private var silenceCandidateStartTime: Date?
     private var lastObservedPartialTranscript: String = ""
     private var lastTranscriptContentUpdateAt: Date?
     private var lastTranscriptActivityAt: Date?
+    private var lastTranscriptPacketAt: Date?
+    private var transcriptPacketIntervalEWMA: TimeInterval?
+    private var hasObservedMeaningfulTranscript = false
+    private var previousAudioLevels: [Float]?
+    private var recentAudioMotionSamples: [(timestamp: Date, motion: Float)] = []
 
     init(
         appState: AppState,
@@ -207,12 +213,18 @@ final class DictationOrchestrator {
         activeSessionTargetBundleIdentifier = nil
         pendingRestartAfterForging = false
         silenceStartTime = nil
+        silenceCandidateStartTime = nil
         peakSpeechLevel = 0
         ambientNoiseLevel = Constants.silenceAbsoluteFloor
         lastSilenceEvaluationAt = nil
         lastObservedPartialTranscript = ""
         lastTranscriptContentUpdateAt = nil
         lastTranscriptActivityAt = nil
+        lastTranscriptPacketAt = nil
+        transcriptPacketIntervalEWMA = nil
+        hasObservedMeaningfulTranscript = false
+        previousAudioLevels = nil
+        recentAudioMotionSamples.removeAll()
         applyEffectiveBehavior(for: nil)
 
         Task { @MainActor in
@@ -274,12 +286,18 @@ final class DictationOrchestrator {
             currentRecordingEpoch += 1
         }
         silenceStartTime = nil
+        silenceCandidateStartTime = nil
         peakSpeechLevel = 0
         ambientNoiseLevel = Constants.silenceAbsoluteFloor
         lastSilenceEvaluationAt = nil
         lastObservedPartialTranscript = ""
         lastTranscriptContentUpdateAt = nil
         lastTranscriptActivityAt = nil
+        lastTranscriptPacketAt = nil
+        transcriptPacketIntervalEWMA = nil
+        hasObservedMeaningfulTranscript = false
+        previousAudioLevels = nil
+        recentAudioMotionSamples.removeAll()
 
         Task {
             do {
@@ -370,10 +388,20 @@ final class DictationOrchestrator {
                 let targetApp = previousApp
                 let targetAppName = resolvedTargetAppDisplayName(for: targetApp)
                 let rawFinalText = finalResponse.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                let finalText = await postProcessFinalTranscript(
-                    rawFinalText,
-                    targetAppName: targetAppName
-                )
+                let finalText: String
+                if !hasObservedMeaningfulTranscript,
+                   appState.partialTranscript.isEmpty,
+                   Self.isLeadingNonSpeechMarker(rawFinalText) {
+                    logger.info(
+                        "Final transcription contained only a leading non-speech marker; skipping insertion"
+                    )
+                    finalText = ""
+                } else {
+                    finalText = await postProcessFinalTranscript(
+                        rawFinalText,
+                        targetAppName: targetAppName
+                    )
+                }
                 sessionId = nil
                 previousApp = nil
                 activeSessionTargetBundleIdentifier = nil
@@ -488,12 +516,18 @@ final class DictationOrchestrator {
         appState.activeTargetBundleIdentifier = nil
         pendingRestartAfterForging = false
         silenceStartTime = nil
+        silenceCandidateStartTime = nil
         peakSpeechLevel = 0
         ambientNoiseLevel = Constants.silenceAbsoluteFloor
         lastSilenceEvaluationAt = nil
         lastObservedPartialTranscript = ""
         lastTranscriptContentUpdateAt = nil
         lastTranscriptActivityAt = nil
+        lastTranscriptPacketAt = nil
+        transcriptPacketIntervalEWMA = nil
+        hasObservedMeaningfulTranscript = false
+        previousAudioLevels = nil
+        recentAudioMotionSamples.removeAll()
         activeSessionTargetBundleIdentifier = nil
         applyEffectiveBehavior(for: nil)
     }
@@ -738,13 +772,35 @@ final class DictationOrchestrator {
 
     // MARK: - Silence Detection
 
+    private enum SilenceState: String {
+        case strongSpeech
+        case activeContinuation
+        case candidateSilence
+    }
+
+    private struct SilenceMetrics {
+        let signalLevel: Float
+        let speechBandDominance: Float
+        let rawThreshold: Float
+        let ambientThreshold: Float
+        let threshold: Float
+        let speechActivityThreshold: Float
+        let continuationThreshold: Float
+        let audioMotion: Float
+        let motionThreshold: Float
+        let silenceState: SilenceState
+    }
+
     private func evaluateSilence(levels: [Float]) {
         guard silenceTimeout > 0 else { return }
         let now = Date()
 
         guard appState.dictationState == .listening else {
             silenceStartTime = nil
+            silenceCandidateStartTime = nil
             lastSilenceEvaluationAt = nil
+            previousAudioLevels = nil
+            recentAudioMotionSamples.removeAll()
             return
         }
 
@@ -752,7 +808,9 @@ final class DictationOrchestrator {
             lastObservedPartialTranscript = appState.partialTranscript
             if !appState.partialTranscript.isEmpty {
                 lastTranscriptContentUpdateAt = now
-                lastTranscriptActivityAt = now
+                if lastTranscriptActivityAt == nil {
+                    lastTranscriptActivityAt = now
+                }
             }
         }
 
@@ -780,13 +838,8 @@ final class DictationOrchestrator {
         )
         let transcriptRecentlyUpdated = lastTranscriptContentUpdateAt
             .map { now.timeIntervalSince($0) < clampedTranscriptGrace } ?? false
-        let transcriptSignalGrace = max(
-            clampedTranscriptGrace,
-            Constants.silenceTranscriptSignalGraceMinimumSeconds
-        )
-        let transcriptSignalRecentlyUpdated = lastTranscriptActivityAt
-            .map { now.timeIntervalSince($0) < transcriptSignalGrace } ?? false
         let shouldRelaxAmbientSampleCap = !appState.partialTranscript.isEmpty && !transcriptRecentlyUpdated
+        let currentAudioMotion = currentAudioMotion(for: levels)
 
         var ambientSampleCap = max(
             Constants.silenceAbsoluteFloor * 2,
@@ -809,7 +862,11 @@ final class DictationOrchestrator {
             )
             let alpha: Float
             if averageLevel > ambientNoiseLevel {
-                alpha = shouldRelaxAmbientSampleCap ? max(riseAlpha, fallAlpha) : riseAlpha
+                if currentAudioMotion >= Constants.silenceMotionAbsoluteFloor {
+                    alpha = 0
+                } else {
+                    alpha = shouldRelaxAmbientSampleCap ? max(riseAlpha, fallAlpha) : riseAlpha
+                }
             } else {
                 alpha = fallAlpha
             }
@@ -833,48 +890,99 @@ final class DictationOrchestrator {
             threshold * Constants.silenceSpeechActivityThresholdMultiplier,
             threshold + Constants.silenceSpeechActivityThresholdOffset
         )
+        let continuationThreshold = max(
+            Constants.silenceAbsoluteFloor
+                * Constants.silenceTranscriptContinuationMinimumLevelMultiplier,
+            ambientNoiseLevel + Constants.silenceTranscriptContinuationThresholdOffset,
+            threshold * Constants.silenceTranscriptContinuationThresholdMultiplier
+        )
+        let speechBandDominance = speechBandDominance(
+            for: levels,
+            signalLevel: averageLevel
+        )
+        let audioMotion = noteAudioMotion(currentAudioMotion, levels: levels, at: now)
+        let motionThreshold = max(
+            Constants.silenceMotionAbsoluteFloor,
+            continuationThreshold * Constants.silenceMotionThresholdMultiplier
+        )
+        let silenceState = classifySilenceState(
+            signalLevel: averageLevel,
+            ambientLevel: ambientNoiseLevel,
+            threshold: threshold,
+            speechActivityThreshold: speechActivityThreshold,
+            continuationThreshold: continuationThreshold,
+            recentAudioMotion: audioMotion,
+            motionThreshold: motionThreshold
+        )
+        let metrics = SilenceMetrics(
+            signalLevel: averageLevel,
+            speechBandDominance: speechBandDominance,
+            rawThreshold: rawThreshold,
+            ambientThreshold: ambientThreshold,
+            threshold: threshold,
+            speechActivityThreshold: speechActivityThreshold,
+            continuationThreshold: continuationThreshold,
+            audioMotion: audioMotion,
+            motionThreshold: motionThreshold,
+            silenceState: silenceState
+        )
 
-        if averageLevel >= speechActivityThreshold {
-            // Raise the speech-detection bar so borderline ambient bumps
-            // are more likely treated as silence.
-            silenceStartTime = nil
+        switch silenceState {
+        case .strongSpeech:
+            clearSilenceTimer(
+                reason: "strong speech",
+                now: now,
+                metrics: metrics
+            )
+            return
+        case .activeContinuation:
+            clearSilenceTimer(
+                reason: "continuation audio",
+                now: now,
+                metrics: metrics
+            )
+            return
+        case .candidateSilence:
+            break
+        }
+
+        // Audio is below threshold — only start timer after meaningful transcript
+        // content has appeared. Leading non-speech ASR markers are ignored.
+        guard !appState.partialTranscript.isEmpty else {
+            silenceCandidateStartTime = nil
             return
         }
 
-        // Audio is below threshold — only start timer after words have been transcribed
-        guard !appState.partialTranscript.isEmpty else { return }
-
-        if transcriptSignalRecentlyUpdated {
-            if shouldResetSilenceTimerForTranscriptActivity(
-                levels: levels,
-                signalLevel: averageLevel
-            ) {
-                // Keep listening while new words are still arriving and
-                // current spectrum still looks speech-like.
-                silenceStartTime = nil
-                return
-            }
-        }
-
         if transcriptRecentlyUpdated && silenceStartTime == nil {
+            silenceCandidateStartTime = nil
             return
         }
 
         if silenceStartTime == nil {
+            let silenceArmDelay = silenceTimerArmDelay()
+            if let silenceCandidateStartTime {
+                guard now.timeIntervalSince(silenceCandidateStartTime) >= silenceArmDelay else {
+                    return
+                }
+            } else {
+                silenceCandidateStartTime = now
+                return
+            }
+            silenceCandidateStartTime = nil
             silenceStartTime = now
+            logSilenceEvent(
+                "Silence timer started",
+                now: now,
+                metrics: metrics
+            )
         }
 
         if let start = silenceStartTime,
            now.timeIntervalSince(start) >= silenceTimeout {
-            let transcriptAge = lastTranscriptContentUpdateAt
-                .map { String(format: "%.2f", now.timeIntervalSince($0)) } ?? "n/a"
-            logger.info(
-                "Silence auto-close after \(silenceTimeout)s " +
-                "(avg \(String(format: "%.4f", averageLevel)), " +
-                "ambient \(String(format: "%.4f", ambientNoiseLevel)), " +
-                "threshold \(String(format: "%.4f", threshold)), " +
-                "activityThreshold \(String(format: "%.4f", speechActivityThreshold)), " +
-                "transcriptAge \(transcriptAge)s)"
+            logSilenceEvent(
+                "Silence auto-close after \(silenceTimeout)s",
+                now: now,
+                metrics: metrics
             )
             silenceStartTime = nil
             stopRecording()
@@ -889,9 +997,22 @@ final class DictationOrchestrator {
     }
 
     private func applyIncomingPartialTranscript(_ incomingText: String, at now: Date) {
+        let trimmedIncomingText = incomingText.trimmingCharacters(in: .whitespacesAndNewlines)
         let previousPartial = appState.partialTranscript
         let transcriptStaleness = lastTranscriptContentUpdateAt
             .map { now.timeIntervalSince($0) } ?? .greatestFiniteMagnitude
+        let hasPacketText = !trimmedIncomingText.isEmpty
+
+        if hasPacketText {
+            noteTranscriptPacketActivity(at: now)
+        }
+
+        if !hasObservedMeaningfulTranscript,
+           previousPartial.isEmpty,
+           Self.isLeadingNonSpeechMarker(trimmedIncomingText) {
+            return
+        }
+
         let allowAggressiveRecovery = transcriptStaleness
             >= Constants.partialTranscriptAggressiveRecoveryAfterSeconds
         let mergedPartial = PartialTranscriptMerger.merge(
@@ -900,17 +1021,37 @@ final class DictationOrchestrator {
             allowAggressiveRecovery: allowAggressiveRecovery
         )
 
-        if !incomingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !mergedPartial.isEmpty {
-            lastTranscriptActivityAt = now
-            if shouldResetSilenceTimerForTranscriptActivity(levels: appState.audioLevels) {
-                silenceStartTime = nil
-            }
-        }
-
         guard mergedPartial != previousPartial else { return }
         appState.partialTranscript = mergedPartial
         lastTranscriptContentUpdateAt = now
         lastObservedPartialTranscript = mergedPartial
+        if !mergedPartial.isEmpty {
+            hasObservedMeaningfulTranscript = true
+        }
+    }
+
+    static func isLeadingNonSpeechMarker(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.first == "[", trimmed.last == "]" else { return false }
+
+        let innerText = trimmed.dropFirst().dropLast()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !innerText.isEmpty else { return false }
+
+        let normalized = innerText
+            .lowercased()
+            .replacingOccurrences(
+                of: #"[\s_-]+"#,
+                with: "_",
+                options: .regularExpression
+            )
+
+        switch normalized {
+        case "silence", "blank_audio":
+            return true
+        default:
+            return false
+        }
     }
 
     private func speechBandDominance(for levels: [Float], signalLevel: Float) -> Float {
@@ -920,22 +1061,157 @@ final class DictationOrchestrator {
         return signalLevel / broadbandLevel
     }
 
-    // ASR packet activity and visible transcript growth are different signals:
-    // repeated identical partials can still mean the user is actively speaking.
-    private func shouldResetSilenceTimerForTranscriptActivity(
-        levels: [Float],
-        signalLevel: Float? = nil
-    ) -> Bool {
-        guard !levels.isEmpty else { return false }
+    private func classifySilenceState(
+        signalLevel: Float,
+        ambientLevel: Float,
+        threshold: Float,
+        speechActivityThreshold: Float,
+        continuationThreshold: Float,
+        recentAudioMotion: Float,
+        motionThreshold: Float
+    ) -> SilenceState {
+        if signalLevel >= speechActivityThreshold {
+            return .strongSpeech
+        }
 
-        let resolvedSignalLevel = signalLevel ?? silenceSignalLevel(for: levels)
-        let speechBandDominance = speechBandDominance(for: levels, signalLevel: resolvedSignalLevel)
-        let minimumResetLevel =
-            Constants.silenceAbsoluteFloor
-            * Constants.silenceTranscriptSpeechResetMinimumLevelMultiplier
+        let motionQualifiedSignalFloor = max(
+            continuationThreshold,
+            ambientLevel + Constants.silenceMotionContinuationSignalOffset,
+            threshold * Constants.silenceMotionContinuationThresholdMinimumFraction
+        )
 
-        return resolvedSignalLevel >= minimumResetLevel
-            && speechBandDominance >= Constants.silenceTranscriptSpeechBandDominanceThreshold
+        if signalLevel >= continuationThreshold
+            && signalLevel >= motionQualifiedSignalFloor
+            && (
+                signalLevel >= threshold
+                    || recentAudioMotion >= motionThreshold
+            ) {
+            return .activeContinuation
+        }
+
+        return .candidateSilence
+    }
+
+    private func noteTranscriptPacketActivity(at now: Date) {
+        if let lastTranscriptPacketAt {
+            let observedInterval = max(0, now.timeIntervalSince(lastTranscriptPacketAt))
+            if observedInterval > 0 {
+                if let existingEWMA = transcriptPacketIntervalEWMA {
+                    let alpha = Constants.silenceTranscriptPacketIntervalEWMASmoothing
+                    transcriptPacketIntervalEWMA =
+                        existingEWMA + (observedInterval - existingEWMA) * alpha
+                } else {
+                    transcriptPacketIntervalEWMA = observedInterval
+                }
+            }
+        }
+        lastTranscriptPacketAt = now
+        lastTranscriptActivityAt = now
+    }
+
+    private func clearSilenceTimer(reason: String, now: Date, metrics: SilenceMetrics) {
+        silenceCandidateStartTime = nil
+        guard silenceStartTime != nil else { return }
+        silenceStartTime = nil
+        logSilenceEvent(
+            "Silence timer cleared by \(reason)",
+            now: now,
+            metrics: metrics
+        )
+    }
+
+    private func logSilenceEvent(_ event: String, now: Date, metrics: SilenceMetrics) {
+        logger.info(
+            "\(event) " +
+            "(avg \(formattedSilenceValue(metrics.signalLevel)), " +
+            "peak \(formattedSilenceValue(peakSpeechLevel)), " +
+            "ambient \(formattedSilenceValue(ambientNoiseLevel)), " +
+            "rawThreshold \(formattedSilenceValue(metrics.rawThreshold)), " +
+            "ambientThreshold \(formattedSilenceValue(metrics.ambientThreshold)), " +
+            "threshold \(formattedSilenceValue(metrics.threshold)), " +
+            "continuationThreshold \(formattedSilenceValue(metrics.continuationThreshold)), " +
+            "activityThreshold \(formattedSilenceValue(metrics.speechActivityThreshold)), " +
+            "audioMotion \(formattedSilenceValue(metrics.audioMotion)), " +
+            "motionThreshold \(formattedSilenceValue(metrics.motionThreshold)), " +
+            "silenceState \(metrics.silenceState.rawValue), " +
+            "speechBandDominance \(formattedSilenceValue(metrics.speechBandDominance)), " +
+            "transcriptContentAge \(formattedSilenceAge(lastTranscriptContentUpdateAt, now: now)), " +
+            "transcriptActivityAge \(formattedSilenceAge(lastTranscriptActivityAt, now: now)), " +
+            "packetInterval \(formattedSilenceInterval(transcriptPacketIntervalEWMA))"
+        )
+    }
+
+    private func formattedSilenceValue(_ value: Float) -> String {
+        String(format: "%.4f", value)
+    }
+
+    private func formattedSilenceAge(_ date: Date?, now: Date) -> String {
+        guard let date else { return "n/a" }
+        return String(format: "%.2fs", now.timeIntervalSince(date))
+    }
+
+    private func formattedSilenceInterval(_ interval: TimeInterval?) -> String {
+        guard let interval else { return "n/a" }
+        return String(format: "%.2fs", interval)
+    }
+
+    private func silenceTimerArmDelay() -> TimeInterval {
+        let scaledDelay = silenceTimeout * Constants.silenceTimerArmDelayTimeoutFraction
+        return min(
+            max(scaledDelay, Constants.silenceTimerArmDelayMinimumSeconds),
+            Constants.silenceTimerArmDelayMaximumSeconds
+        )
+    }
+
+    private func noteAudioMotion(_ motion: Float, levels: [Float], at now: Date) -> Float {
+        previousAudioLevels = levels
+        recentAudioMotionSamples.append((timestamp: now, motion: motion))
+        return recentAudioMotion(now: now)
+    }
+
+    private func currentAudioMotion(for levels: [Float]) -> Float {
+        guard let previousAudioLevels,
+              previousAudioLevels.count == levels.count else {
+            return 0
+        }
+        return audioMotion(for: levels, previousLevels: previousAudioLevels)
+    }
+
+    private func recentAudioMotion(now: Date) -> Float {
+        let windowStart = now.addingTimeInterval(-Constants.silenceMotionWindowSeconds)
+        recentAudioMotionSamples.removeAll { $0.timestamp < windowStart }
+        guard !recentAudioMotionSamples.isEmpty else { return 0 }
+
+        let sum = recentAudioMotionSamples.reduce(Float.zero) { partialResult, sample in
+            partialResult + sample.motion
+        }
+        return sum / Float(recentAudioMotionSamples.count)
+    }
+
+    private func audioMotion(for levels: [Float], previousLevels: [Float]) -> Float {
+        guard levels.count == previousLevels.count else { return 0 }
+
+        let weights = Constants.silenceSpeechBandWeights
+        guard levels.count == weights.count else {
+            assertionFailure(
+                "audioMotion: levels.count (\(levels.count)) != silenceSpeechBandWeights.count (\(weights.count)); falling back to unweighted delta mean."
+            )
+            logger.warn(
+                "audioMotion band-count mismatch: levels.count=\(levels.count), weights.count=\(weights.count); falling back to unweighted delta mean."
+            )
+            let deltas = zip(levels, previousLevels).map { abs($0 - $1) }
+            guard !deltas.isEmpty else { return 0 }
+            return deltas.reduce(0, +) / Float(deltas.count)
+        }
+
+        let weightTotal = weights.reduce(0, +)
+        guard weightTotal > 0 else { return 0 }
+
+        var weightedDeltaSum: Float = 0
+        for ((level, previousLevel), weight) in zip(zip(levels, previousLevels), weights) {
+            weightedDeltaSum += abs(level - previousLevel) * weight
+        }
+        return weightedDeltaSum / weightTotal
     }
 
     private func silenceSignalLevel(for levels: [Float]) -> Float {
