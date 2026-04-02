@@ -42,8 +42,8 @@ final class DictationOrchestrator {
     private var ambientNoiseLevel: Float = Constants.silenceAbsoluteFloor
     private var lastSilenceEvaluationAt: Date?
     private var lastObservedPartialTranscript: String = ""
-    private var lastPartialTranscriptUpdateAt: Date?
-    private var lastTranscriptSignalAt: Date?
+    private var lastTranscriptContentUpdateAt: Date?
+    private var lastTranscriptActivityAt: Date?
 
     init(
         appState: AppState,
@@ -211,8 +211,8 @@ final class DictationOrchestrator {
         ambientNoiseLevel = Constants.silenceAbsoluteFloor
         lastSilenceEvaluationAt = nil
         lastObservedPartialTranscript = ""
-        lastPartialTranscriptUpdateAt = nil
-        lastTranscriptSignalAt = nil
+        lastTranscriptContentUpdateAt = nil
+        lastTranscriptActivityAt = nil
         applyEffectiveBehavior(for: nil)
 
         Task { @MainActor in
@@ -278,8 +278,8 @@ final class DictationOrchestrator {
         ambientNoiseLevel = Constants.silenceAbsoluteFloor
         lastSilenceEvaluationAt = nil
         lastObservedPartialTranscript = ""
-        lastPartialTranscriptUpdateAt = nil
-        lastTranscriptSignalAt = nil
+        lastTranscriptContentUpdateAt = nil
+        lastTranscriptActivityAt = nil
 
         Task {
             do {
@@ -492,8 +492,8 @@ final class DictationOrchestrator {
         ambientNoiseLevel = Constants.silenceAbsoluteFloor
         lastSilenceEvaluationAt = nil
         lastObservedPartialTranscript = ""
-        lastPartialTranscriptUpdateAt = nil
-        lastTranscriptSignalAt = nil
+        lastTranscriptContentUpdateAt = nil
+        lastTranscriptActivityAt = nil
         activeSessionTargetBundleIdentifier = nil
         applyEffectiveBehavior(for: nil)
     }
@@ -751,8 +751,8 @@ final class DictationOrchestrator {
         if appState.partialTranscript != lastObservedPartialTranscript {
             lastObservedPartialTranscript = appState.partialTranscript
             if !appState.partialTranscript.isEmpty {
-                lastPartialTranscriptUpdateAt = now
-                lastTranscriptSignalAt = now
+                lastTranscriptContentUpdateAt = now
+                lastTranscriptActivityAt = now
             }
         }
 
@@ -778,13 +778,13 @@ final class DictationOrchestrator {
             transcriptGrace,
             Constants.silenceTranscriptActivityGraceMaximumSeconds
         )
-        let transcriptRecentlyUpdated = lastPartialTranscriptUpdateAt
+        let transcriptRecentlyUpdated = lastTranscriptContentUpdateAt
             .map { now.timeIntervalSince($0) < clampedTranscriptGrace } ?? false
         let transcriptSignalGrace = max(
             clampedTranscriptGrace,
             Constants.silenceTranscriptSignalGraceMinimumSeconds
         )
-        let transcriptSignalRecentlyUpdated = lastTranscriptSignalAt
+        let transcriptSignalRecentlyUpdated = lastTranscriptActivityAt
             .map { now.timeIntervalSince($0) < transcriptSignalGrace } ?? false
         let shouldRelaxAmbientSampleCap = !appState.partialTranscript.isEmpty && !transcriptRecentlyUpdated
 
@@ -866,7 +866,7 @@ final class DictationOrchestrator {
 
         if let start = silenceStartTime,
            now.timeIntervalSince(start) >= silenceTimeout {
-            let transcriptAge = lastPartialTranscriptUpdateAt
+            let transcriptAge = lastTranscriptContentUpdateAt
                 .map { String(format: "%.2f", now.timeIntervalSince($0)) } ?? "n/a"
             logger.info(
                 "Silence auto-close after \(silenceTimeout)s " +
@@ -890,7 +890,7 @@ final class DictationOrchestrator {
 
     private func applyIncomingPartialTranscript(_ incomingText: String, at now: Date) {
         let previousPartial = appState.partialTranscript
-        let transcriptStaleness = lastPartialTranscriptUpdateAt
+        let transcriptStaleness = lastTranscriptContentUpdateAt
             .map { now.timeIntervalSince($0) } ?? .greatestFiniteMagnitude
         let allowAggressiveRecovery = transcriptStaleness
             >= Constants.partialTranscriptAggressiveRecoveryAfterSeconds
@@ -901,7 +901,7 @@ final class DictationOrchestrator {
         )
 
         if !incomingText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !mergedPartial.isEmpty {
-            lastTranscriptSignalAt = now
+            lastTranscriptActivityAt = now
             if shouldResetSilenceTimerForTranscriptActivity(levels: appState.audioLevels) {
                 silenceStartTime = nil
             }
@@ -909,7 +909,7 @@ final class DictationOrchestrator {
 
         guard mergedPartial != previousPartial else { return }
         appState.partialTranscript = mergedPartial
-        lastPartialTranscriptUpdateAt = now
+        lastTranscriptContentUpdateAt = now
         lastObservedPartialTranscript = mergedPartial
     }
 
@@ -920,6 +920,8 @@ final class DictationOrchestrator {
         return signalLevel / broadbandLevel
     }
 
+    // ASR packet activity and visible transcript growth are different signals:
+    // repeated identical partials can still mean the user is actively speaking.
     private func shouldResetSilenceTimerForTranscriptActivity(
         levels: [Float],
         signalLevel: Float? = nil
