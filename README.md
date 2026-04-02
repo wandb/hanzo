@@ -1,7 +1,9 @@
+<img src="HanzoCore/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" alt="Hanzo logo" width="32" />&nbsp;
+
 # Hanzo
 
 <p align="center">
-  <img src="HanzoCore/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" alt="Hanzo logo" width="128" />
+  <img src="docs/images/demo.gif" alt="Hanzo demo" width="900" />
 </p>
 
 Typing is too slow when you are driving coding agents all day. Dictation is faster, but most voice tools send your raw speech to third-party servers.
