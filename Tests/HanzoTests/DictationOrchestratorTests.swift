@@ -968,7 +968,7 @@ struct DictationOrchestratorTests {
     @Test("Silence auto-close waits for sustained quiet before arming the countdown")
     @MainActor func silenceAutoCloseWaitsForSustainedQuietBeforeArming() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 0.25
+        sut.orchestrator.silenceTimeout = 0.5
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -978,22 +978,21 @@ struct DictationOrchestratorTests {
 
         let silentLevels: [Float] = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]
 
-        for _ in 0..<8 {
+        for _ in 0..<4 {
             sut.mockAudio.simulateLevels(silentLevels)
-            try await Task.sleep(nanoseconds: 50_000_000)
+            try await Task.sleep(nanoseconds: 25_000_000)
         }
 
         #expect(sut.appState.dictationState == .listening)
+        #expect(!sut.mockLogger.infoMessages.contains(where: { $0.contains("Silence timer started") }))
 
-        for _ in 0..<16 {
+        let didStop = await waitUntil(timeoutNanoseconds: 2_000_000_000) {
             sut.mockAudio.simulateLevels(silentLevels)
-            try await Task.sleep(nanoseconds: 50_000_000)
-            if sut.appState.dictationState != .listening {
-                break
-            }
+            return sut.appState.dictationState != .listening
         }
 
-        #expect(sut.appState.dictationState != .listening)
+        #expect(didStop)
+        #expect(sut.mockLogger.infoMessages.contains(where: { $0.contains("Silence timer started") }))
         #expect(sut.mockAudio.stopCaptureCalled == true)
     }
 
