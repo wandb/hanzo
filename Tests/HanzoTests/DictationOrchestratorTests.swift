@@ -1071,6 +1071,109 @@ struct DictationOrchestratorTests {
         #expect((stopIteration ?? Int.max) <= 10)
     }
 
+    @Test("Silence auto-close does not trigger while soft speech continues with delayed partial updates")
+    @MainActor func silenceAutoCloseIgnoresSoftOngoingSpeechWithDelayedPartials() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.silenceTimeout = 0.3
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // Establish an initial speech peak and first transcript token.
+        sut.mockAudio.simulateLevels([0.03, 0.05, 0.08, 0.11, 0.1, 0.07, 0.03])
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.appState.partialTranscript = "hello"
+
+        // User keeps speaking softly; partial updates arrive intermittently.
+        let softSpeechLevels: [Float] = [0.004, 0.008, 0.014, 0.019, 0.017, 0.010, 0.004]
+        for i in 0..<16 {
+            if i == 6 {
+                sut.appState.partialTranscript = "hello world"
+            } else if i == 12 {
+                sut.appState.partialTranscript = "hello world again"
+            }
+
+            sut.mockAudio.simulateLevels(softSpeechLevels)
+            try await Task.sleep(nanoseconds: 50_000_000)
+
+            if sut.appState.dictationState != .listening {
+                break
+            }
+        }
+
+        #expect(sut.appState.dictationState == .listening)
+        #expect(sut.mockAudio.stopCaptureCalled == false)
+    }
+
+    @Test("Silence auto-close does not trigger while repeated identical partials arrive during soft speech")
+    @MainActor func silenceAutoCloseIgnoresRepeatedIdenticalPartialsDuringSoftSpeech() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(
+                ASRChunkResponse(text: "hello", language: "en")
+            )
+        )
+        sut.orchestrator.silenceTimeout = 0.3
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let chunk = Data(repeating: 0, count: Constants.chunkAccumulationBytes)
+        sut.mockAudio.simulateLevels([0.03, 0.05, 0.08, 0.11, 0.1, 0.07, 0.03])
+        sut.mockAudio.simulateChunk(chunk)
+
+        let gotInitialPartial = await waitUntil(timeoutNanoseconds: 500_000_000) {
+            sut.appState.partialTranscript == "hello"
+        }
+        #expect(gotInitialPartial)
+
+        let softSpeechLevels: [Float] = [0.004, 0.008, 0.014, 0.019, 0.017, 0.010, 0.004]
+        for _ in 0..<8 {
+            sut.mockAudio.simulateLevels(softSpeechLevels)
+            sut.mockAudio.simulateChunk(chunk)
+            try await Task.sleep(nanoseconds: 100_000_000)
+
+            if sut.appState.dictationState != .listening {
+                break
+            }
+        }
+
+        #expect(sut.appState.dictationState == .listening)
+        #expect(sut.mockAudio.stopCaptureCalled == false)
+    }
+
+    @Test("Silence auto-close still triggers during low-level noise despite repeated identical partials")
+    @MainActor func silenceAutoCloseStillTriggersWithRepeatedIdenticalPartialsInLowNoise() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(
+                ASRChunkResponse(text: "hello", language: "en")
+            )
+        )
+        sut.orchestrator.silenceTimeout = 0.25
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let chunk = Data(repeating: 0, count: Constants.chunkAccumulationBytes)
+        sut.mockAudio.simulateLevels([0.03, 0.05, 0.08, 0.11, 0.1, 0.07, 0.03])
+        sut.mockAudio.simulateChunk(chunk)
+
+        let gotInitialPartial = await waitUntil(timeoutNanoseconds: 500_000_000) {
+            sut.appState.partialTranscript == "hello"
+        }
+        #expect(gotInitialPartial)
+
+        let lowNoiseLevels: [Float] = [0.0051, 0.0052, 0.0050, 0.0051, 0.0052, 0.0051, 0.0050]
+        for _ in 0..<10 {
+            sut.mockAudio.simulateLevels(lowNoiseLevels)
+            sut.mockAudio.simulateChunk(chunk)
+            try await Task.sleep(nanoseconds: 100_000_000)
+
+            if sut.appState.dictationState != .listening {
+                break
+            }
+        }
+
+        #expect(sut.appState.dictationState != .listening)
+        #expect(sut.mockAudio.stopCaptureCalled == true)
+    }
+
     @Test("Silence auto-close does not trigger with audio but no transcription")
     @MainActor func silenceAutoCloseWaitsForTranscription() async throws {
         let sut = makeSUT()
