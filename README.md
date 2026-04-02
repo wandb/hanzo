@@ -1,12 +1,14 @@
-# Hanzo
+<img src="HanzoCore/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" alt="Hanzo logo" width="32" />&nbsp;
 
-<p align="center">
-  <img src="HanzoCore/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" alt="Hanzo logo" width="128" />
-</p>
+# Hanzo
 
 Typing is too slow when you are driving coding agents all day. Dictation is faster, but most voice tools send your raw speech to third-party servers.
 
 Hanzo keeps that workflow local: what you say stays on your laptop, transcribed with local Whisper, rewritten with a local model, and customized per-app before insertion.
+
+<p align="center">
+  <img src="docs/images/demo.gif" alt="Hanzo demo" style="max-width: 100%; height: auto;" />
+</p>
 
 Requires an Apple Silicon Mac running macOS 15+.
 
