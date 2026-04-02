@@ -1418,8 +1418,10 @@ struct DictationOrchestratorTests {
             + Constants.silenceMotionWindowSeconds
             + 0.15
 
-        let deadline = Date().addingTimeInterval(lingerBound)
-        while Date() < deadline && sut.appState.dictationState == .listening {
+        let deadline = DispatchTime.now().uptimeNanoseconds
+            + UInt64(lingerBound * 1_000_000_000)
+        while DispatchTime.now().uptimeNanoseconds < deadline
+            && sut.appState.dictationState == .listening {
             sut.mockAudio.simulateLevels(silentLevels)
             try await Task.sleep(nanoseconds: 25_000_000)
         }

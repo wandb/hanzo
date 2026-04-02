@@ -1044,64 +1044,6 @@ final class DictationOrchestrator {
         return .candidateSilence
     }
 
-    private func makeSilenceMetrics(
-        levels: [Float],
-        signalLevel: Float? = nil
-    ) -> SilenceMetrics? {
-        guard !levels.isEmpty else { return nil }
-
-        let resolvedSignalLevel = signalLevel ?? silenceSignalLevel(for: levels)
-        let rawThreshold = max(
-            peakSpeechLevel * Constants.silenceRelativeThreshold,
-            Constants.silenceAbsoluteFloor
-        )
-        let ambientThreshold = max(
-            ambientNoiseLevel * Constants.silenceAmbientThresholdMultiplier,
-            ambientNoiseLevel + Constants.silenceAmbientThresholdOffset
-        )
-        let threshold = max(rawThreshold, ambientThreshold)
-        let speechActivityThreshold = max(
-            threshold * Constants.silenceSpeechActivityThresholdMultiplier,
-            threshold + Constants.silenceSpeechActivityThresholdOffset
-        )
-        let continuationThreshold = max(
-            Constants.silenceAbsoluteFloor
-                * Constants.silenceTranscriptContinuationMinimumLevelMultiplier,
-            ambientNoiseLevel + Constants.silenceTranscriptContinuationThresholdOffset,
-            threshold * Constants.silenceTranscriptContinuationThresholdMultiplier
-        )
-        let audioMotion = recentAudioMotion(now: Date())
-        let motionThreshold = max(
-            Constants.silenceMotionAbsoluteFloor,
-            continuationThreshold * Constants.silenceMotionThresholdMultiplier
-        )
-        let silenceState = classifySilenceState(
-            signalLevel: resolvedSignalLevel,
-            ambientLevel: ambientNoiseLevel,
-            threshold: threshold,
-            speechActivityThreshold: speechActivityThreshold,
-            continuationThreshold: continuationThreshold,
-            recentAudioMotion: audioMotion,
-            motionThreshold: motionThreshold
-        )
-
-        return SilenceMetrics(
-            signalLevel: resolvedSignalLevel,
-            speechBandDominance: speechBandDominance(
-                for: levels,
-                signalLevel: resolvedSignalLevel
-            ),
-            rawThreshold: rawThreshold,
-            ambientThreshold: ambientThreshold,
-            threshold: threshold,
-            speechActivityThreshold: speechActivityThreshold,
-            continuationThreshold: continuationThreshold,
-            audioMotion: audioMotion,
-            motionThreshold: motionThreshold,
-            silenceState: silenceState
-        )
-    }
-
     private func noteTranscriptPacketActivity(at now: Date) {
         if let lastTranscriptPacketAt {
             let observedInterval = max(0, now.timeIntervalSince(lastTranscriptPacketAt))
@@ -1147,7 +1089,7 @@ final class DictationOrchestrator {
             "speechBandDominance \(formattedSilenceValue(metrics.speechBandDominance)), " +
             "transcriptContentAge \(formattedSilenceAge(lastTranscriptContentUpdateAt, now: now)), " +
             "transcriptActivityAge \(formattedSilenceAge(lastTranscriptActivityAt, now: now)), " +
-            "packetInterval \(formattedSilenceInterval(transcriptPacketIntervalEWMA)))"
+            "packetInterval \(formattedSilenceInterval(transcriptPacketIntervalEWMA))"
         )
     }
 
