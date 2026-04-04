@@ -136,7 +136,7 @@ struct DictationOrchestratorTests {
             postProcessingMode: .llm
         )
 
-        let didPrewarm = await waitUntil {
+        let didPrewarm = await waitUntil(timeoutNanoseconds: 200_000_000) {
             mockLLM.prepareModelCallCount > 0
         }
 
@@ -235,12 +235,11 @@ struct DictationOrchestratorTests {
     }
 
     @Test("toggle() from idle is ignored when onboarding blocks dictation start")
-    @MainActor func toggleIdleIgnoredWhenOnboardingBlocksStart() async throws {
+    @MainActor func toggleIdleIgnoredWhenOnboardingBlocksStart() {
         let sut = makeSUT()
         sut.appState.allowsDictationStart = false
 
         sut.orchestrator.toggle()
-        try await Task.sleep(nanoseconds: 50_000_000)
 
         #expect(sut.appState.dictationState == .idle)
         #expect(sut.mockASR.startStreamCallCount == 0)
