@@ -210,39 +210,63 @@ prepare_changelog() {
             return heading
         }
 
-        BEGIN {
-            inserted = 0
-            skipping = 0
-        }
-
         {
+            lines[++line_count] = $0
+
             if ($0 ~ /^## \[/) {
-                if (!inserted) {
-                    print_section()
-                    print ""
-                    inserted = 1
+                if (!first_heading) {
+                    first_heading = line_count
+                }
+
+                if (target_start && !target_end) {
+                    target_end = line_count - 1
                 }
 
                 if (parse_heading_version($0) == target) {
-                    skipping = 1
-                    next
+                    target_start = line_count
                 }
-
-                skipping = 0
             }
-
-            if (skipping) {
-                next
-            }
-
-            print
         }
 
         END {
-            if (!inserted) {
-                if (NR > 0) {
+            if (target_start && !target_end) {
+                target_end = line_count
+            }
+
+            if (target_start) {
+                for (i = 1; i < target_start; i++) {
+                    print lines[i]
+                }
+
+                print_section()
+
+                if (target_end < line_count) {
                     print ""
                 }
+
+                for (i = target_end + 1; i <= line_count; i++) {
+                    print lines[i]
+                }
+            } else if (first_heading) {
+                for (i = 1; i < first_heading; i++) {
+                    print lines[i]
+                }
+
+                print_section()
+                print ""
+
+                for (i = first_heading; i <= line_count; i++) {
+                    print lines[i]
+                }
+            } else {
+                for (i = 1; i <= line_count; i++) {
+                    print lines[i]
+                }
+
+                if (line_count > 0) {
+                    print ""
+                }
+
                 print_section()
             }
         }
