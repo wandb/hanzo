@@ -439,9 +439,13 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showOnboarding() {
+        appState.allowsDictationStart = false
         let onboardingView = OnboardingContainerView(
             appState: appState,
             onComplete: { [weak self] in
+                Task {
+                    await LocalLLMRuntimeManager.shared.stop()
+                }
                 self?.onboardingWindow?.close()
                 self?.onboardingWindow = nil
                 self?.appState.isOnboardingComplete = true

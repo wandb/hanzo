@@ -173,6 +173,10 @@ final class DictationOrchestrator {
     func toggle() {
         switch appState.dictationState {
         case .idle:
+            guard appState.allowsDictationStart else {
+                logger.info("Ignoring dictation start while onboarding setup is active")
+                return
+            }
             startRecording()
         case .listening:
             stopRecording()

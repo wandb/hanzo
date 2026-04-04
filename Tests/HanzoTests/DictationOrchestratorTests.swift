@@ -234,6 +234,22 @@ struct DictationOrchestratorTests {
         #expect(sut.appState.errorMessage != nil)
     }
 
+    @Test("toggle() from idle is ignored when onboarding blocks dictation start")
+    @MainActor func toggleIdleIgnoredWhenOnboardingBlocksStart() async throws {
+        let sut = makeSUT()
+        sut.appState.allowsDictationStart = false
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(sut.appState.dictationState == .idle)
+        #expect(sut.mockASR.startStreamCallCount == 0)
+        #expect(sut.mockAudio.startCaptureCalled == false)
+        #expect(
+            sut.mockLogger.infoMessages.contains("Ignoring dictation start while onboarding setup is active")
+        )
+    }
+
     // MARK: - toggle() from idle → error (ASR failure)
 
     @Test("toggle() transitions to error state when ASR start fails")
