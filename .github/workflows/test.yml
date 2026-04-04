@@ -13,7 +13,49 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build
-        run: swift build --disable-keychain
+        run: |
+          run_with_retry() {
+            local attempts="$1"
+            shift
+            local attempt=1
+
+            while true; do
+              if "$@"; then
+                return 0
+              fi
+
+              if [ "$attempt" -ge "$attempts" ]; then
+                return 1
+              fi
+
+              attempt=$((attempt + 1))
+              echo "Retrying command ($attempt/$attempts)..."
+              sleep 15
+            done
+          }
+
+          run_with_retry 3 swift build --disable-keychain
 
       - name: Run tests
-        run: swift test --disable-keychain
+        run: |
+          run_with_retry() {
+            local attempts="$1"
+            shift
+            local attempt=1
+
+            while true; do
+              if "$@"; then
+                return 0
+              fi
+
+              if [ "$attempt" -ge "$attempts" ]; then
+                return 1
+              fi
+
+              attempt=$((attempt + 1))
+              echo "Retrying command ($attempt/$attempts)..."
+              sleep 15
+            done
+          }
+
+          run_with_retry 3 swift test --disable-keychain

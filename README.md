@@ -77,6 +77,7 @@ The dev script bundles local LLM runtime binaries (`llama-server` + dylibs). If 
 | `swift test --disable-keychain` | Run all tests |
 | `./scripts/version.sh show` | Print current version and build number |
 | `./scripts/version.sh bump-build` | Increment build number |
+| `./scripts/changelog.sh prepare --version <x.y.z>` | Pull draft release notes into `CHANGELOG.md` |
 | `./scripts/release-unsigned.sh` | Build unsigned DMG/ZIP into `dist/` |
 
 ### Local Models
@@ -89,6 +90,8 @@ The dev script bundles local LLM runtime binaries (`llama-server` + dylibs). If 
 
 See `docs/RELEASING.md` for signing, notarization, and Sparkle update setup.
 
+Project release notes live in [CHANGELOG.md](CHANGELOG.md).
+
 ```sh
 # Unsigned local release
 ./scripts/version.sh bump-build
@@ -96,6 +99,8 @@ See `docs/RELEASING.md` for signing, notarization, and Sparkle update setup.
 
 # Signed + notarized
 ./scripts/version.sh bump-build
+VERSION="$(./scripts/version.sh show | awk -F= '/CFBundleShortVersionString/ { print $2 }')"
+./scripts/changelog.sh prepare --version "$VERSION"
 ./scripts/release.sh
 ```
 

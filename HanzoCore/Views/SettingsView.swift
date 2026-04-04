@@ -69,6 +69,12 @@ struct SettingsView: View {
     private var appBuild: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unknown"
     }
+    private var releaseNotesEntries: [ReleaseNotesEntry] {
+        ReleaseNotesProvider.loadEntries()
+    }
+    private var rawChangelog: String? {
+        ReleaseNotesProvider.loadChangelog()
+    }
 
     private enum Field { case endpoint, serverPassword }
 
@@ -167,13 +173,6 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                if selectedSection == .general {
-                    Spacer(minLength: 12)
-                    Text("Version \(appVersion) | Build \(appBuild)")
-                        .font(.system(.caption, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                }
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
@@ -337,6 +336,22 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(isRecordingHotkey ? "Cancel hotkey recording" : "Set hotkey")
             }
+
+            Divider()
+
+            Text("Version \(appVersion) | Build \(appBuild)")
+                .font(.system(.body, design: .rounded, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Divider()
+
+            ReleaseNotesSectionView(
+                title: "What's New",
+                subtitle: "Bundled release notes for this installed build.",
+                changelog: rawChangelog,
+                entries: releaseNotesEntries
+            )
         }
     }
 

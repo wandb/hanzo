@@ -7,6 +7,7 @@ import Foundation
 
 @MainActor
 public final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let repositoryURL = URL(string: "https://github.com/wandb/hanzo")!
     private var statusItem: NSStatusItem!
     private var transcriptPanel: NSPanel?
     private var onboardingWindow: NSWindow?
@@ -119,7 +120,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         if button.image == nil {
             button.image = statusBarImage
         }
-        button.alphaValue = appState.dictationState == .idle ? 0.35 : 1.0
+        button.alphaValue = 1.0
     }
 
     @objc private func statusItemClicked() {
@@ -187,39 +188,42 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showMenu() {
         let menu = NSMenu()
 
-        let statusText: String
-        switch appState.dictationState {
-        case .idle: statusText = "Ready"
-        case .listening: statusText = "Listening..."
-        case .forging: statusText = "Forging..."
-        case .error: statusText = appState.errorMessage ?? "Error"
-        }
-
-        let statusItem = NSMenuItem(title: statusText, action: nil, keyEquivalent: "")
-        statusItem.isEnabled = false
-        menu.addItem(statusItem)
-
-        menu.addItem(.separator())
-
         menu.addItem(withTitle: "Settings...",
                      action: #selector(openSettings), keyEquivalent: ",")
 
-        if let updaterController {
-            let checkForUpdatesMenuItem = NSMenuItem(
-                title: "Check for Updates...",
-                action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
-                keyEquivalent: ""
-            )
-            if let updateIcon = NSImage(
-                systemSymbolName: "arrow.triangle.2.circlepath",
-                accessibilityDescription: "Check for Updates"
-            ) {
-                checkForUpdatesMenuItem.image = updateIcon
-            }
-            checkForUpdatesMenuItem.target = updaterController
-            checkForUpdatesMenuItem.isEnabled = updaterController.updater.canCheckForUpdates
-            menu.addItem(checkForUpdatesMenuItem)
+        let checkForUpdatesMenuItem = NSMenuItem(
+            title: "Check for Updates...",
+            action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+            keyEquivalent: ""
+        )
+        if let updateIcon = NSImage(
+            systemSymbolName: "arrow.triangle.2.circlepath",
+            accessibilityDescription: "Check for Updates"
+        ) {
+            checkForUpdatesMenuItem.image = updateIcon
         }
+        checkForUpdatesMenuItem.target = updaterController
+        if let updaterController {
+            checkForUpdatesMenuItem.isEnabled = updaterController.updater.canCheckForUpdates
+        } else {
+            checkForUpdatesMenuItem.isEnabled = false
+        }
+        menu.addItem(checkForUpdatesMenuItem)
+
+        menu.addItem(.separator())
+        let githubMenuItem = NSMenuItem(
+            title: "Hanzo on GitHub",
+            action: #selector(openRepository),
+            keyEquivalent: ""
+        )
+        if let githubIcon = NSImage(
+            systemSymbolName: "chevron.left.forwardslash.chevron.right",
+            accessibilityDescription: "GitHub"
+        ) {
+            githubMenuItem.image = githubIcon
+        }
+        menu.addItem(githubMenuItem)
+        menu.addItem(.separator())
 
         menu.addItem(withTitle: "Quit Hanzo",
                      action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -251,22 +255,16 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let hostingController = NSHostingController(rootView: settingsView)
         let window = NSWindow(contentViewController: hostingController)
-        window.styleMask = [.titled, .fullSizeContentView]
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.standardWindowButton(.closeButton)?.isHidden = true
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        window.standardWindowButton(.zoomButton)?.isHidden = true
-        window.backgroundColor = .clear
-        window.isOpaque = false
-        window.hasShadow = true
-        window.isMovableByWindowBackground = true
-        window.setContentSize(NSSize(width: 680, height: 520))
+        configureUtilityWindow(window, size: NSSize(width: 680, height: 520))
         window.center()
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(nil)
         NSApp.activate(ignoringOtherApps: true)
         self.settingsWindow = window
+    }
+
+    @objc private func openRepository() {
+        NSWorkspace.shared.open(Self.repositoryURL)
     }
 
     // MARK: - App Monitoring
@@ -342,6 +340,20 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         return true
+    }
+
+    private func configureUtilityWindow(_ window: NSWindow, size: NSSize) {
+        window.styleMask = [.titled, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = true
+        window.isMovableByWindowBackground = true
+        window.setContentSize(size)
     }
 
     // MARK: - Launch at Login
@@ -454,17 +466,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let hostingController = NSHostingController(rootView: onboardingView)
         let window = NSWindow(contentViewController: hostingController)
-        window.styleMask = [.titled, .fullSizeContentView]
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.standardWindowButton(.closeButton)?.isHidden = true
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        window.standardWindowButton(.zoomButton)?.isHidden = true
-        window.backgroundColor = .clear
-        window.isOpaque = false
-        window.hasShadow = true
-        window.isMovableByWindowBackground = true
-        window.setContentSize(NSSize(width: 480, height: 380))
+        configureUtilityWindow(window, size: NSSize(width: 480, height: 380))
         window.level = .floating
         window.center()
         window.makeKeyAndOrderFront(nil)

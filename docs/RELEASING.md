@@ -66,6 +66,7 @@ Recommended release prep commands:
 ```sh
 ./scripts/version.sh show
 ./scripts/version.sh set --version 1.0.3 --build-number 5
+./scripts/changelog.sh prepare --version 1.0.3
 ```
 
 Typical local packaging loop when you want signed artifacts without notarization:
@@ -76,6 +77,25 @@ Typical local packaging loop when you want signed artifacts without notarization
 ```
 
 For GitHub tag releases, keep tags aligned with `CFBundleShortVersionString` (e.g. tag `v1.2.0` when app version is `1.2.0`) and ensure `CFBundleVersion` is higher than the previous shipped release.
+
+## Changelog workflow
+
+Release notes are drafted automatically from merged PRs on `main` via Release Drafter, but the committed `CHANGELOG.md` is the source of truth for shipped notes.
+
+Recommended release prep sequence:
+
+```sh
+./scripts/version.sh set --version 1.0.3 --build-number 5
+./scripts/changelog.sh prepare --version 1.0.3
+```
+
+After running `prepare`:
+
+- review and edit `CHANGELOG.md`
+- commit the curated notes before creating the `v*` tag
+- keep the changelog entry non-empty, because tag releases fail if the matching version entry is missing
+
+`./scripts/changelog.sh prepare` fetches the current GitHub draft release body by default, so local release prep requires `gh auth login`. Use `--body-file` if you want to seed an entry from a local markdown file instead.
 
 ## Recommended operating model
 
@@ -153,6 +173,7 @@ Workflow file: `.github/workflows/release.yml`
 - `workflow_dispatch` supports unsigned test builds.
 - Tag pushes (`v*`) build signed/notarized artifacts and publish a GitHub Release.
 - Tag pushes read `CFBundleShortVersionString` and `CFBundleVersion` from `HanzoCore/Info.plist`; the tag must match the plist version.
+- Tag pushes publish the matching `CHANGELOG.md` entry as the GitHub release body.
 
 Required repository secrets for signed releases:
 
