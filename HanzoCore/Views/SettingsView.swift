@@ -278,6 +278,41 @@ struct SettingsView: View {
                 subtitle: "Control startup behavior, appearance, and hotkey capture."
             )
 
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Hotkey")
+                        .font(.system(.body, design: .rounded))
+                    Spacer()
+
+                    Button {
+                        isRecordingHotkey.toggle()
+                    } label: {
+                        if isRecordingHotkey {
+                            Text("Press a key combo...")
+                                .font(.system(.body, design: .rounded))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(.blue.opacity(0.2))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        } else {
+                            Text(HotkeyService.displayString(keyCode: hotkeyCode, modifiers: hotkeyModifiers))
+                                .font(.system(.body, design: .rounded, weight: .medium))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(.primary.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(isRecordingHotkey ? "Cancel hotkey recording" : "Set hotkey")
+                }
+
+                Text("Tap to start or stop. Hold to dictate, then release to stop.")
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+
             HStack {
                 Text("Open at startup")
                     .font(.system(.body, design: .rounded))
@@ -317,35 +352,6 @@ struct SettingsView: View {
             .onChange(of: appearanceMode) {
                 UserDefaults.standard.set(appearanceMode.rawValue, forKey: Constants.appearanceModeKey)
                 appState.appearanceMode = appearanceMode
-            }
-
-            HStack {
-                Text("Hotkey")
-                    .font(.system(.body, design: .rounded))
-                Spacer()
-
-                Button {
-                    isRecordingHotkey.toggle()
-                } label: {
-                    if isRecordingHotkey {
-                        Text("Press a key combo...")
-                            .font(.system(.body, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(.blue.opacity(0.2))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    } else {
-                        Text(HotkeyService.displayString(keyCode: hotkeyCode, modifiers: hotkeyModifiers))
-                            .font(.system(.body, design: .rounded, weight: .medium))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(.primary.opacity(0.08))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(isRecordingHotkey ? "Cancel hotkey recording" : "Set hotkey")
             }
 
             Divider()

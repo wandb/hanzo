@@ -104,10 +104,12 @@ private struct StatusFooterView: View {
                         .frame(width: 11, height: 11)
                     Text("·")
                         .font(.system(.caption2, design: .rounded))
+                    Text("⏱")
+                        .font(.system(.caption2, design: .rounded))
                     Text(silenceLabel)
                         .font(.system(.caption2, design: .rounded))
                 }
-                .foregroundStyle(.primary.opacity(appState.silenceTimeout > 0 ? 0.5 : 0.25))
+                .foregroundStyle(.primary.opacity(silenceIndicatorOpacity))
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
@@ -132,13 +134,22 @@ private struct StatusFooterView: View {
     }
 
     private var silenceLabel: String {
+        if appState.showsHoldIndicator {
+            return "HD"
+        }
         if appState.silenceTimeout > 0 {
-            let s = appState.silenceTimeout.truncatingRemainder(dividingBy: 1) == 0
+            return appState.silenceTimeout.truncatingRemainder(dividingBy: 1) == 0
                 ? "\(Int(appState.silenceTimeout))s"
                 : "\(appState.silenceTimeout)s"
-            return "⏱ \(s)"
         }
-        return "⏱ off"
+        return "off"
+    }
+
+    private var silenceIndicatorOpacity: Double {
+        if appState.showsHoldIndicator {
+            return 0.5
+        }
+        return appState.silenceTimeout > 0 ? 0.5 : 0.25
     }
 
     private var autoSubmitLabel: String {

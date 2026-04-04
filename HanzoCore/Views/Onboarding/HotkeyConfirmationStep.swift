@@ -36,7 +36,7 @@ struct HotkeyConfirmationStep: View {
 
             if !demoCompleted {
                 HStack(spacing: 4) {
-                    KeyCapView(label: "Ctrl")
+                    KeyCapView(label: "Option")
                     Text("+")
                         .font(.system(.body, design: .rounded))
                         .foregroundStyle(.secondary)
@@ -71,14 +71,16 @@ struct HotkeyConfirmationStep: View {
     private var instructionText: String {
         switch appState.dictationState {
         case .listening:
-            return "Listening… speak and it'll stop automatically when you pause."
+            return appState.showsHoldIndicator
+                ? "Listening… release to stop, or let go quickly to keep dictating."
+                : "Listening… tap again to stop, or pause and let it stop automatically."
         case .forging:
             return "Processing your speech…"
         default:
             if demoCompleted {
                 return "That's how it works — dictate into any text field, anywhere."
             }
-            return "Click the field, then press your hotkey to start dictating."
+            return "Click the field, then tap or hold your hotkey to start dictating."
         }
     }
 }

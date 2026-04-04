@@ -20,6 +20,7 @@ final class AppState {
     var allowsDictationStart: Bool = true
     var isPopoverPresented: Bool = false
     var silenceTimeout: Double = AppBehaviorSettings.globalSilenceTimeout()
+    var showsHoldIndicator: Bool = false
     var autoSubmitMode: AutoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode()
     var appearanceMode: AppearanceMode = {
         if let raw = UserDefaults.standard.string(forKey: Constants.appearanceModeKey) {

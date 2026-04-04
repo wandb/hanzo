@@ -3,7 +3,8 @@ import AppKit
 
 final class HotkeyService {
     private var hotKey: HotKey?
-    var onToggle: (() -> Void)?
+    var onKeyDown: (() -> Void)?
+    var onKeyUp: (() -> Void)?
 
     func register() {
         let keyCode = UInt32(UserDefaults.standard.integer(forKey: Constants.hotkeyCodeKey))
@@ -14,7 +15,10 @@ final class HotkeyService {
 
         hotKey = HotKey(carbonKeyCode: carbonKeyCode, carbonModifiers: carbonModifiers)
         hotKey?.keyDownHandler = { [weak self] in
-            self?.onToggle?()
+            self?.onKeyDown?()
+        }
+        hotKey?.keyUpHandler = { [weak self] in
+            self?.onKeyUp?()
         }
         LoggingService.shared.info("Hotkey registered: keyCode=\(carbonKeyCode), modifiers=\(carbonModifiers)")
     }

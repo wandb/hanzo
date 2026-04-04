@@ -53,8 +53,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         transcriptPanel = makeTranscriptPanel()
 
         // Register hotkey
-        hotkeyService.onToggle = { [weak self] in
-            self?.orchestrator.toggle()
+        hotkeyService.onKeyDown = { [weak self] in
+            self?.orchestrator.handleHotkeyDown()
+        }
+        hotkeyService.onKeyUp = { [weak self] in
+            self?.orchestrator.handleHotkeyUp()
         }
         hotkeyService.register()
 
