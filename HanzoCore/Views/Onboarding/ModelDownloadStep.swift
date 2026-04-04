@@ -128,8 +128,8 @@ struct ModelDownloadStep: View {
         llmTrickleTask = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 180_000_000)
-                await MainActor.run {
-                    guard llmModelProgress < 0.92 else { return }
+                let reachedCap = await MainActor.run { () -> Bool in
+                    guard llmModelProgress < 0.92 else { return true }
 
                     let remaining = 0.92 - llmModelProgress
                     let step = max(0.0025, remaining * 0.06)
@@ -141,6 +141,11 @@ struct ModelDownloadStep: View {
                     } else {
                         statusText = "Starting rewrite model..."
                     }
+                    return llmModelProgress >= 0.92
+                }
+
+                if reachedCap {
+                    break
                 }
             }
         }

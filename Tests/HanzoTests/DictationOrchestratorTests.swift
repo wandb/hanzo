@@ -136,7 +136,11 @@ struct DictationOrchestratorTests {
             postProcessingMode: .llm
         )
 
-        try await Task.sleep(nanoseconds: 100_000_000)
+        let didPrewarm = await waitUntil {
+            mockLLM.prepareModelCallCount > 0
+        }
+
+        #expect(didPrewarm == false)
         #expect(mockLLM.prepareModelCallCount == 0)
     }
 

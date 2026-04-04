@@ -38,8 +38,6 @@ enum Constants {
     static let localModelsFolderName = "models"
     static let localWhisperModel = "small.en"
     static let localWhisperModelRepository = "argmaxinc/whisperkit-coreml"
-    // Remote model payload sizes (bytes) used to weight onboarding download progress.
-    static let localWhisperModelExpectedDownloadBytes: Int64 = 217_000_000
     static let localWhisperPartialMinSeconds: Double = 1.0
     static let localWhisperPartialMinIntervalSeconds: Double = 0.8
     // Adaptive partial decode window bounds. Runtime adjusts within this range
@@ -52,6 +50,7 @@ enum Constants {
     static let localLLMModelsSubfolderName = "llm"
     static let localLLMModelRepository = "Qwen/Qwen3-4B-GGUF"
     static let localLLMModelFileName = "Qwen3-4B-Q4_K_M.gguf"
+    // Fallback download size when the remote host does not expose Content-Length metadata.
     static let localLLMModelExpectedDownloadBytes: Int64 = 2_497_280_256
     static let localLLMContextSizeKey = "localLLMContextSize"
     static let supportedLocalLLMContextSizes = [1024, 2048]
