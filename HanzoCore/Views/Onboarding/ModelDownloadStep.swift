@@ -94,9 +94,10 @@ struct ModelDownloadStep: View {
                 let llmManager = LocalLLMRuntimeManager.shared
                 try await llmManager.prepareModel(progressHandler: { progress in
                     Task { @MainActor in
-                        llmModelProgress = max(llmModelProgress, Self.clamp(progress))
+                        let clampedProgress = Self.clamp(progress)
+                        llmModelProgress = max(llmModelProgress, clampedProgress)
                         overallProgress = combinedProgress()
-                        statusText = llmModelProgress < 1.0
+                        statusText = clampedProgress < 1.0
                             ? "Downloading rewrite model..."
                             : "Starting rewrite model..."
                     }
@@ -135,12 +136,6 @@ struct ModelDownloadStep: View {
                     let step = max(0.0025, remaining * 0.06)
                     llmModelProgress = min(0.92, llmModelProgress + step)
                     overallProgress = combinedProgress()
-
-                    if llmModelProgress < 0.7 {
-                        statusText = "Preparing rewrite model..."
-                    } else {
-                        statusText = "Starting rewrite model..."
-                    }
                     return llmModelProgress >= 0.92
                 }
 
