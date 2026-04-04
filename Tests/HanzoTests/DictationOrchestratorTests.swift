@@ -116,8 +116,8 @@ struct DictationOrchestratorTests {
         #expect(sut.appState.dictationState == .idle)
     }
 
-    @Test("Init prewarms LLM while onboarding is incomplete when permissions are granted")
-    @MainActor func initPrewarmsLLMWhenOnboardingIncomplete() async throws {
+    @Test("Init does not prewarm LLM when permissions are granted")
+    @MainActor func initDoesNotPrewarmLLM() async throws {
         let defaults = UserDefaults.standard
         let priorProvider = defaults.string(forKey: Constants.asrProviderKey)
         defer {
@@ -136,11 +136,8 @@ struct DictationOrchestratorTests {
             postProcessingMode: .llm
         )
 
-        let didPrewarm = await waitUntil {
-            mockLLM.prepareModelCallCount == 1
-        }
-        #expect(didPrewarm)
-        #expect(mockLLM.prepareModelCallCount == 1)
+        try await Task.sleep(nanoseconds: 100_000_000)
+        #expect(mockLLM.prepareModelCallCount == 0)
     }
 
     // MARK: - Shutdown
@@ -193,6 +190,29 @@ struct DictationOrchestratorTests {
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
         #expect(sut.mockAudio.startCaptureCalled == true)
+    }
+
+    @Test("toggle() from idle warms local LLM when LLM mode is enabled")
+    @MainActor func toggleWarmsLocalLLMWhenModeEnabled() async throws {
+        let mockLLM = MockLocalLLMRuntimeManager()
+        let sut = makeSUT(
+            localLLMRuntimeManager: mockLLM,
+            postProcessingMode: .llm
+        )
+
+        sut.orchestrator.toggle()
+
+        let didWarm = await waitUntil {
+            mockLLM.prepareModelCallCount == 1
+        }
+        #expect(didWarm)
+        #expect(mockLLM.prepareModelCallCount == 1)
+        #expect(
+            sut.mockLogger.infoMessages.contains("Requesting local LLM runtime warmup for active session")
+        )
+        #expect(
+            sut.mockLogger.infoMessages.contains("Local LLM runtime warmed for active session")
+        )
     }
 
     @Test("toggle() from idle sets isPopoverPresented to true")
@@ -1042,13 +1062,25 @@ struct DictationOrchestratorTests {
         let inserted = await waitUntil(timeoutNanoseconds: 4_000_000_000) {
             sut.mockText.insertedTexts.count == 1
         }
+        let cooled = await waitUntil {
+            mockLLM.stopCallCount == 1
+        }
         #expect(inserted)
+        #expect(cooled)
         #expect(sut.mockText.insertedTexts.first == "This is concise and professional.")
+        #expect(mockLLM.prepareModelCallCount == 1)
+        #expect(mockLLM.stopCallCount == 1)
         #expect(mockLLM.postProcessCallCount == 1)
         #expect(mockLLM.lastInputText == rawTranscript)
         #expect(mockLLM.lastPrompt == "Make this concise and professional.")
         #expect(mockLLM.lastTargetApp == expectedTargetApp)
         #expect(mockLLM.lastCommonTerms == [])
+        #expect(
+            sut.mockLogger.infoMessages.contains("Requesting local LLM runtime cooldown for recording completion")
+        )
+        #expect(
+            sut.mockLogger.infoMessages.contains("Cooling local LLM runtime after recording completion")
+        )
     }
 
     @Test("LLM mode passes global common terms to local rewrite")
@@ -1141,6 +1173,34 @@ struct DictationOrchestratorTests {
         }
         #expect(inserted)
         #expect(sut.mockText.insertedTexts.first == rawTranscript)
+    }
+
+    @Test("Cancelling a listening LLM session cools the local LLM runtime")
+    @MainActor func cancellingListeningLLMSessionCoolsRuntime() async throws {
+        let mockLLM = MockLocalLLMRuntimeManager()
+        let sut = makeSUT(
+            localLLMRuntimeManager: mockLLM,
+            postProcessingMode: .llm
+        )
+
+        sut.orchestrator.toggle()
+        let didWarm = await waitUntil {
+            mockLLM.prepareModelCallCount == 1
+        }
+        #expect(didWarm)
+
+        sut.orchestrator.cancel()
+
+        let didCool = await waitUntil {
+            mockLLM.stopCallCount == 1
+        }
+        #expect(didCool)
+        #expect(
+            sut.mockLogger.infoMessages.contains("Requesting local LLM runtime cooldown for recording cancellation")
+        )
+        #expect(
+            sut.mockLogger.infoMessages.contains("Cooling local LLM runtime after recording cancellation")
+        )
     }
 
     // MARK: - Auto-Submit
