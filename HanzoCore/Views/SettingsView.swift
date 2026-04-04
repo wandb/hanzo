@@ -406,7 +406,7 @@ struct SettingsView: View {
         let minutes = usageStats.minutesDictatedAllTime
         guard minutes > 0 else { return "0" }
         if minutes < 10 {
-            return String(format: "%.1f", minutes)
+            return minutes.formatted(.number.precision(.fractionLength(1)))
         }
         return Int(minutes.rounded()).formatted()
     }

@@ -914,7 +914,7 @@ final class DictationOrchestrator {
     ) {
         let startTime = recordingStartTime ?? recordingEndedAt
         let sessionSeconds = max(0, recordingEndedAt.timeIntervalSince(startTime))
-        let words = wordCount(in: finalText)
+        let words = TextMetrics.wordCount(finalText)
         let dictatedSeconds: TimeInterval
         if words == 0 {
             dictatedSeconds = 0
@@ -933,10 +933,6 @@ final class DictationOrchestrator {
             autoSubmitCount: autoSubmitCount
         )
         recordingStartTime = nil
-    }
-
-    private func wordCount(in text: String) -> Int {
-        text.split(whereSeparator: \.isWhitespace).count
     }
 
     private func estimatedTranscriptActiveSeconds(until recordingEndedAt: Date) -> TimeInterval {

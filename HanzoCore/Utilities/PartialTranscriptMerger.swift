@@ -71,8 +71,8 @@ enum PartialTranscriptMerger {
     }
 
     private static func shouldPreferIncomingWithoutPrefix(previous: String, incoming: String) -> Bool {
-        let previousWords = wordCount(previous)
-        let incomingWords = wordCount(incoming)
+        let previousWords = TextMetrics.wordCount(previous)
+        let incomingWords = TextMetrics.wordCount(incoming)
 
         // Only allow full replacement for tiny startup fragments.
         // Once the HUD has real context, dropping the full prefix is worse
@@ -316,10 +316,6 @@ enum PartialTranscriptMerger {
             CharacterSet.alphanumerics.contains($0)
         }
         return String(String.UnicodeScalarView(scalars)).lowercased()
-    }
-
-    private static func wordCount(_ text: String) -> Int {
-        text.split(whereSeparator: \.isWhitespace).count
     }
 
     private static func longestSuffixPrefixOverlapLength(_ left: String, _ right: String) -> Int {
