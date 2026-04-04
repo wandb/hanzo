@@ -2,9 +2,12 @@ import SwiftUI
 
 struct ModelDownloadStep: View {
     var onDownloaded: () -> Void
+    private let whisperStageWeight = 0.35
+    private let llmStageWeight = 0.65
 
     @State private var errorText: String?
     @State private var prepareTask: Task<Void, Never>?
+    @State private var llmTrickleTask: Task<Void, Never>?
     @State private var statusText = "Preparing speech model..."
     @State private var overallProgress = 0.0
     @State private var whisperModelProgress = 0.0
@@ -56,11 +59,15 @@ struct ModelDownloadStep: View {
         .onDisappear {
             prepareTask?.cancel()
             prepareTask = nil
+            llmTrickleTask?.cancel()
+            llmTrickleTask = nil
         }
     }
 
     private func startFlow() {
         prepareTask?.cancel()
+        llmTrickleTask?.cancel()
+        llmTrickleTask = nil
         errorText = nil
         statusText = "Preparing speech model..."
         whisperModelProgress = 0.0
@@ -83,16 +90,19 @@ struct ModelDownloadStep: View {
                 await MainActor.run {
                     statusText = "Preparing rewrite model..."
                 }
+                startLLMTrickle()
                 let llmManager = LocalLLMRuntimeManager.shared
                 try await llmManager.prepareModel(progressHandler: { progress in
                     Task { @MainActor in
-                        llmModelProgress = Self.clamp(progress)
+                        llmModelProgress = max(llmModelProgress, Self.clamp(progress))
                         overallProgress = combinedProgress()
                         statusText = llmModelProgress < 1.0
                             ? "Downloading rewrite model..."
                             : "Starting rewrite model..."
                     }
                 })
+                llmTrickleTask?.cancel()
+                llmTrickleTask = nil
 
                 await MainActor.run {
                     overallProgress = 1.0
@@ -105,23 +115,40 @@ struct ModelDownloadStep: View {
                 }
 
                 await MainActor.run {
+                    llmTrickleTask?.cancel()
+                    llmTrickleTask = nil
                     errorText = error.localizedDescription
                 }
             }
         }
     }
 
-    private func combinedProgress() -> Double {
-        let whisperBytes = whisperModelProgress * Double(Constants.localWhisperModelExpectedDownloadBytes)
-        let llmBytes = llmModelProgress * Double(Constants.localLLMModelExpectedDownloadBytes)
-        let totalBytes = Double(
-            Constants.localWhisperModelExpectedDownloadBytes + Constants.localLLMModelExpectedDownloadBytes
-        )
-        guard totalBytes > 0 else {
-            return Self.clamp(max(whisperModelProgress, llmModelProgress))
-        }
+    private func startLLMTrickle() {
+        llmTrickleTask?.cancel()
+        llmTrickleTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 180_000_000)
+                await MainActor.run {
+                    guard llmModelProgress < 0.92 else { return }
 
-        return Self.clamp((whisperBytes + llmBytes) / totalBytes)
+                    let remaining = 0.92 - llmModelProgress
+                    let step = max(0.0025, remaining * 0.06)
+                    llmModelProgress = min(0.92, llmModelProgress + step)
+                    overallProgress = combinedProgress()
+
+                    if llmModelProgress < 0.7 {
+                        statusText = "Preparing rewrite model..."
+                    } else {
+                        statusText = "Starting rewrite model..."
+                    }
+                }
+            }
+        }
+    }
+
+    private func combinedProgress() -> Double {
+        let stageWeighted = (whisperModelProgress * whisperStageWeight) + (llmModelProgress * llmStageWeight)
+        return Self.clamp(stageWeighted)
     }
 
     private var progressPercentText: String {

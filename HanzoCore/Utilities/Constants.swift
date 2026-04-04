@@ -36,10 +36,10 @@ enum Constants {
 
     static let defaultServerEndpoint = ""
     static let localModelsFolderName = "models"
-    static let localWhisperModel = "base.en"
+    static let localWhisperModel = "small.en"
     static let localWhisperModelRepository = "argmaxinc/whisperkit-coreml"
     // Remote model payload sizes (bytes) used to weight onboarding download progress.
-    static let localWhisperModelExpectedDownloadBytes: Int64 = 146_707_731
+    static let localWhisperModelExpectedDownloadBytes: Int64 = 217_000_000
     static let localWhisperPartialMinSeconds: Double = 1.0
     static let localWhisperPartialMinIntervalSeconds: Double = 0.8
     // Adaptive partial decode window bounds. Runtime adjusts within this range
