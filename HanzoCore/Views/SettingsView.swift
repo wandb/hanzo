@@ -44,6 +44,7 @@ struct SettingsView: View {
     @State private var localLLMContextSize: Int = Constants.localLLMContextSize()
     @State private var appBehaviorOverrides: [String: AppBehaviorOverride] = AppBehaviorSettings.loadOverrides()
     @State private var supportedApps: [SupportedAppBehavior] = AppBehaviorSettings.supportedApps
+    @State private var usageStats: UsageStatsSnapshot = UsageStatsStore.current()
     @State private var selectedSection: SettingsSection = .general
     @State private var isDetectingApp = false
     @State private var detectCountdown: Int?
@@ -186,6 +187,14 @@ struct SettingsView: View {
             isRecordingHotkey = false
             saveHotkey()
         }) .frame(width: 0, height: 0) : nil)
+        .onAppear {
+            refreshUsageStats()
+        }
+        .onChange(of: selectedSection) {
+            if selectedSection == .general {
+                refreshUsageStats()
+            }
+        }
         .onDisappear {
             cancelDetectCurrentAppTask()
             rewriteTemplateValidationTask?.cancel()
@@ -262,6 +271,8 @@ struct SettingsView: View {
 
     private var generalContent: some View {
         VStack(alignment: .leading, spacing: 24) {
+            usageStatsContent
+
             settingsSectionHeader(
                 "General",
                 subtitle: "Control startup behavior, appearance, and hotkey capture."
@@ -353,6 +364,51 @@ struct SettingsView: View {
                 entries: releaseNotesEntries
             )
         }
+    }
+
+    private var usageStatsContent: some View {
+        HStack(spacing: 10) {
+            usageStatCard(
+                value: usageStats.wordsAllTime.formatted(),
+                label: "Words transcribed"
+            )
+            usageStatCard(
+                value: minutesDictatedDisplay,
+                label: "Minutes dictated"
+            )
+            usageStatCard(
+                value: usageStats.averageWordsPerMinute.formatted(),
+                label: "Words per min"
+            )
+            usageStatCard(
+                value: usageStats.autoSubmitsAllTime.formatted(),
+                label: "Auto submits"
+            )
+        }
+    }
+
+    private func usageStatCard(value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(value)
+                .font(.system(.title3, design: .rounded, weight: .semibold))
+            Text(label)
+                .font(.system(.caption, design: .rounded))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(.primary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var minutesDictatedDisplay: String {
+        let minutes = usageStats.minutesDictatedAllTime
+        guard minutes > 0 else { return "0" }
+        if minutes < 10 {
+            return String(format: "%.1f", minutes)
+        }
+        return Int(minutes.rounded()).formatted()
     }
 
     // MARK: - Transcription
@@ -975,6 +1031,10 @@ struct SettingsView: View {
         UserDefaults.standard.set(Int(hotkeyCode), forKey: Constants.hotkeyCodeKey)
         UserDefaults.standard.set(Int(hotkeyModifiers), forKey: Constants.hotkeyModifiersKey)
         onHotkeyChanged?()
+    }
+
+    private func refreshUsageStats() {
+        usageStats = UsageStatsStore.current()
     }
 
 }

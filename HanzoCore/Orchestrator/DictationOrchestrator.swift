@@ -25,6 +25,7 @@ final class DictationOrchestrator {
     private var lastCancelledRecordingEpoch = 0
     private var previousApp: NSRunningApplication?
     private var activeSessionTargetBundleIdentifier: String?
+    private var recordingStartTime: Date?
     private var pendingRestartAfterForging = false
     private var configuredASRProvider: ASRProvider
     private var configuredLocalLLMContextSize: Int
@@ -50,6 +51,7 @@ final class DictationOrchestrator {
     private var lastTranscriptActivityAt: Date?
     private var lastTranscriptPacketAt: Date?
     private var transcriptPacketIntervalEWMA: TimeInterval?
+    private var transcriptActiveSeconds: TimeInterval = 0
     private var hasObservedMeaningfulTranscript = false
     private var previousAudioLevels: [Float]?
     private var recentAudioMotionSamples: [(timestamp: Date, motion: Float)] = []
@@ -215,9 +217,11 @@ final class DictationOrchestrator {
         lastTranscriptActivityAt = nil
         lastTranscriptPacketAt = nil
         transcriptPacketIntervalEWMA = nil
+        transcriptActiveSeconds = 0
         hasObservedMeaningfulTranscript = false
         previousAudioLevels = nil
         recentAudioMotionSamples.removeAll()
+        recordingStartTime = nil
         applyEffectiveBehavior(for: nil)
         coolLocalLLMRuntimeAfterSession(reason: "recording cancellation")
 
@@ -273,6 +277,7 @@ final class DictationOrchestrator {
         appState.dictationState = .listening
         appState.partialTranscript = ""
         appState.isPopoverPresented = true
+        recordingStartTime = Date()
         bufferQueue.sync {
             audioBuffer.removeAll()
             isChunkSendInFlight = false
@@ -289,6 +294,7 @@ final class DictationOrchestrator {
         lastTranscriptActivityAt = nil
         lastTranscriptPacketAt = nil
         transcriptPacketIntervalEWMA = nil
+        transcriptActiveSeconds = 0
         hasObservedMeaningfulTranscript = false
         previousAudioLevels = nil
         recentAudioMotionSamples.removeAll()
@@ -307,6 +313,7 @@ final class DictationOrchestrator {
                     // Keep HUD visible so the error state is discoverable.
                     appState.isPopoverPresented = true
                 }
+                recordingStartTime = nil
                 coolLocalLLMRuntimeAfterSession(reason: "recording start failure")
             }
         }
@@ -319,6 +326,7 @@ final class DictationOrchestrator {
 
     private func stopRecording() {
         logger.info("Stopping recording")
+        let recordingEndedAt = Date()
         audioService.stopCapture()
         appState.dictationState = .forging
         var recordingEpoch = 0
@@ -409,6 +417,7 @@ final class DictationOrchestrator {
                 try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
 
                 // PHASE 2: Activate target app and paste
+                var autoSubmitTriggered = false
                 if !finalText.isEmpty, let targetApp {
                     await MainActor.run {
                         _ = targetApp.activate()
@@ -429,8 +438,14 @@ final class DictationOrchestrator {
                     await insertTextOnMainActor(finalText)
 
                     // PHASE 4: Auto-submit
-                    await triggerAutoSubmitOnMainActor()
+                    autoSubmitTriggered = await triggerAutoSubmitOnMainActor()
                 }
+
+                recordUsageStats(
+                    finalText: finalText,
+                    recordingEndedAt: recordingEndedAt,
+                    autoSubmitTriggered: autoSubmitTriggered
+                )
 
                 await MainActor.run {
                     appState.dictationState = .idle
@@ -458,6 +473,7 @@ final class DictationOrchestrator {
                 sessionId = nil
                 previousApp = nil
                 activeSessionTargetBundleIdentifier = nil
+                recordingStartTime = nil
                 await MainActor.run {
                     applyEffectiveBehavior(for: nil)
                 }
@@ -489,14 +505,16 @@ final class DictationOrchestrator {
     }
 
     @MainActor
-    private func triggerAutoSubmitOnMainActor() {
+    private func triggerAutoSubmitOnMainActor() -> Bool {
         switch autoSubmitMode {
         case .enter:
             textInsertion.simulateReturn()
+            return true
         case .cmdEnter:
             textInsertion.simulateCmdReturn()
+            return true
         case .off:
-            break
+            return false
         }
     }
 
@@ -518,10 +536,12 @@ final class DictationOrchestrator {
         lastTranscriptActivityAt = nil
         lastTranscriptPacketAt = nil
         transcriptPacketIntervalEWMA = nil
+        transcriptActiveSeconds = 0
         hasObservedMeaningfulTranscript = false
         previousAudioLevels = nil
         recentAudioMotionSamples.removeAll()
         activeSessionTargetBundleIdentifier = nil
+        recordingStartTime = nil
         applyEffectiveBehavior(for: nil)
         coolLocalLLMRuntimeAfterSession(reason: "reset")
     }
@@ -887,6 +907,51 @@ final class DictationOrchestrator {
         return nil
     }
 
+    private func recordUsageStats(
+        finalText: String,
+        recordingEndedAt: Date,
+        autoSubmitTriggered: Bool
+    ) {
+        let startTime = recordingStartTime ?? recordingEndedAt
+        let sessionSeconds = max(0, recordingEndedAt.timeIntervalSince(startTime))
+        let words = wordCount(in: finalText)
+        let dictatedSeconds: TimeInterval
+        if words == 0 {
+            dictatedSeconds = 0
+        } else if lastTranscriptPacketAt == nil {
+            // Fallback for providers/environments where only final text is emitted.
+            dictatedSeconds = sessionSeconds
+        } else {
+            let transcriptDrivenSeconds = estimatedTranscriptActiveSeconds(until: recordingEndedAt)
+            dictatedSeconds = min(sessionSeconds, max(0, transcriptDrivenSeconds))
+        }
+        let autoSubmitCount = autoSubmitTriggered ? 1 : 0
+
+        UsageStatsStore.recordSession(
+            words: words,
+            dictatedSeconds: dictatedSeconds,
+            autoSubmitCount: autoSubmitCount
+        )
+        recordingStartTime = nil
+    }
+
+    private func wordCount(in text: String) -> Int {
+        text.split(whereSeparator: \.isWhitespace).count
+    }
+
+    private func estimatedTranscriptActiveSeconds(until recordingEndedAt: Date) -> TimeInterval {
+        var seconds = transcriptActiveSeconds
+
+        if let lastTranscriptPacketAt {
+            let tailSeconds = max(0, recordingEndedAt.timeIntervalSince(lastTranscriptPacketAt))
+            let tailCapBase = transcriptPacketIntervalEWMA ?? 0.5
+            let tailCap = max(0.25, min(3.0, tailCapBase * 1.5))
+            seconds += min(tailSeconds, tailCap)
+        }
+
+        return seconds
+    }
+
     // MARK: - Silence Detection
 
     private enum SilenceState: String {
@@ -1214,6 +1279,7 @@ final class DictationOrchestrator {
         if let lastTranscriptPacketAt {
             let observedInterval = max(0, now.timeIntervalSince(lastTranscriptPacketAt))
             if observedInterval > 0 {
+                let priorPacketIntervalEWMA = transcriptPacketIntervalEWMA
                 if let existingEWMA = transcriptPacketIntervalEWMA {
                     let alpha = Constants.silenceTranscriptPacketIntervalEWMASmoothing
                     transcriptPacketIntervalEWMA =
@@ -1221,7 +1287,13 @@ final class DictationOrchestrator {
                 } else {
                     transcriptPacketIntervalEWMA = observedInterval
                 }
+
+                let activityCapBase = priorPacketIntervalEWMA ?? observedInterval
+                let activityCap = max(0.25, min(8.0, activityCapBase * 3.0))
+                transcriptActiveSeconds += min(observedInterval, activityCap)
             }
+        } else {
+            transcriptActiveSeconds += 0.25
         }
         lastTranscriptPacketAt = now
         lastTranscriptActivityAt = now
