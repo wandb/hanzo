@@ -2,6 +2,7 @@ import SwiftUI
 
 struct OnboardingContainerView: View {
     @State private var currentStep = Self.initialStep()
+    @State private var llmCleanupTask: Task<Void, Never>?
     var appState: AppState
     var onComplete: () -> Void
 
@@ -66,6 +67,38 @@ struct OnboardingContainerView: View {
             if UserDefaults.standard.string(forKey: Constants.transcriptPostProcessingModeKey) == nil {
                 AppBehaviorSettings.setGlobalPostProcessingMode(.llm)
             }
+            updateDictationAvailability(for: currentStep)
         }
+        .onChange(of: currentStep) { _, newStep in
+            updateDictationAvailability(for: newStep)
+            scheduleLLMCleanupAfterDemoStepIfNeeded(for: newStep)
+        }
+        .onDisappear {
+            llmCleanupTask?.cancel()
+            llmCleanupTask = nil
+            appState.allowsDictationStart = true
+        }
+    }
+
+    private func scheduleLLMCleanupAfterDemoStepIfNeeded(for step: Int) {
+        guard step > 3 else { return }
+
+        llmCleanupTask?.cancel()
+        llmCleanupTask = Task {
+            while !Task.isCancelled {
+                let dictationState = await MainActor.run { appState.dictationState }
+                switch dictationState {
+                case .idle, .error:
+                    await LocalLLMRuntimeManager.shared.stop()
+                    return
+                case .listening, .forging:
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+            }
+        }
+    }
+
+    private func updateDictationAvailability(for step: Int) {
+        appState.allowsDictationStart = step == 3
     }
 }

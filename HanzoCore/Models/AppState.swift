@@ -17,6 +17,7 @@ final class AppState {
     var audioLevels: [Float] = []
     var activeTargetBundleIdentifier: String?
     var isOnboardingComplete: Bool = UserDefaults.standard.bool(forKey: Constants.onboardingCompleteKey)
+    var allowsDictationStart: Bool = true
     var isPopoverPresented: Bool = false
     var silenceTimeout: Double = AppBehaviorSettings.globalSilenceTimeout()
     var autoSubmitMode: AutoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode()

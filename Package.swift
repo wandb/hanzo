@@ -8,7 +8,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/soffes/HotKey", from: "0.2.1"),
-        .package(url: "https://github.com/argmaxinc/WhisperKit.git", .upToNextMinor(from: "0.16.0")),
+        .package(url: "https://github.com/argmaxinc/WhisperKit.git", .upToNextMinor(from: "0.18.0")),
         .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.6.4"),
     ],
     targets: [

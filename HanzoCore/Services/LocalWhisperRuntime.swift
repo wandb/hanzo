@@ -17,6 +17,10 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
     private let logger: LoggingServiceProtocol
     private var whisperKit: WhisperKit?
     private var sessions: [String: Session] = [:]
+    private var isPreparing = false
+    private var prepareWaiters: [CheckedContinuation<Void, Never>] = []
+    private var prepareProgressHandlers: [UUID: (Double) -> Void] = [:]
+    private var lastPrepareProgress: Double = 0.0
 
     private init(logger: LoggingServiceProtocol = LoggingService.shared) {
         self.logger = logger
@@ -27,9 +31,24 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
     }
 
     func prepare(progressHandler: ((Double) -> Void)?) async throws {
+        let progressToken = registerPrepareProgressHandler(progressHandler)
+        defer { unregisterPrepareProgressHandler(progressToken) }
+
         if whisperKit != nil {
-            progressHandler?(1.0)
+            reportPrepareProgress(1.0)
             return
+        }
+
+        await waitForInFlightPrepareIfNeeded()
+        if whisperKit != nil {
+            reportPrepareProgress(1.0)
+            return
+        }
+
+        isPreparing = true
+        defer {
+            isPreparing = false
+            resumePrepareWaiters()
         }
 
         let modelsDirectory = modelsDirectoryURL()
@@ -39,38 +58,44 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
             attributes: nil
         )
 
-        let existingModelFolder = findExistingModelFolder(under: modelsDirectory)
-        let resolvedModelFolder: String
+        var modelFolder = findExistingModelFolder(
+            under: modelsDirectory,
+            matchingVariant: Constants.localWhisperModel
+        )
 
-        if let existingModelFolder {
-            resolvedModelFolder = existingModelFolder
-            progressHandler?(1.0)
+        if modelFolder == nil {
+            reportPrepareProgress(0.0)
+            modelFolder = try await downloadModel(into: modelsDirectory)
         } else {
-            progressHandler?(0.0)
-            let downloadedFolder = try await WhisperKit.download(
-                variant: Constants.localWhisperModel,
-                downloadBase: modelsDirectory,
-                from: Constants.localWhisperModelRepository,
-                progressCallback: { progress in
-                    progressHandler?(Self.clamp(progress.fractionCompleted))
-                }
-            )
-            resolvedModelFolder = downloadedFolder.path
-            progressHandler?(1.0)
+            reportPrepareProgress(0.9)
         }
 
-        let config = WhisperKitConfig(
-            model: Constants.localWhisperModel,
-            downloadBase: modelsDirectory,
-            modelRepo: Constants.localWhisperModelRepository,
-            modelFolder: resolvedModelFolder,
-            verbose: false,
-            prewarm: true,
-            load: true,
-            download: false
-        )
-        whisperKit = try await WhisperKit(config)
-        progressHandler?(1.0)
+        guard var resolvedModelFolder = modelFolder else {
+            throw ASRError.localRuntimeUnavailable(detail: "Unable to resolve local Whisper model folder")
+        }
+
+        do {
+            whisperKit = try await loadRuntimeWithProgress(
+                modelFolder: resolvedModelFolder,
+                modelsDirectory: modelsDirectory
+            )
+        } catch {
+            logger.warn(
+                "Failed to load local Whisper model at \(resolvedModelFolder); " +
+                "clearing cache and re-downloading: \(error)"
+            )
+            purgeCachedModelArtifacts(
+                modelFolderPath: resolvedModelFolder,
+                under: modelsDirectory
+            )
+
+            reportPrepareProgress(0.0)
+            resolvedModelFolder = try await downloadModel(into: modelsDirectory)
+            whisperKit = try await loadRuntimeWithProgress(
+                modelFolder: resolvedModelFolder,
+                modelsDirectory: modelsDirectory
+            )
+        }
     }
 
     func startSession() async throws -> String {
@@ -160,9 +185,49 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
         guard let whisperKit else { return }
         await whisperKit.unloadModels()
         self.whisperKit = nil
+        lastPrepareProgress = 0.0
     }
 
     // MARK: - Private
+
+    private func waitForInFlightPrepareIfNeeded() async {
+        while isPreparing {
+            await withCheckedContinuation { continuation in
+                prepareWaiters.append(continuation)
+            }
+        }
+    }
+
+    private func resumePrepareWaiters() {
+        let waiters = prepareWaiters
+        prepareWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+    }
+
+    private func registerPrepareProgressHandler(_ handler: ((Double) -> Void)?) -> UUID? {
+        guard let handler else { return nil }
+        let token = UUID()
+        prepareProgressHandlers[token] = handler
+        if isPreparing || whisperKit != nil {
+            handler(lastPrepareProgress)
+        }
+        return token
+    }
+
+    private func unregisterPrepareProgressHandler(_ token: UUID?) {
+        guard let token else { return }
+        prepareProgressHandlers.removeValue(forKey: token)
+    }
+
+    private func reportPrepareProgress(_ value: Double) {
+        let clamped = Self.clamp(value)
+        lastPrepareProgress = clamped
+        for handler in prepareProgressHandlers.values {
+            handler(clamped)
+        }
+    }
 
     private func shouldDecodePartial(session: Session) -> Bool {
         let newSampleCount = session.audioSamples.count - session.lastDecodedSampleCount
@@ -277,9 +342,13 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
     }
 
     /// Searches directories under `downloadBase` for a fully-downloaded model folder
-    /// (contains AudioEncoder.mlmodelc). Traversal is directory-only and depth-limited
+    /// for the configured variant (contains AudioEncoder.mlmodelc). Traversal is
+    /// directory-only and depth-limited
     /// to avoid scanning every file in large model trees.
-    private func findExistingModelFolder(under base: URL) -> String? {
+    private func findExistingModelFolder(
+        under base: URL,
+        matchingVariant variant: String
+    ) -> String? {
         let fm = FileManager.default
         let maxDepth = 6
         var queue: [(url: URL, depth: Int)] = [(base, 0)]
@@ -289,7 +358,9 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
             let audioEncoder = url.appendingPathComponent("AudioEncoder.mlmodelc")
             var isDir: ObjCBool = false
             if fm.fileExists(atPath: audioEncoder.path, isDirectory: &isDir), isDir.boolValue {
-                return url.path
+                if modelFolder(url, matchesVariant: variant) {
+                    return url.path
+                }
             }
 
             guard depth < maxDepth else {
@@ -302,6 +373,125 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
             }
         }
         return nil
+    }
+
+    private func modelFolder(_ url: URL, matchesVariant variant: String) -> Bool {
+        let folderName = url.lastPathComponent.lowercased()
+        let normalizedVariant = variant.lowercased()
+        let hyphenatedVariant = normalizedVariant.replacingOccurrences(of: ".", with: "-")
+
+        return folderName.contains(normalizedVariant) || folderName.contains(hyphenatedVariant)
+    }
+
+    private func downloadModel(into modelsDirectory: URL) async throws -> String {
+        let maxAttempts = 2
+
+        for attempt in 1...maxAttempts {
+            do {
+                let downloadedFolder = try await WhisperKit.download(
+                    variant: Constants.localWhisperModel,
+                    downloadBase: modelsDirectory,
+                    from: Constants.localWhisperModelRepository,
+                    progressCallback: { [weak self] progress in
+                        guard let self else { return }
+                        let clamped = Self.clamp(progress.fractionCompleted) * 0.9
+                        Task {
+                            await self.reportPrepareProgress(clamped)
+                        }
+                    }
+                )
+                reportPrepareProgress(0.9)
+                return downloadedFolder.path
+            } catch {
+                logger.warn(
+                    "Local Whisper download attempt \(attempt)/\(maxAttempts) failed: \(error)"
+                )
+                purgeCachedModelArtifacts(
+                    modelFolderPath: modelsDirectory
+                        .appendingPathComponent(Constants.localWhisperModelRepository)
+                        .appendingPathComponent("openai_whisper-\(Constants.localWhisperModel)")
+                        .path,
+                    under: modelsDirectory
+                )
+
+                guard attempt < maxAttempts else {
+                    throw error
+                }
+
+                reportPrepareProgress(0.0)
+            }
+        }
+
+        throw ASRError.localRuntimeUnavailable(detail: "Whisper download attempts exhausted")
+    }
+
+    private func loadRuntimeWithProgress(
+        modelFolder: String,
+        modelsDirectory: URL
+    ) async throws -> WhisperKit {
+        let initialProgress = max(lastPrepareProgress, 0.9)
+        reportPrepareProgress(initialProgress)
+
+        let ticker = Task { [weak self] in
+            var progress = initialProgress
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                progress = min(progress + 0.004, 0.99)
+                guard let self else { continue }
+                await self.reportPrepareProgress(progress)
+            }
+        }
+
+        defer { ticker.cancel() }
+
+        let runtime = try await makeRuntime(
+            modelFolder: modelFolder,
+            modelsDirectory: modelsDirectory
+        )
+        reportPrepareProgress(1.0)
+        return runtime
+    }
+
+    private func makeRuntime(
+        modelFolder: String,
+        modelsDirectory: URL
+    ) async throws -> WhisperKit {
+        let config = WhisperKitConfig(
+            model: Constants.localWhisperModel,
+            downloadBase: modelsDirectory,
+            modelRepo: Constants.localWhisperModelRepository,
+            modelFolder: modelFolder,
+            verbose: false,
+            prewarm: true,
+            load: true,
+            download: false
+        )
+        return try await WhisperKit(config)
+    }
+
+    private func purgeCachedModelArtifacts(
+        modelFolderPath: String,
+        under modelsDirectory: URL
+    ) {
+        let fm = FileManager.default
+        let configuredFolderName = "openai_whisper-\(Constants.localWhisperModel)"
+        let mirrorFolderName = "whisper-\(Constants.localWhisperModel)"
+        let repoRoot = modelsDirectory.appendingPathComponent(Constants.localWhisperModelRepository)
+
+        let cleanupTargets: [URL] = [
+            URL(fileURLWithPath: modelFolderPath),
+            repoRoot.appendingPathComponent(configuredFolderName),
+            repoRoot.appendingPathComponent(".cache/huggingface/download/\(configuredFolderName)"),
+            modelsDirectory.appendingPathComponent("openai/\(mirrorFolderName)")
+        ]
+
+        for target in cleanupTargets where fm.fileExists(atPath: target.path) {
+            do {
+                try fm.removeItem(at: target)
+            } catch {
+                logger.warn("Failed to remove stale Whisper artifact at \(target.path): \(error)")
+            }
+        }
     }
 
     private func directoryChildren(of base: URL, fileManager: FileManager) -> [URL] {

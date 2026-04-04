@@ -31,6 +31,9 @@ final class DictationOrchestrator {
     private var transcriptPostProcessingMode: TranscriptPostProcessingMode
     private var llmPostProcessingPrompt: String
     private var commonTerms: [String]
+    private let llmRuntimeControlQueue = DispatchQueue(label: "com.hanzo.llm-runtime-control")
+    private var llmRuntimeDesired = false
+    private var llmRuntimeGeneration = 0
 
     // Auto-submit
     var autoSubmitMode: AutoSubmitMode
@@ -110,10 +113,7 @@ final class DictationOrchestrator {
         let hasRequiredPermissions = permissionService.hasMicrophonePermission
             && permissionService.hasAccessibilityPermission
         if hasRequiredPermissions {
-            prewarmConfiguredRuntimes(
-                asrProvider: configuredASRProvider,
-                postProcessingMode: transcriptPostProcessingMode
-            )
+            prewarmConfiguredRuntimes(asrProvider: configuredASRProvider)
         }
     }
 
@@ -145,11 +145,9 @@ final class DictationOrchestrator {
         let shouldRestartLocalLLMRuntimeForContextChange = previousPostProcessingMode == .llm
             && transcriptPostProcessingMode == .llm
             && previousLocalLLMContextSize != configuredLocalLLMContextSize
-        let shouldWarmLocalLLMRuntime = transcriptPostProcessingMode == .llm
-            && (previousPostProcessingMode != .llm || shouldRestartLocalLLMRuntimeForContextChange)
 
         if shouldRestartLocalRuntime || shouldWarmLocalRuntime
-            || shouldStopLocalLLMRuntime || shouldWarmLocalLLMRuntime
+            || shouldStopLocalLLMRuntime
             || shouldRestartLocalLLMRuntimeForContextChange {
             Task {
                 if shouldRestartLocalRuntime {
@@ -157,7 +155,7 @@ final class DictationOrchestrator {
                 }
 
                 if shouldStopLocalLLMRuntime || shouldRestartLocalLLMRuntimeForContextChange {
-                    await localLLMRuntimeManager.stop()
+                    coolLocalLLMRuntimeAfterSession(reason: "settings change")
                 }
 
                 if shouldWarmLocalRuntime {
@@ -168,15 +166,6 @@ final class DictationOrchestrator {
                         logger.warn("Failed to warm local Whisper runtime after settings change: \(error)")
                     }
                 }
-
-                if shouldWarmLocalLLMRuntime {
-                    do {
-                        try await localLLMRuntimeManager.prepareModel()
-                        logger.info("Local LLM runtime warmed after settings change")
-                    } catch {
-                        logger.warn("Failed to warm local LLM runtime after settings change: \(error)")
-                    }
-                }
             }
         }
     }
@@ -184,6 +173,10 @@ final class DictationOrchestrator {
     func toggle() {
         switch appState.dictationState {
         case .idle:
+            guard appState.allowsDictationStart else {
+                logger.info("Ignoring dictation start while onboarding setup is active")
+                return
+            }
             startRecording()
         case .listening:
             stopRecording()
@@ -226,6 +219,7 @@ final class DictationOrchestrator {
         previousAudioLevels = nil
         recentAudioMotionSamples.removeAll()
         applyEffectiveBehavior(for: nil)
+        coolLocalLLMRuntimeAfterSession(reason: "recording cancellation")
 
         Task { @MainActor in
             appState.dictationState = .idle
@@ -298,6 +292,7 @@ final class DictationOrchestrator {
         hasObservedMeaningfulTranscript = false
         previousAudioLevels = nil
         recentAudioMotionSamples.removeAll()
+        warmLocalLLMRuntimeForActiveSessionIfNeeded()
 
         Task {
             do {
@@ -312,6 +307,7 @@ final class DictationOrchestrator {
                     // Keep HUD visible so the error state is discoverable.
                     appState.isPopoverPresented = true
                 }
+                coolLocalLLMRuntimeAfterSession(reason: "recording start failure")
             }
         }
     }
@@ -444,6 +440,9 @@ final class DictationOrchestrator {
                 await MainActor.run {
                     applyEffectiveBehavior(for: nil)
                 }
+                if !pendingRestartAfterForging {
+                    coolLocalLLMRuntimeAfterSession(reason: "recording completion")
+                }
             } catch {
                 if cancellationRequested(for: recordingEpoch) {
                     logger.info("Ignoring transcription failure after cancellation request")
@@ -462,6 +461,7 @@ final class DictationOrchestrator {
                 await MainActor.run {
                     applyEffectiveBehavior(for: nil)
                 }
+                coolLocalLLMRuntimeAfterSession(reason: "recording failure")
             }
 
             if pendingRestartAfterForging {
@@ -523,6 +523,7 @@ final class DictationOrchestrator {
         recentAudioMotionSamples.removeAll()
         activeSessionTargetBundleIdentifier = nil
         applyEffectiveBehavior(for: nil)
+        coolLocalLLMRuntimeAfterSession(reason: "reset")
     }
 
     private func cancellationRequested(for recordingEpoch: Int) -> Bool {
@@ -632,11 +633,8 @@ final class DictationOrchestrator {
         appState.activeTargetBundleIdentifier = targetBundleIdentifier
     }
 
-    private func prewarmConfiguredRuntimes(
-        asrProvider: ASRProvider,
-        postProcessingMode: TranscriptPostProcessingMode
-    ) {
-        guard asrProvider == .local || postProcessingMode == .llm else {
+    private func prewarmConfiguredRuntimes(asrProvider: ASRProvider) {
+        guard asrProvider == .local else {
             return
         }
 
@@ -649,16 +647,101 @@ final class DictationOrchestrator {
                     logger.warn("Failed to prewarm local Whisper runtime at launch: \(error)")
                 }
             }
+        }
+    }
 
-            if postProcessingMode == .llm {
-                do {
-                    try await localLLMRuntimeManager.prepareModel()
-                    logger.info("Local LLM runtime prewarmed at launch")
-                } catch {
-                    logger.warn("Failed to prewarm local LLM runtime at launch: \(error)")
+    private func warmLocalLLMRuntimeForActiveSessionIfNeeded() {
+        guard transcriptPostProcessingMode == .llm else { return }
+        updateLocalLLMRuntime(
+            desiredRunning: true,
+            reason: "active session"
+        )
+    }
+
+    private func coolLocalLLMRuntimeAfterSession(reason: String) {
+        updateLocalLLMRuntime(
+            desiredRunning: false,
+            reason: reason
+        )
+    }
+
+    private func updateLocalLLMRuntime(
+        desiredRunning: Bool,
+        reason: String
+    ) {
+        logger.info(
+            desiredRunning
+                ? "Requesting local LLM runtime warmup for \(reason)"
+                : "Requesting local LLM runtime cooldown for \(reason)"
+        )
+
+        let generation = llmRuntimeControlQueue.sync {
+            llmRuntimeDesired = desiredRunning
+            llmRuntimeGeneration += 1
+            return llmRuntimeGeneration
+        }
+
+        Task { [weak self] in
+            await self?.syncLocalLLMRuntime(
+                desiredRunning: desiredRunning,
+                generation: generation,
+                reason: reason
+            )
+        }
+    }
+
+    private func syncLocalLLMRuntime(
+        desiredRunning: Bool,
+        generation: Int,
+        reason: String
+    ) async {
+        guard isCurrentLocalLLMRuntimeRequest(
+            generation: generation,
+            desiredRunning: desiredRunning
+        ) else {
+            return
+        }
+
+        if desiredRunning {
+            do {
+                try await localLLMRuntimeManager.prepareModel()
+                if isCurrentLocalLLMRuntimeRequest(
+                    generation: generation,
+                    desiredRunning: desiredRunning
+                ) {
+                    logger.info("Local LLM runtime warmed for \(reason)")
+                    return
+                }
+
+                if !isLocalLLMRuntimeDesired() {
+                    await localLLMRuntimeManager.stop()
+                }
+            } catch {
+                if isCurrentLocalLLMRuntimeRequest(
+                    generation: generation,
+                    desiredRunning: desiredRunning
+                ) {
+                    logger.warn("Failed to warm local LLM runtime for \(reason): \(error)")
                 }
             }
+            return
         }
+
+        logger.info("Cooling local LLM runtime after \(reason)")
+        await localLLMRuntimeManager.stop()
+    }
+
+    private func isCurrentLocalLLMRuntimeRequest(
+        generation: Int,
+        desiredRunning: Bool
+    ) -> Bool {
+        llmRuntimeControlQueue.sync {
+            llmRuntimeGeneration == generation && llmRuntimeDesired == desiredRunning
+        }
+    }
+
+    private func isLocalLLMRuntimeDesired() -> Bool {
+        llmRuntimeControlQueue.sync { llmRuntimeDesired }
     }
 
     private func postProcessFinalTranscript(

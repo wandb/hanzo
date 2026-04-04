@@ -81,7 +81,7 @@ The dev script bundles local LLM runtime binaries (`llama-server` + dylibs). If 
 
 ### Local Models
 
-- **ASR (default):** WhisperKit `base.en` from `argmaxinc/whisperkit-coreml`
+- **ASR (default):** WhisperKit `small.en` from `argmaxinc/whisperkit-coreml`
 - **Rewrite (default):** `Qwen3-4B-Q4_K_M.gguf` via bundled `llama-server`
 - **Custom ASR:** optional server endpoint + password, configured in Settings
 
