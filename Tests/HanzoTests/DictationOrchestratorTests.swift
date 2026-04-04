@@ -474,6 +474,93 @@ struct DictationOrchestratorTests {
         #expect(sut.appState.dictationState == .listening)
     }
 
+    @Test("Mixed partials strip known markers before updating the HUD transcript")
+    @MainActor func mixedPartialsStripKnownMarkersBeforeHUDUpdate() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(ASRChunkResponse(text: "hello [BLANK_AUDIO] world", language: "en"))
+        )
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+
+        #expect(sut.appState.partialTranscript == "hello world")
+    }
+
+    @Test("Parenthetical-only partials do not update the visible transcript")
+    @MainActor func parentheticalOnlyPartialsDoNotUpdateVisibleTranscript() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(ASRChunkResponse(text: "(sigh)", language: "en"))
+        )
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+
+        #expect(sut.appState.partialTranscript == "")
+        #expect(sut.appState.dictationState == .listening)
+    }
+
+    @Test("Annotation-only partial sequences do not update the visible transcript")
+    @MainActor func annotationOnlyPartialSequencesDoNotUpdateVisibleTranscript() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(ASRChunkResponse(text: "(sighs) (clapping)", language: "en"))
+        )
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+
+        #expect(sut.appState.partialTranscript == "")
+        #expect(sut.appState.dictationState == .listening)
+    }
+
+    @Test("Asterisk annotation-only partials do not update the visible transcript")
+    @MainActor func asteriskAnnotationOnlyPartialsDoNotUpdateVisibleTranscript() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(ASRChunkResponse(text: "*cough*.", language: "en"))
+        )
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+
+        #expect(sut.appState.partialTranscript == "")
+        #expect(sut.appState.dictationState == .listening)
+    }
+
+    @Test("Bracket-only partials do not update the visible transcript")
+    @MainActor func bracketOnlyPartialsDoNotUpdateVisibleTranscript() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(ASRChunkResponse(text: "[MUSIC PLAYING]", language: "en"))
+        )
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+
+        #expect(sut.appState.partialTranscript == "")
+        #expect(sut.appState.dictationState == .listening)
+    }
+
+    @Test("Partials strip trailing parenthetical annotations while preserving spoken text")
+    @MainActor func partialsStripTrailingParentheticalAnnotations() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(
+                ASRChunkResponse(
+                    text: "All of which are American dreams (crowd cheering)",
+                    language: "en"
+                )
+            )
+        )
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+
+        #expect(sut.appState.partialTranscript == "All of which are American dreams")
+    }
+
     @Test("Leading marker-only sessions do not arm auto-close")
     @MainActor func leadingMarkerOnlySessionsDoNotArmAutoClose() async throws {
         let sut = makeSUT(
@@ -528,6 +615,90 @@ struct DictationOrchestratorTests {
         #expect(sut.appState.partialTranscript == "hello world")
     }
 
+    @Test("Marker-only packets after real speech do not regress visible transcript")
+    @MainActor func markerOnlyPacketsAfterRealSpeechDoNotRegressVisibleTranscript() async throws {
+        let sut = makeSUT()
+        var chunkResponses = [
+            ASRChunkResponse(text: "hello world", language: "en"),
+            ASRChunkResponse(text: "[BLANK_AUDIO]", language: "en"),
+        ]
+        sut.mockASR.sendChunkHandler = { _, _ in
+            chunkResponses.removeFirst()
+        }
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+        #expect(sut.appState.partialTranscript == "hello world")
+
+        try await sendLargeChunk(sut)
+        #expect(sut.appState.partialTranscript == "hello world")
+    }
+
+    @Test("Parenthetical-only packets after real speech do not regress visible transcript")
+    @MainActor func parentheticalOnlyPacketsAfterRealSpeechDoNotRegressVisibleTranscript() async throws {
+        let sut = makeSUT()
+        var chunkResponses = [
+            ASRChunkResponse(text: "hello world", language: "en"),
+            ASRChunkResponse(text: "(sighs) (clapping)", language: "en"),
+        ]
+        sut.mockASR.sendChunkHandler = { _, _ in
+            chunkResponses.removeFirst()
+        }
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+        #expect(sut.appState.partialTranscript == "hello world")
+
+        try await sendLargeChunk(sut)
+        #expect(sut.appState.partialTranscript == "hello world")
+    }
+
+    @Test("Asterisk annotation-only packets after real speech do not regress visible transcript")
+    @MainActor func asteriskAnnotationOnlyPacketsAfterRealSpeechDoNotRegressVisibleTranscript() async throws {
+        let sut = makeSUT()
+        var chunkResponses = [
+            ASRChunkResponse(text: "hello world", language: "en"),
+            ASRChunkResponse(text: "*cough*.", language: "en"),
+        ]
+        sut.mockASR.sendChunkHandler = { _, _ in
+            chunkResponses.removeFirst()
+        }
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+        #expect(sut.appState.partialTranscript == "hello world")
+
+        try await sendLargeChunk(sut)
+        #expect(sut.appState.partialTranscript == "hello world")
+    }
+
+    @Test("Bracket-only packets after real speech do not regress visible transcript")
+    @MainActor func bracketOnlyPacketsAfterRealSpeechDoNotRegressVisibleTranscript() async throws {
+        let sut = makeSUT()
+        var chunkResponses = [
+            ASRChunkResponse(text: "hello world", language: "en"),
+            ASRChunkResponse(text: "[MUSIC PLAYING]", language: "en"),
+        ]
+        sut.mockASR.sendChunkHandler = { _, _ in
+            chunkResponses.removeFirst()
+        }
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+        #expect(sut.appState.partialTranscript == "hello world")
+
+        try await sendLargeChunk(sut)
+        #expect(sut.appState.partialTranscript == "hello world")
+    }
+
     @Test("Manual stop on a leading marker-only final inserts nothing")
     @MainActor func manualStopOnLeadingMarkerOnlyFinalInsertsNothing() async throws {
         let sut = makeSUT(
@@ -552,9 +723,147 @@ struct DictationOrchestratorTests {
         #expect(sut.mockText.cmdReturnSimulated == false)
         #expect(
             sut.mockLogger.infoMessages.contains {
-                $0.contains("Final transcription contained only a leading non-speech marker; skipping insertion")
+                $0.contains("Final transcription empty after post-processing; skipping insertion")
             }
         )
+    }
+
+    @Test("Manual stop on marker-only final inserts nothing even after speech appears in the HUD")
+    @MainActor func manualStopOnMarkerOnlyFinalInsertsNothingAfterSpeech() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(ASRChunkResponse(text: "hello world", language: "en")),
+            asrFinishResult: .success(ASRFinishResponse(text: "[BLANK_AUDIO]", language: "en")),
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+        #expect(sut.appState.partialTranscript == "hello world")
+
+        sut.orchestrator.toggle()
+
+        let returnedToIdle = await waitUntil(timeoutNanoseconds: 3_000_000_000) {
+            sut.appState.dictationState == .idle
+        }
+        #expect(returnedToIdle)
+        #expect(sut.mockText.insertedTexts.isEmpty)
+    }
+
+    @Test("Manual stop inserts mixed final transcript after stripping known markers")
+    @MainActor func manualStopInsertsMixedFinalTranscriptAfterStrippingKnownMarkers() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(ASRChunkResponse(text: "hello [BLANK_AUDIO] world", language: "en")),
+            asrFinishResult: .success(ASRFinishResponse(text: "hello [BLANK_AUDIO] world", language: "en")),
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+        sut.orchestrator.toggle()
+
+        let insertedCleanText = await waitUntil(timeoutNanoseconds: 3_000_000_000) {
+            sut.mockText.insertedTexts == ["hello world"]
+        }
+        #expect(insertedCleanText)
+        #expect(sut.mockText.insertedTexts == ["hello world"])
+    }
+
+    @Test("Manual stop on annotation-only final inserts nothing")
+    @MainActor func manualStopOnAnnotationOnlyFinalInsertsNothing() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(ASRChunkResponse(text: "hello world", language: "en")),
+            asrFinishResult: .success(ASRFinishResponse(text: "(sighs) (clapping)", language: "en")),
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+        #expect(sut.appState.partialTranscript == "hello world")
+
+        sut.orchestrator.toggle()
+
+        let returnedToIdle = await waitUntil(timeoutNanoseconds: 3_000_000_000) {
+            sut.appState.dictationState == .idle
+        }
+        #expect(returnedToIdle)
+        #expect(sut.mockText.insertedTexts.isEmpty)
+    }
+
+    @Test("Manual stop on asterisk annotation-only final inserts nothing")
+    @MainActor func manualStopOnAsteriskAnnotationOnlyFinalInsertsNothing() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(ASRChunkResponse(text: "hello world", language: "en")),
+            asrFinishResult: .success(ASRFinishResponse(text: "*cough*.", language: "en")),
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+        #expect(sut.appState.partialTranscript == "hello world")
+
+        sut.orchestrator.toggle()
+
+        let returnedToIdle = await waitUntil(timeoutNanoseconds: 3_000_000_000) {
+            sut.appState.dictationState == .idle
+        }
+        #expect(returnedToIdle)
+        #expect(sut.mockText.insertedTexts.isEmpty)
+    }
+
+    @Test("Manual stop on bracket-only final inserts nothing")
+    @MainActor func manualStopOnBracketOnlyFinalInsertsNothing() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(ASRChunkResponse(text: "hello world", language: "en")),
+            asrFinishResult: .success(ASRFinishResponse(text: "[MUSIC PLAYING]", language: "en")),
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+        #expect(sut.appState.partialTranscript == "hello world")
+
+        sut.orchestrator.toggle()
+
+        let returnedToIdle = await waitUntil(timeoutNanoseconds: 3_000_000_000) {
+            sut.appState.dictationState == .idle
+        }
+        #expect(returnedToIdle)
+        #expect(sut.mockText.insertedTexts.isEmpty)
+    }
+
+    @Test("Manual stop strips trailing parenthetical annotations from final transcript before insertion")
+    @MainActor func manualStopStripsTrailingParentheticalAnnotationsFromFinal() async throws {
+        let sut = makeSUT(
+            asrChunkResult: .success(
+                ASRChunkResponse(
+                    text: "All of which are American dreams (crowd cheering)",
+                    language: "en"
+                )
+            ),
+            asrFinishResult: .success(
+                ASRFinishResponse(
+                    text: "All of which are American dreams (crowd cheering)",
+                    language: "en"
+                )
+            ),
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        try await sendLargeChunk(sut)
+        sut.orchestrator.toggle()
+
+        let insertedCleanText = await waitUntil(timeoutNanoseconds: 3_000_000_000) {
+            sut.mockText.insertedTexts == ["All of which are American dreams"]
+        }
+        #expect(insertedCleanText)
+        #expect(sut.mockText.insertedTexts == ["All of which are American dreams"])
     }
 
     @Test("Stopping merges trailing buffered chunk response into partialTranscript")

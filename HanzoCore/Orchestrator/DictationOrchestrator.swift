@@ -388,19 +388,12 @@ final class DictationOrchestrator {
                 let targetApp = previousApp
                 let targetAppName = resolvedTargetAppDisplayName(for: targetApp)
                 let rawFinalText = finalResponse.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                let finalText: String
-                if !hasObservedMeaningfulTranscript,
-                   appState.partialTranscript.isEmpty,
-                   Self.isLeadingNonSpeechMarker(rawFinalText) {
-                    logger.info(
-                        "Final transcription contained only a leading non-speech marker; skipping insertion"
-                    )
-                    finalText = ""
-                } else {
-                    finalText = await postProcessFinalTranscript(
-                        rawFinalText,
-                        targetAppName: targetAppName
-                    )
+                let finalText = await postProcessFinalTranscript(
+                    rawFinalText,
+                    targetAppName: targetAppName
+                )
+                if finalText.isEmpty, !rawFinalText.isEmpty {
+                    logger.info("Final transcription empty after post-processing; skipping insertion")
                 }
                 sessionId = nil
                 previousApp = nil
@@ -672,45 +665,86 @@ final class DictationOrchestrator {
         _ rawFinalText: String,
         targetAppName: String?
     ) async -> String {
-        guard !rawFinalText.isEmpty else { return rawFinalText }
+        let sanitizedRawText = filterTranscriptText(
+            rawFinalText,
+            sourceLabel: "final transcript",
+            emptyTextReason: "skipping insertion"
+        )
+        guard !sanitizedRawText.isEmpty else { return "" }
 
         switch transcriptPostProcessingMode {
         case .off:
-            return rawFinalText
+            return sanitizedRawText
         case .llm:
             let hasCustomPrompt = !llmPostProcessingPrompt
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .isEmpty
             logger.info(
-                "Starting local LLM post-processing (\(rawFinalText.count) chars, custom prompt: \(hasCustomPrompt ? "yes" : "no"))"
+                "Starting local LLM post-processing (\(sanitizedRawText.count) chars, custom prompt: \(hasCustomPrompt ? "yes" : "no"))"
             )
             let start = Date()
             switch await llmPostProcessWithTimeout(
-                text: rawFinalText,
+                text: sanitizedRawText,
                 prompt: llmPostProcessingPrompt,
                 targetAppName: targetAppName
             ) {
             case .success(let rewritten):
+                let rewrittenSanitized = filterTranscriptText(
+                    rewritten,
+                    sourceLabel: "local LLM output",
+                    emptyTextReason: "suppressing final text"
+                )
                 let duration = Date().timeIntervalSince(start)
-                let changed = rewritten != rawFinalText
+                let changed = rewrittenSanitized != sanitizedRawText
                 logger.info(
                     "Local LLM post-processing finished in \(String(format: "%.2f", duration))s (changed: \(changed))"
                 )
-                return rewritten
+                return rewrittenSanitized
             case .failure(let error):
                 let duration = Date().timeIntervalSince(start)
                 logger.warn(
-                    "Local LLM post-processing failed after \(String(format: "%.2f", duration))s, falling back to raw transcript: \(error)"
+                    "Local LLM post-processing failed after \(String(format: "%.2f", duration))s, falling back to filtered transcript: \(error)"
                 )
-                return rawFinalText
+                return sanitizedRawText
             case .timeout:
                 let duration = Date().timeIntervalSince(start)
                 logger.warn(
-                    "Local LLM post-processing timed out after \(String(format: "%.2f", duration))s, falling back to raw transcript"
+                    "Local LLM post-processing timed out after \(String(format: "%.2f", duration))s, falling back to filtered transcript"
                 )
-                return rawFinalText
+                return sanitizedRawText
             }
         }
+    }
+
+    private func filterTranscriptText(
+        _ text: String,
+        sourceLabel: String,
+        emptyTextReason: String
+    ) -> String {
+        let sanitizedResult = TranscriptArtifactFilter.sanitize(text)
+        if sanitizedResult.removedMarkerCount > 0 {
+            logger.info(
+                "Filtered \(sanitizedResult.removedMarkerCount) non-speech marker(s) from \(sourceLabel)"
+            )
+        }
+
+        let trailingStripResult = TranscriptArtifactFilter.stripTrailingStandaloneAnnotations(
+            sanitizedResult.text
+        )
+        if trailingStripResult.removedAnnotationCount > 0 {
+            logger.info(
+                "Stripped \(trailingStripResult.removedAnnotationCount) trailing non-speech annotation(s) from \(sourceLabel)"
+            )
+        }
+
+        let filteredText = trailingStripResult.text
+        if TranscriptArtifactFilter.isOnlyStandaloneAnnotations(filteredText)
+            || TranscriptArtifactFilter.isOnlyStandaloneBracketedAnnotations(filteredText) {
+            logger.info("\(sourceLabel.capitalized) contained only non-speech annotations; \(emptyTextReason)")
+            return ""
+        }
+
+        return filteredText
     }
 
     private enum LLMPostProcessResult {
@@ -997,19 +1031,40 @@ final class DictationOrchestrator {
     }
 
     private func applyIncomingPartialTranscript(_ incomingText: String, at now: Date) {
-        let trimmedIncomingText = incomingText.trimmingCharacters(in: .whitespacesAndNewlines)
         let previousPartial = appState.partialTranscript
         let transcriptStaleness = lastTranscriptContentUpdateAt
             .map { now.timeIntervalSince($0) } ?? .greatestFiniteMagnitude
-        let hasPacketText = !trimmedIncomingText.isEmpty
+        let sanitizedIncomingText: String
+        if TranscriptArtifactFilter.shouldRunFullFiltering(incomingText) {
+            let sanitizedIncomingResult = TranscriptArtifactFilter.sanitize(incomingText)
+            if sanitizedIncomingResult.removedMarkerCount > 0 {
+                logger.info(
+                    "Filtered \(sanitizedIncomingResult.removedMarkerCount) non-speech marker(s) from partial transcript packet"
+                )
+            }
+            let trailingPartialStripResult = TranscriptArtifactFilter.stripTrailingStandaloneAnnotations(
+                sanitizedIncomingResult.text
+            )
+            if trailingPartialStripResult.removedAnnotationCount > 0 {
+                logger.info(
+                    "Stripped \(trailingPartialStripResult.removedAnnotationCount) trailing non-speech annotation(s) from partial transcript packet"
+                )
+            }
+            sanitizedIncomingText = trailingPartialStripResult.text
+        } else {
+            sanitizedIncomingText = incomingText.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        if TranscriptArtifactFilter.isOnlyStandaloneAnnotations(sanitizedIncomingText)
+            || TranscriptArtifactFilter.isOnlyStandaloneBracketedAnnotations(sanitizedIncomingText) {
+            logger.info("Suppressing annotation-only partial transcript packet")
+            return
+        }
+        let hasPacketText = !sanitizedIncomingText.isEmpty
 
         if hasPacketText {
             noteTranscriptPacketActivity(at: now)
-        }
-
-        if !hasObservedMeaningfulTranscript,
-           previousPartial.isEmpty,
-           Self.isLeadingNonSpeechMarker(trimmedIncomingText) {
+        } else {
             return
         }
 
@@ -1017,7 +1072,7 @@ final class DictationOrchestrator {
             >= Constants.partialTranscriptAggressiveRecoveryAfterSeconds
         let mergedPartial = PartialTranscriptMerger.merge(
             previous: previousPartial,
-            incoming: incomingText,
+            incoming: sanitizedIncomingText,
             allowAggressiveRecovery: allowAggressiveRecovery
         )
 
@@ -1031,27 +1086,7 @@ final class DictationOrchestrator {
     }
 
     static func isLeadingNonSpeechMarker(_ text: String) -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.first == "[", trimmed.last == "]" else { return false }
-
-        let innerText = trimmed.dropFirst().dropLast()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !innerText.isEmpty else { return false }
-
-        let normalized = innerText
-            .lowercased()
-            .replacingOccurrences(
-                of: #"[\s_-]+"#,
-                with: "_",
-                options: .regularExpression
-            )
-
-        switch normalized {
-        case "silence", "blank_audio":
-            return true
-        default:
-            return false
-        }
+        TranscriptArtifactFilter.containsOnlyKnownMarkers(text)
     }
 
     private func speechBandDominance(for levels: [Float], signalLevel: Float) -> Float {
