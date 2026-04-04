@@ -40,6 +40,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INFO_PLIST="$ROOT_DIR/HanzoCore/Info.plist"
 ENTITLEMENTS="$ROOT_DIR/HanzoCore/Hanzo.entitlements"
 APP_ICON_SOURCE="$ROOT_DIR/assets/icons/Hanzo.icns"
+CHANGELOG_SOURCE="$ROOT_DIR/CHANGELOG.md"
 
 VERSION=""
 BUILD_NUMBER=""
@@ -112,6 +113,7 @@ require_cmd /usr/libexec/PlistBuddy
 [ -f "$INFO_PLIST" ] || die "Missing Info.plist at $INFO_PLIST"
 [ -f "$ENTITLEMENTS" ] || die "Missing entitlements at $ENTITLEMENTS"
 [ -f "$APP_ICON_SOURCE" ] || die "Missing app icon at $APP_ICON_SOURCE"
+[ -f "$CHANGELOG_SOURCE" ] || die "Missing changelog at $CHANGELOG_SOURCE"
 
 DMG_BG_SOURCE="$ROOT_DIR/assets/dmg/background.png"
 [ -f "$DMG_BG_SOURCE" ] || die "Missing DMG background at $DMG_BG_SOURCE"
@@ -259,6 +261,7 @@ fi
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 install -m 755 "$SIGNED_EXECUTABLE_PATH" "$APP_MACOS/Hanzo"
 install -m 644 "$APP_ICON_SOURCE" "$APP_RESOURCES/Hanzo.icns"
+install -m 644 "$CHANGELOG_SOURCE" "$APP_RESOURCES/CHANGELOG.md"
 install -m 644 "$INFO_PLIST" "$APP_CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_CONTENTS/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP_CONTENTS/Info.plist"

@@ -11,6 +11,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var transcriptPanel: NSPanel?
     private var onboardingWindow: NSWindow?
     private var settingsWindow: NSWindow?
+    private var whatsNewWindow: NSWindow?
     private var isStateObservationActive = false
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
@@ -203,6 +204,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(withTitle: "Settings...",
                      action: #selector(openSettings), keyEquivalent: ",")
+        menu.addItem(withTitle: "What's New...",
+                     action: #selector(openWhatsNew), keyEquivalent: "")
 
         if let updaterController {
             let checkForUpdatesMenuItem = NSMenuItem(
@@ -251,22 +254,36 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let hostingController = NSHostingController(rootView: settingsView)
         let window = NSWindow(contentViewController: hostingController)
-        window.styleMask = [.titled, .fullSizeContentView]
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.standardWindowButton(.closeButton)?.isHidden = true
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        window.standardWindowButton(.zoomButton)?.isHidden = true
-        window.backgroundColor = .clear
-        window.isOpaque = false
-        window.hasShadow = true
-        window.isMovableByWindowBackground = true
-        window.setContentSize(NSSize(width: 680, height: 520))
+        configureUtilityWindow(window, size: NSSize(width: 680, height: 520))
         window.center()
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(nil)
         NSApp.activate(ignoringOtherApps: true)
         self.settingsWindow = window
+    }
+
+    @objc private func openWhatsNew() {
+        if let window = whatsNewWindow {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
+        let whatsNewView = WhatsNewView(
+            appState: appState,
+            onClose: { [weak self] in
+                self?.whatsNewWindow?.close()
+                self?.whatsNewWindow = nil
+            }
+        )
+        let hostingController = NSHostingController(rootView: whatsNewView)
+        let window = NSWindow(contentViewController: hostingController)
+        configureUtilityWindow(window, size: NSSize(width: 720, height: 560))
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        window.makeFirstResponder(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        self.whatsNewWindow = window
     }
 
     // MARK: - App Monitoring
@@ -342,6 +359,20 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         return true
+    }
+
+    private func configureUtilityWindow(_ window: NSWindow, size: NSSize) {
+        window.styleMask = [.titled, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.standardWindowButton(.closeButton)?.isHidden = true
+        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        window.standardWindowButton(.zoomButton)?.isHidden = true
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = true
+        window.isMovableByWindowBackground = true
+        window.setContentSize(size)
     }
 
     // MARK: - Launch at Login
@@ -450,17 +481,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let hostingController = NSHostingController(rootView: onboardingView)
         let window = NSWindow(contentViewController: hostingController)
-        window.styleMask = [.titled, .fullSizeContentView]
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.standardWindowButton(.closeButton)?.isHidden = true
-        window.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        window.standardWindowButton(.zoomButton)?.isHidden = true
-        window.backgroundColor = .clear
-        window.isOpaque = false
-        window.hasShadow = true
-        window.isMovableByWindowBackground = true
-        window.setContentSize(NSSize(width: 480, height: 380))
+        configureUtilityWindow(window, size: NSSize(width: 480, height: 380))
         window.level = .floating
         window.center()
         window.makeKeyAndOrderFront(nil)

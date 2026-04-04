@@ -1,0 +1,24 @@
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+tag-prefix: 'v'
+category-template: '### $TITLE'
+change-template: '- $TITLE (#$NUMBER) @$AUTHOR'
+change-title-escapes: '\<*_&'
+no-changes-template: '- No user-facing changes in this release.'
+
+categories:
+  - title: Features
+    labels:
+      - enhancement
+  - title: Fixes
+    labels:
+      - bug
+  - title: Documentation
+    labels:
+      - documentation
+
+version-resolver:
+  default: patch
+
+template: |
+  $CHANGES
