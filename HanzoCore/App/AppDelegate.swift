@@ -7,11 +7,11 @@ import Foundation
 
 @MainActor
 public final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let repositoryURL = URL(string: "https://github.com/wandb/hanzo")!
     private var statusItem: NSStatusItem!
     private var transcriptPanel: NSPanel?
     private var onboardingWindow: NSWindow?
     private var settingsWindow: NSWindow?
-    private var whatsNewWindow: NSWindow?
     private var isStateObservationActive = false
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
@@ -120,7 +120,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         if button.image == nil {
             button.image = statusBarImage
         }
-        button.alphaValue = appState.dictationState == .idle ? 0.35 : 1.0
+        button.alphaValue = 1.0
     }
 
     @objc private func statusItemClicked() {
@@ -188,41 +188,42 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showMenu() {
         let menu = NSMenu()
 
-        let statusText: String
-        switch appState.dictationState {
-        case .idle: statusText = "Ready"
-        case .listening: statusText = "Listening..."
-        case .forging: statusText = "Forging..."
-        case .error: statusText = appState.errorMessage ?? "Error"
-        }
-
-        let statusItem = NSMenuItem(title: statusText, action: nil, keyEquivalent: "")
-        statusItem.isEnabled = false
-        menu.addItem(statusItem)
-
-        menu.addItem(.separator())
-
         menu.addItem(withTitle: "Settings...",
                      action: #selector(openSettings), keyEquivalent: ",")
-        menu.addItem(withTitle: "What's New...",
-                     action: #selector(openWhatsNew), keyEquivalent: "")
 
-        if let updaterController {
-            let checkForUpdatesMenuItem = NSMenuItem(
-                title: "Check for Updates...",
-                action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
-                keyEquivalent: ""
-            )
-            if let updateIcon = NSImage(
-                systemSymbolName: "arrow.triangle.2.circlepath",
-                accessibilityDescription: "Check for Updates"
-            ) {
-                checkForUpdatesMenuItem.image = updateIcon
-            }
-            checkForUpdatesMenuItem.target = updaterController
-            checkForUpdatesMenuItem.isEnabled = updaterController.updater.canCheckForUpdates
-            menu.addItem(checkForUpdatesMenuItem)
+        let checkForUpdatesMenuItem = NSMenuItem(
+            title: "Check for Updates...",
+            action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)),
+            keyEquivalent: ""
+        )
+        if let updateIcon = NSImage(
+            systemSymbolName: "arrow.triangle.2.circlepath",
+            accessibilityDescription: "Check for Updates"
+        ) {
+            checkForUpdatesMenuItem.image = updateIcon
         }
+        checkForUpdatesMenuItem.target = updaterController
+        if let updaterController {
+            checkForUpdatesMenuItem.isEnabled = updaterController.updater.canCheckForUpdates
+        } else {
+            checkForUpdatesMenuItem.isEnabled = false
+        }
+        menu.addItem(checkForUpdatesMenuItem)
+
+        menu.addItem(.separator())
+        let githubMenuItem = NSMenuItem(
+            title: "Hanzo on GitHub",
+            action: #selector(openRepository),
+            keyEquivalent: ""
+        )
+        if let githubIcon = NSImage(
+            systemSymbolName: "chevron.left.forwardslash.chevron.right",
+            accessibilityDescription: "GitHub"
+        ) {
+            githubMenuItem.image = githubIcon
+        }
+        menu.addItem(githubMenuItem)
+        menu.addItem(.separator())
 
         menu.addItem(withTitle: "Quit Hanzo",
                      action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -262,28 +263,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         self.settingsWindow = window
     }
 
-    @objc private func openWhatsNew() {
-        if let window = whatsNewWindow {
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            return
-        }
-
-        let whatsNewView = WhatsNewView(
-            appState: appState,
-            onClose: { [weak self] in
-                self?.whatsNewWindow?.close()
-                self?.whatsNewWindow = nil
-            }
-        )
-        let hostingController = NSHostingController(rootView: whatsNewView)
-        let window = NSWindow(contentViewController: hostingController)
-        configureUtilityWindow(window, size: NSSize(width: 720, height: 560))
-        window.center()
-        window.makeKeyAndOrderFront(nil)
-        window.makeFirstResponder(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        self.whatsNewWindow = window
+    @objc private func openRepository() {
+        NSWorkspace.shared.open(Self.repositoryURL)
     }
 
     // MARK: - App Monitoring

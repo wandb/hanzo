@@ -1,61 +1,33 @@
 import SwiftUI
 
-struct WhatsNewView: View {
-    var appState: AppState
-    var onClose: (() -> Void)?
-
-    private let changelog: String?
-    private let entries: [ReleaseNotesEntry]
-
-    init(appState: AppState, onClose: (() -> Void)? = nil) {
-        self.appState = appState
-        self.onClose = onClose
-        self.changelog = ReleaseNotesProvider.loadChangelog()
-        self.entries = ReleaseNotesProvider.parseEntries(from: self.changelog ?? "")
-    }
+struct ReleaseNotesSectionView: View {
+    let title: String
+    let subtitle: String
+    let changelog: String?
+    let entries: [ReleaseNotesEntry]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("What's New")
-                        .font(.system(.title2, design: .rounded, weight: .semibold))
-                    Text("Full release history bundled with this build.")
-                        .font(.system(.subheadline, design: .rounded))
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Button(action: { onClose?() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(.primary.opacity(0.3))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close what's new")
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(.title3, design: .rounded, weight: .semibold))
+                Text(subtitle)
+                    .font(.system(.subheadline, design: .rounded))
+                    .foregroundStyle(.secondary)
             }
-            .padding(.bottom, 16)
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    if entries.isEmpty {
-                        fallbackContent
-                    } else {
-                        ForEach(entries) { entry in
-                            ReleaseNotesEntryView(entry: entry)
-                        }
+            VStack(alignment: .leading, spacing: 24) {
+                if entries.isEmpty {
+                    fallbackContent
+                } else {
+                    ForEach(entries) { entry in
+                        ReleaseNotesEntryView(entry: entry)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 16)
-        .padding(.bottom, 20)
-        .frame(width: 720, height: 560)
-        .hudBackground(colorScheme: appState.preferredColorScheme)
     }
 
     @ViewBuilder
