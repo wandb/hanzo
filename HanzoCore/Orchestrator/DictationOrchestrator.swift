@@ -51,6 +51,7 @@ final class DictationOrchestrator {
     private var lastTranscriptActivityAt: Date?
     private var lastTranscriptPacketAt: Date?
     private var transcriptPacketIntervalEWMA: TimeInterval?
+    private var transcriptActiveSeconds: TimeInterval = 0
     private var hasObservedMeaningfulTranscript = false
     private var previousAudioLevels: [Float]?
     private var recentAudioMotionSamples: [(timestamp: Date, motion: Float)] = []
@@ -216,6 +217,7 @@ final class DictationOrchestrator {
         lastTranscriptActivityAt = nil
         lastTranscriptPacketAt = nil
         transcriptPacketIntervalEWMA = nil
+        transcriptActiveSeconds = 0
         hasObservedMeaningfulTranscript = false
         previousAudioLevels = nil
         recentAudioMotionSamples.removeAll()
@@ -292,6 +294,7 @@ final class DictationOrchestrator {
         lastTranscriptActivityAt = nil
         lastTranscriptPacketAt = nil
         transcriptPacketIntervalEWMA = nil
+        transcriptActiveSeconds = 0
         hasObservedMeaningfulTranscript = false
         previousAudioLevels = nil
         recentAudioMotionSamples.removeAll()
@@ -533,6 +536,7 @@ final class DictationOrchestrator {
         lastTranscriptActivityAt = nil
         lastTranscriptPacketAt = nil
         transcriptPacketIntervalEWMA = nil
+        transcriptActiveSeconds = 0
         hasObservedMeaningfulTranscript = false
         previousAudioLevels = nil
         recentAudioMotionSamples.removeAll()
@@ -909,8 +913,18 @@ final class DictationOrchestrator {
         autoSubmitTriggered: Bool
     ) {
         let startTime = recordingStartTime ?? recordingEndedAt
-        let dictatedSeconds = max(0, recordingEndedAt.timeIntervalSince(startTime))
+        let sessionSeconds = max(0, recordingEndedAt.timeIntervalSince(startTime))
         let words = wordCount(in: finalText)
+        let dictatedSeconds: TimeInterval
+        if words == 0 {
+            dictatedSeconds = 0
+        } else if lastTranscriptPacketAt == nil {
+            // Fallback for providers/environments where only final text is emitted.
+            dictatedSeconds = sessionSeconds
+        } else {
+            let transcriptDrivenSeconds = estimatedTranscriptActiveSeconds(until: recordingEndedAt)
+            dictatedSeconds = min(sessionSeconds, max(0, transcriptDrivenSeconds))
+        }
         let autoSubmitCount = autoSubmitTriggered ? 1 : 0
 
         UsageStatsStore.recordSession(
@@ -923,6 +937,19 @@ final class DictationOrchestrator {
 
     private func wordCount(in text: String) -> Int {
         text.split(whereSeparator: \.isWhitespace).count
+    }
+
+    private func estimatedTranscriptActiveSeconds(until recordingEndedAt: Date) -> TimeInterval {
+        var seconds = transcriptActiveSeconds
+
+        if let lastTranscriptPacketAt {
+            let tailSeconds = max(0, recordingEndedAt.timeIntervalSince(lastTranscriptPacketAt))
+            let tailCapBase = transcriptPacketIntervalEWMA ?? 0.5
+            let tailCap = max(0.25, min(3.0, tailCapBase * 1.5))
+            seconds += min(tailSeconds, tailCap)
+        }
+
+        return seconds
     }
 
     // MARK: - Silence Detection
@@ -1252,6 +1279,7 @@ final class DictationOrchestrator {
         if let lastTranscriptPacketAt {
             let observedInterval = max(0, now.timeIntervalSince(lastTranscriptPacketAt))
             if observedInterval > 0 {
+                let priorPacketIntervalEWMA = transcriptPacketIntervalEWMA
                 if let existingEWMA = transcriptPacketIntervalEWMA {
                     let alpha = Constants.silenceTranscriptPacketIntervalEWMASmoothing
                     transcriptPacketIntervalEWMA =
@@ -1259,7 +1287,13 @@ final class DictationOrchestrator {
                 } else {
                     transcriptPacketIntervalEWMA = observedInterval
                 }
+
+                let activityCapBase = priorPacketIntervalEWMA ?? observedInterval
+                let activityCap = max(0.25, min(8.0, activityCapBase * 3.0))
+                transcriptActiveSeconds += min(observedInterval, activityCap)
             }
+        } else {
+            transcriptActiveSeconds += 0.25
         }
         lastTranscriptPacketAt = now
         lastTranscriptActivityAt = now
