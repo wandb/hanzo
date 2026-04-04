@@ -34,6 +34,14 @@ struct TranscriptArtifactFilterTests {
         #expect(!TranscriptArtifactFilter.containsOnlyKnownMarkers("[TODO]"))
     }
 
+    @Test("shouldRunFullFiltering fast-path gates regex-heavy filtering")
+    func shouldRunFullFilteringFastPath() {
+        #expect(!TranscriptArtifactFilter.shouldRunFullFiltering("hello world"))
+        #expect(TranscriptArtifactFilter.shouldRunFullFiltering("hello [MUSIC PLAYING]"))
+        #expect(TranscriptArtifactFilter.shouldRunFullFiltering("hello  world"))
+        #expect(TranscriptArtifactFilter.shouldRunFullFiltering("hello , world"))
+    }
+
     @Test("isStandaloneParentheticalOnly matches parenthetical-only payloads")
     func standaloneParentheticalDetectionMatchesParentheticalOnlyPayloads() {
         #expect(TranscriptArtifactFilter.isStandaloneParentheticalOnly("(sigh)"))

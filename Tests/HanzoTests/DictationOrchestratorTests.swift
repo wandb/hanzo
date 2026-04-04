@@ -723,7 +723,7 @@ struct DictationOrchestratorTests {
         #expect(sut.mockText.cmdReturnSimulated == false)
         #expect(
             sut.mockLogger.infoMessages.contains {
-                $0.contains("Final transcription empty after artifact filtering; skipping insertion")
+                $0.contains("Final transcription empty after post-processing; skipping insertion")
             }
         )
     }

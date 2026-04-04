@@ -84,6 +84,30 @@ enum TranscriptArtifactFilter {
         return sanitized.removedMarkerCount > 0 && sanitized.text.isEmpty
     }
 
+    static func shouldRunFullFiltering(_ text: String) -> Bool {
+        guard !text.isEmpty else { return false }
+
+        if text.contains("[") || text.contains("(") || text.contains("*") {
+            return true
+        }
+
+        if text.first?.isWhitespace == true || text.last?.isWhitespace == true {
+            return true
+        }
+
+        if text.contains("  ") || text.contains("\n") || text.contains("\r") || text.contains("\t") {
+            return true
+        }
+
+        if text.contains(" ,") || text.contains(" .")
+            || text.contains(" ;") || text.contains(" :")
+            || text.contains(" !") || text.contains(" ?") {
+            return true
+        }
+
+        return false
+    }
+
     static func isStandaloneParentheticalOnly(_ text: String) -> Bool {
         let normalized = normalizeSpacing(in: text)
         guard !normalized.isEmpty else { return false }

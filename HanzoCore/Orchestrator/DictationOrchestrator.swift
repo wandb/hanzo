@@ -393,7 +393,7 @@ final class DictationOrchestrator {
                     targetAppName: targetAppName
                 )
                 if finalText.isEmpty, !rawFinalText.isEmpty {
-                    logger.info("Final transcription empty after artifact filtering; skipping insertion")
+                    logger.info("Final transcription empty after post-processing; skipping insertion")
                 }
                 sessionId = nil
                 previousApp = nil
@@ -665,27 +665,11 @@ final class DictationOrchestrator {
         _ rawFinalText: String,
         targetAppName: String?
     ) async -> String {
-        let sanitizedRawResult = TranscriptArtifactFilter.sanitize(rawFinalText)
-        if sanitizedRawResult.removedMarkerCount > 0 {
-            logger.info(
-                "Filtered \(sanitizedRawResult.removedMarkerCount) non-speech marker(s) from final transcript"
-            )
-        }
-
-        let trailingRawStripResult = TranscriptArtifactFilter.stripTrailingStandaloneAnnotations(
-            sanitizedRawResult.text
+        let sanitizedRawText = filterTranscriptText(
+            rawFinalText,
+            sourceLabel: "final transcript",
+            emptyTextReason: "skipping insertion"
         )
-        if trailingRawStripResult.removedAnnotationCount > 0 {
-            logger.info(
-                "Stripped \(trailingRawStripResult.removedAnnotationCount) trailing non-speech annotation(s) from final transcript"
-            )
-        }
-        let sanitizedRawText = trailingRawStripResult.text
-        if TranscriptArtifactFilter.isOnlyStandaloneAnnotations(sanitizedRawText)
-            || TranscriptArtifactFilter.isOnlyStandaloneBracketedAnnotations(sanitizedRawText) {
-            logger.info("Final transcription contained only non-speech annotations; skipping insertion")
-            return ""
-        }
         guard !sanitizedRawText.isEmpty else { return "" }
 
         switch transcriptPostProcessingMode {
@@ -705,27 +689,11 @@ final class DictationOrchestrator {
                 targetAppName: targetAppName
             ) {
             case .success(let rewritten):
-                let sanitizedRewriteResult = TranscriptArtifactFilter.sanitize(rewritten)
-                if sanitizedRewriteResult.removedMarkerCount > 0 {
-                    logger.info(
-                        "Filtered \(sanitizedRewriteResult.removedMarkerCount) non-speech marker(s) from local LLM output"
-                    )
-                }
-
-                let trailingRewriteStripResult = TranscriptArtifactFilter.stripTrailingStandaloneAnnotations(
-                    sanitizedRewriteResult.text
+                let rewrittenSanitized = filterTranscriptText(
+                    rewritten,
+                    sourceLabel: "local LLM output",
+                    emptyTextReason: "suppressing final text"
                 )
-                if trailingRewriteStripResult.removedAnnotationCount > 0 {
-                    logger.info(
-                        "Stripped \(trailingRewriteStripResult.removedAnnotationCount) trailing non-speech annotation(s) from local LLM output"
-                    )
-                }
-                let rewrittenSanitized = trailingRewriteStripResult.text
-                if TranscriptArtifactFilter.isOnlyStandaloneAnnotations(rewrittenSanitized)
-                    || TranscriptArtifactFilter.isOnlyStandaloneBracketedAnnotations(rewrittenSanitized) {
-                    logger.info("Local LLM output contained only non-speech annotations; suppressing final text")
-                    return ""
-                }
                 let duration = Date().timeIntervalSince(start)
                 let changed = rewrittenSanitized != sanitizedRawText
                 logger.info(
@@ -746,6 +714,37 @@ final class DictationOrchestrator {
                 return sanitizedRawText
             }
         }
+    }
+
+    private func filterTranscriptText(
+        _ text: String,
+        sourceLabel: String,
+        emptyTextReason: String
+    ) -> String {
+        let sanitizedResult = TranscriptArtifactFilter.sanitize(text)
+        if sanitizedResult.removedMarkerCount > 0 {
+            logger.info(
+                "Filtered \(sanitizedResult.removedMarkerCount) non-speech marker(s) from \(sourceLabel)"
+            )
+        }
+
+        let trailingStripResult = TranscriptArtifactFilter.stripTrailingStandaloneAnnotations(
+            sanitizedResult.text
+        )
+        if trailingStripResult.removedAnnotationCount > 0 {
+            logger.info(
+                "Stripped \(trailingStripResult.removedAnnotationCount) trailing non-speech annotation(s) from \(sourceLabel)"
+            )
+        }
+
+        let filteredText = trailingStripResult.text
+        if TranscriptArtifactFilter.isOnlyStandaloneAnnotations(filteredText)
+            || TranscriptArtifactFilter.isOnlyStandaloneBracketedAnnotations(filteredText) {
+            logger.info("\(sourceLabel.capitalized) contained only non-speech annotations; \(emptyTextReason)")
+            return ""
+        }
+
+        return filteredText
     }
 
     private enum LLMPostProcessResult {
@@ -1035,21 +1034,27 @@ final class DictationOrchestrator {
         let previousPartial = appState.partialTranscript
         let transcriptStaleness = lastTranscriptContentUpdateAt
             .map { now.timeIntervalSince($0) } ?? .greatestFiniteMagnitude
-        let sanitizedIncomingResult = TranscriptArtifactFilter.sanitize(incomingText)
-        if sanitizedIncomingResult.removedMarkerCount > 0 {
-            logger.info(
-                "Filtered \(sanitizedIncomingResult.removedMarkerCount) non-speech marker(s) from partial transcript packet"
+        let sanitizedIncomingText: String
+        if TranscriptArtifactFilter.shouldRunFullFiltering(incomingText) {
+            let sanitizedIncomingResult = TranscriptArtifactFilter.sanitize(incomingText)
+            if sanitizedIncomingResult.removedMarkerCount > 0 {
+                logger.info(
+                    "Filtered \(sanitizedIncomingResult.removedMarkerCount) non-speech marker(s) from partial transcript packet"
+                )
+            }
+            let trailingPartialStripResult = TranscriptArtifactFilter.stripTrailingStandaloneAnnotations(
+                sanitizedIncomingResult.text
             )
+            if trailingPartialStripResult.removedAnnotationCount > 0 {
+                logger.info(
+                    "Stripped \(trailingPartialStripResult.removedAnnotationCount) trailing non-speech annotation(s) from partial transcript packet"
+                )
+            }
+            sanitizedIncomingText = trailingPartialStripResult.text
+        } else {
+            sanitizedIncomingText = incomingText.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        let trailingPartialStripResult = TranscriptArtifactFilter.stripTrailingStandaloneAnnotations(
-            sanitizedIncomingResult.text
-        )
-        if trailingPartialStripResult.removedAnnotationCount > 0 {
-            logger.info(
-                "Stripped \(trailingPartialStripResult.removedAnnotationCount) trailing non-speech annotation(s) from partial transcript packet"
-            )
-        }
-        let sanitizedIncomingText = trailingPartialStripResult.text
+
         if TranscriptArtifactFilter.isOnlyStandaloneAnnotations(sanitizedIncomingText)
             || TranscriptArtifactFilter.isOnlyStandaloneBracketedAnnotations(sanitizedIncomingText) {
             logger.info("Suppressing annotation-only partial transcript packet")
