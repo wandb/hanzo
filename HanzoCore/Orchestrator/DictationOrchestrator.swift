@@ -25,6 +25,7 @@ final class DictationOrchestrator {
     private var lastCancelledRecordingEpoch = 0
     private var previousApp: NSRunningApplication?
     private var activeSessionTargetBundleIdentifier: String?
+    private var recordingStartTime: Date?
     private var pendingRestartAfterForging = false
     private var configuredASRProvider: ASRProvider
     private var configuredLocalLLMContextSize: Int
@@ -218,6 +219,7 @@ final class DictationOrchestrator {
         hasObservedMeaningfulTranscript = false
         previousAudioLevels = nil
         recentAudioMotionSamples.removeAll()
+        recordingStartTime = nil
         applyEffectiveBehavior(for: nil)
         coolLocalLLMRuntimeAfterSession(reason: "recording cancellation")
 
@@ -273,6 +275,7 @@ final class DictationOrchestrator {
         appState.dictationState = .listening
         appState.partialTranscript = ""
         appState.isPopoverPresented = true
+        recordingStartTime = Date()
         bufferQueue.sync {
             audioBuffer.removeAll()
             isChunkSendInFlight = false
@@ -307,6 +310,7 @@ final class DictationOrchestrator {
                     // Keep HUD visible so the error state is discoverable.
                     appState.isPopoverPresented = true
                 }
+                recordingStartTime = nil
                 coolLocalLLMRuntimeAfterSession(reason: "recording start failure")
             }
         }
@@ -319,6 +323,7 @@ final class DictationOrchestrator {
 
     private func stopRecording() {
         logger.info("Stopping recording")
+        let recordingEndedAt = Date()
         audioService.stopCapture()
         appState.dictationState = .forging
         var recordingEpoch = 0
@@ -409,6 +414,7 @@ final class DictationOrchestrator {
                 try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
 
                 // PHASE 2: Activate target app and paste
+                var autoSubmitTriggered = false
                 if !finalText.isEmpty, let targetApp {
                     await MainActor.run {
                         _ = targetApp.activate()
@@ -429,8 +435,14 @@ final class DictationOrchestrator {
                     await insertTextOnMainActor(finalText)
 
                     // PHASE 4: Auto-submit
-                    await triggerAutoSubmitOnMainActor()
+                    autoSubmitTriggered = await triggerAutoSubmitOnMainActor()
                 }
+
+                recordUsageStats(
+                    finalText: finalText,
+                    recordingEndedAt: recordingEndedAt,
+                    autoSubmitTriggered: autoSubmitTriggered
+                )
 
                 await MainActor.run {
                     appState.dictationState = .idle
@@ -458,6 +470,7 @@ final class DictationOrchestrator {
                 sessionId = nil
                 previousApp = nil
                 activeSessionTargetBundleIdentifier = nil
+                recordingStartTime = nil
                 await MainActor.run {
                     applyEffectiveBehavior(for: nil)
                 }
@@ -489,14 +502,16 @@ final class DictationOrchestrator {
     }
 
     @MainActor
-    private func triggerAutoSubmitOnMainActor() {
+    private func triggerAutoSubmitOnMainActor() -> Bool {
         switch autoSubmitMode {
         case .enter:
             textInsertion.simulateReturn()
+            return true
         case .cmdEnter:
             textInsertion.simulateCmdReturn()
+            return true
         case .off:
-            break
+            return false
         }
     }
 
@@ -522,6 +537,7 @@ final class DictationOrchestrator {
         previousAudioLevels = nil
         recentAudioMotionSamples.removeAll()
         activeSessionTargetBundleIdentifier = nil
+        recordingStartTime = nil
         applyEffectiveBehavior(for: nil)
         coolLocalLLMRuntimeAfterSession(reason: "reset")
     }
@@ -885,6 +901,28 @@ final class DictationOrchestrator {
         }
 
         return nil
+    }
+
+    private func recordUsageStats(
+        finalText: String,
+        recordingEndedAt: Date,
+        autoSubmitTriggered: Bool
+    ) {
+        let startTime = recordingStartTime ?? recordingEndedAt
+        let dictatedSeconds = max(0, recordingEndedAt.timeIntervalSince(startTime))
+        let words = wordCount(in: finalText)
+        let autoSubmitCount = autoSubmitTriggered ? 1 : 0
+
+        UsageStatsStore.recordSession(
+            words: words,
+            dictatedSeconds: dictatedSeconds,
+            autoSubmitCount: autoSubmitCount
+        )
+        recordingStartTime = nil
+    }
+
+    private func wordCount(in text: String) -> Int {
+        text.split(whereSeparator: \.isWhitespace).count
     }
 
     // MARK: - Silence Detection

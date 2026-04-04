@@ -138,6 +138,11 @@ enum Constants {
     static let appBehaviorOverridesKey = "appBehaviorOverrides"
     static let appBehaviorCustomAppsKey = "appBehaviorCustomApps"
 
+    // Usage stats
+    static let usageStatsWordsAllTimeKey = "usageStatsWordsAllTime"
+    static let usageStatsDictatedSecondsAllTimeKey = "usageStatsDictatedSecondsAllTime"
+    static let usageStatsAutoSubmitsAllTimeKey = "usageStatsAutoSubmitsAllTime"
+
     static func localLLMContextSize(defaults: UserDefaults = .standard) -> Int {
         let configured = defaults.integer(forKey: Constants.localLLMContextSizeKey)
         if Constants.supportedLocalLLMContextSizes.contains(configured) {
