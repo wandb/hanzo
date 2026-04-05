@@ -135,7 +135,7 @@ private struct StatusFooterView: View {
 
     private var silenceLabel: String {
         if appState.showsHoldIndicator {
-            return "HD"
+            return "hold"
         }
         if appState.silenceTimeout > 0 {
             return appState.silenceTimeout.truncatingRemainder(dividingBy: 1) == 0
