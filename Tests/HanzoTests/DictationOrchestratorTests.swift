@@ -354,7 +354,7 @@ struct DictationOrchestratorTests {
         sut.orchestrator.handleHotkeyUp()
 
         #expect(sut.appState.dictationState == .forging)
-        #expect(sut.appState.showsHoldIndicator == false)
+        #expect(sut.appState.showsHoldIndicator == true)
         #expect(sut.mockAudio.stopCaptureCalled == true)
     }
 

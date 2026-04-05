@@ -232,7 +232,6 @@ final class DictationOrchestrator {
         case .hold:
             cancelHotkeyHoldActivationTask()
             hotkeySessionControl = .inactive
-            appState.showsHoldIndicator = false
             if appState.dictationState == .listening {
                 stopRecording()
             }
