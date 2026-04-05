@@ -2,6 +2,7 @@ import SwiftUI
 import Carbon
 import ServiceManagement
 import AppKit
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     var appState: AppState
@@ -46,9 +47,6 @@ struct SettingsView: View {
     @State private var supportedApps: [SupportedAppBehavior] = AppBehaviorSettings.supportedApps
     @State private var usageStats: UsageStatsSnapshot = UsageStatsStore.current()
     @State private var selectedSection: SettingsSection = .general
-    @State private var isDetectingApp = false
-    @State private var detectCountdown: Int?
-    @State private var detectCurrentAppTask: Task<Void, Never>?
     @State private var rewriteTemplateValidationTask: Task<Void, Never>?
 
     @State private var isRecordingHotkey = false
@@ -120,12 +118,12 @@ struct SettingsView: View {
                     .padding(.horizontal, 12)
 
                 Button {
-                    detectCurrentApp()
+                    presentAppPickerForCustomBehavior()
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "plus")
                             .font(.system(size: 11, weight: .medium))
-                        Text(detectButtonTitle)
+                        Text("Add New App")
                             .font(.system(.caption, design: .rounded, weight: .medium))
                     }
                     .padding(.horizontal, 12)
@@ -133,7 +131,6 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .disabled(isDetectingApp)
                 .padding(.bottom, 8)
             }
             .frame(width: 160)
@@ -146,7 +143,6 @@ struct SettingsView: View {
                 HStack {
                     Spacer()
                     Button(action: {
-                        cancelDetectCurrentAppTask()
                         onClose?()
                     }) {
                         Image(systemName: "xmark.circle.fill")
@@ -196,7 +192,6 @@ struct SettingsView: View {
             }
         }
         .onDisappear {
-            cancelDetectCurrentAppTask()
             rewriteTemplateValidationTask?.cancel()
         }
     }
@@ -930,69 +925,26 @@ struct SettingsView: View {
         onSave?()
     }
 
-    private var detectButtonTitle: String {
-        if let detectCountdown {
-            return "Adding in \(detectCountdown)s..."
-        }
-        return "Add New App"
+    private func presentAppPickerForCustomBehavior() {
+        let panel = NSOpenPanel()
+        panel.title = "Add App"
+        panel.message = "Choose an app to configure custom Hanzo behavior."
+        panel.prompt = "Add App"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.resolvesAliases = true
+        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+
+        guard panel.runModal() == .OK, let appURL = panel.url else { return }
+        addCustomAppFromSelection(at: appURL)
     }
 
-    private func detectCurrentApp() {
-        guard !isDetectingApp else { return }
-        isDetectingApp = true
-        detectCurrentAppTask?.cancel()
-
-        detectCurrentAppTask = Task {
-            for remaining in stride(from: 3, through: 1, by: -1) {
-                if Task.isCancelled {
-                    await MainActor.run {
-                        clearDetectCurrentAppState()
-                    }
-                    return
-                }
-
-                await MainActor.run {
-                    detectCountdown = remaining
-                }
-
-                do {
-                    try await Task.sleep(nanoseconds: 1_000_000_000)
-                } catch {
-                    await MainActor.run {
-                        clearDetectCurrentAppState()
-                    }
-                    return
-                }
-            }
-
-            await MainActor.run {
-                guard !Task.isCancelled else {
-                    clearDetectCurrentAppState()
-                    return
-                }
-
-                detectCountdown = nil
-                isDetectingApp = false
-                detectCurrentAppTask = nil
-                captureFrontmostAppForCustomBehavior()
-            }
-        }
-    }
-
-    private func clearDetectCurrentAppState() {
-        detectCountdown = nil
-        isDetectingApp = false
-        detectCurrentAppTask = nil
-    }
-
-    private func cancelDetectCurrentAppTask() {
-        detectCurrentAppTask?.cancel()
-        clearDetectCurrentAppState()
-    }
-
-    private func captureFrontmostAppForCustomBehavior() {
-        guard let frontmostApp = NSWorkspace.shared.frontmostApplication,
-              let bundleIdentifier = frontmostApp.bundleIdentifier else {
+    private func addCustomAppFromSelection(at appURL: URL) {
+        guard appURL.pathExtension.lowercased() == "app",
+              let bundle = Bundle(url: appURL),
+              let bundleIdentifier = bundle.bundleIdentifier else {
             return
         }
 
@@ -1000,7 +952,14 @@ struct SettingsView: View {
             return
         }
 
-        let appName = frontmostApp.localizedName ?? bundleIdentifier
+        let displayNameCandidates = [
+            bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String,
+            bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
+        ]
+        let appName = displayNameCandidates
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty }) ?? appURL.deletingPathExtension().lastPathComponent
+
         let result = AppBehaviorSettings.addCustomApp(
             bundleIdentifier: bundleIdentifier,
             displayName: appName
@@ -1009,8 +968,11 @@ struct SettingsView: View {
 
         switch result {
         case .added, .updated:
+            selectedSection = .app(bundleIdentifier)
             onSave?()
-        case .alreadyExists, .invalidBundleIdentifier:
+        case .alreadyExists:
+            selectedSection = .app(bundleIdentifier)
+        case .invalidBundleIdentifier:
             break
         }
     }
