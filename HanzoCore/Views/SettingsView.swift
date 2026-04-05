@@ -925,6 +925,7 @@ struct SettingsView: View {
         onSave?()
     }
 
+    @MainActor
     private func presentAppPickerForCustomBehavior() {
         let panel = NSOpenPanel()
         panel.title = "Add App"
@@ -937,18 +938,29 @@ struct SettingsView: View {
         panel.resolvesAliases = true
         panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
 
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            panel.beginSheetModal(for: window) { response in
+                guard response == .OK, let appURL = panel.url else { return }
+                addCustomAppFromSelection(at: appURL)
+            }
+            return
+        }
+
         guard panel.runModal() == .OK, let appURL = panel.url else { return }
         addCustomAppFromSelection(at: appURL)
     }
 
+    @MainActor
     private func addCustomAppFromSelection(at appURL: URL) {
         guard appURL.pathExtension.lowercased() == "app",
               let bundle = Bundle(url: appURL),
               let bundleIdentifier = bundle.bundleIdentifier else {
+            LoggingService.shared.warn("Unable to add app from selection: \(appURL.path)")
             return
         }
 
         if bundleIdentifier == Bundle.main.bundleIdentifier {
+            LoggingService.shared.warn("Ignoring request to add Hanzo itself as a custom app: \(bundleIdentifier)")
             return
         }
 
@@ -973,6 +985,7 @@ struct SettingsView: View {
         case .alreadyExists:
             selectedSection = .app(bundleIdentifier)
         case .invalidBundleIdentifier:
+            LoggingService.shared.warn("AppBehaviorSettings rejected invalid bundle identifier from selection: \(appURL.path)")
             break
         }
     }
