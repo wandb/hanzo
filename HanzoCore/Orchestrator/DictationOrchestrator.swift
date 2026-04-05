@@ -4,6 +4,13 @@ import SwiftUI
 
 @Observable
 final class DictationOrchestrator {
+    private enum HotkeySessionControl {
+        case inactive
+        case pendingStartPress
+        case tap
+        case hold
+    }
+
     private let appState: AppState
     private var audioService: AudioCaptureProtocol
     private let textInsertion: TextInsertionProtocol
@@ -55,6 +62,10 @@ final class DictationOrchestrator {
     private var hasObservedMeaningfulTranscript = false
     private var previousAudioLevels: [Float]?
     private var recentAudioMotionSamples: [(timestamp: Date, motion: Float)] = []
+    private var hotkeySessionControl: HotkeySessionControl = .inactive
+    private var isHotkeyPressed = false
+    private var hotkeySessionGeneration = 0
+    private var hotkeyHoldActivationTask: Task<Void, Never>?
 
     init(
         appState: AppState,
@@ -172,15 +183,72 @@ final class DictationOrchestrator {
         }
     }
 
+    @MainActor
+    func handleHotkeyDown() {
+        guard !isHotkeyPressed else { return }
+        isHotkeyPressed = true
+
+        switch appState.dictationState {
+        case .idle:
+            guard startRecordingIfAllowed() else {
+                isHotkeyPressed = false
+                return
+            }
+            hotkeySessionGeneration += 1
+            hotkeySessionControl = .pendingStartPress
+            appState.showsHoldIndicator = true
+            scheduleHotkeyHoldActivation(for: hotkeySessionGeneration)
+        case .listening:
+            let control = hotkeySessionControl
+            clearHotkeyInteractionState()
+            if control == .tap || control == .inactive {
+                stopRecording()
+            }
+        case .forging:
+            pendingRestartAfterForging = true
+            logger.info("Toggle received during forging; queued restart")
+            clearHotkeyInteractionState()
+        case .error:
+            clearHotkeyInteractionState()
+            reset()
+        }
+    }
+
+    @MainActor
+    func handleHotkeyUp() {
+        guard isHotkeyPressed else { return }
+        isHotkeyPressed = false
+
+        switch hotkeySessionControl {
+        case .pendingStartPress:
+            cancelHotkeyHoldActivationTask()
+            appState.showsHoldIndicator = false
+            if appState.dictationState == .listening {
+                hotkeySessionControl = .tap
+                resetSilenceEvaluationWindow()
+            } else {
+                hotkeySessionControl = .inactive
+            }
+        case .hold:
+            cancelHotkeyHoldActivationTask()
+            hotkeySessionControl = .inactive
+            appState.showsHoldIndicator = false
+            if appState.dictationState == .listening {
+                stopRecording()
+            }
+        case .tap, .inactive:
+            cancelHotkeyHoldActivationTask()
+            hotkeySessionControl = .inactive
+            appState.showsHoldIndicator = false
+        }
+    }
+
     func toggle() {
         switch appState.dictationState {
         case .idle:
-            guard appState.allowsDictationStart else {
-                logger.info("Ignoring dictation start while onboarding setup is active")
-                return
-            }
-            startRecording()
+            _ = startRecordingIfAllowed()
         case .listening:
+            clearHotkeyInteractionState()
             stopRecording()
         case .forging:
             // Queue a restart so rapid double-taps don't get dropped.
@@ -193,6 +261,7 @@ final class DictationOrchestrator {
 
     func cancel() {
         logger.info("Recording cancelled")
+        clearHotkeyInteractionState()
         let sid = sessionId
         chunkSendTask?.cancel()
         audioService.stopCapture()
@@ -255,6 +324,16 @@ final class DictationOrchestrator {
 
     // MARK: - Private
 
+    @discardableResult
+    private func startRecordingIfAllowed() -> Bool {
+        guard appState.allowsDictationStart else {
+            logger.info("Ignoring dictation start while onboarding setup is active")
+            return false
+        }
+        startRecording()
+        return appState.dictationState == .listening
+    }
+
     private func startRecording() {
         guard permissionService.hasMicrophonePermission else {
             logger.error("Microphone permission not granted")
@@ -308,6 +387,7 @@ final class DictationOrchestrator {
             } catch {
                 logger.error("Failed to start recording: \(error)")
                 await MainActor.run {
+                    clearHotkeyInteractionState()
                     appState.dictationState = .error
                     appState.errorMessage = error.localizedDescription
                     // Keep HUD visible so the error state is discoverable.
@@ -448,6 +528,7 @@ final class DictationOrchestrator {
                 )
 
                 await MainActor.run {
+                    clearHotkeyInteractionState()
                     appState.dictationState = .idle
                     appState.partialTranscript = ""
                     appState.audioLevels = []
@@ -467,6 +548,7 @@ final class DictationOrchestrator {
                 let failedSessionId = sessionId
                 abortLocalSessionIfNeeded(failedSessionId)
                 await MainActor.run {
+                    clearHotkeyInteractionState()
                     appState.dictationState = .error
                     appState.errorMessage = error.localizedDescription
                 }
@@ -519,6 +601,7 @@ final class DictationOrchestrator {
     }
 
     private func reset() {
+        clearHotkeyInteractionState()
         appState.dictationState = .idle
         appState.errorMessage = nil
         appState.partialTranscript = ""
@@ -974,11 +1057,12 @@ final class DictationOrchestrator {
         let now = Date()
 
         guard appState.dictationState == .listening else {
-            silenceStartTime = nil
-            silenceCandidateStartTime = nil
-            lastSilenceEvaluationAt = nil
-            previousAudioLevels = nil
-            recentAudioMotionSamples.removeAll()
+            resetSilenceEvaluationWindow()
+            return
+        }
+
+        guard !appState.showsHoldIndicator else {
+            resetSilenceEvaluationWindow()
             return
         }
 
@@ -1304,6 +1388,50 @@ final class DictationOrchestrator {
             now: now,
             metrics: metrics
         )
+    }
+
+    @MainActor
+    private func scheduleHotkeyHoldActivation(for generation: Int) {
+        cancelHotkeyHoldActivationTask()
+        let thresholdNanoseconds = UInt64(Constants.hotkeyHoldThresholdSeconds * 1_000_000_000)
+        hotkeyHoldActivationTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: thresholdNanoseconds)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.promoteHotkeyPressToHoldIfNeeded(generation: generation)
+            }
+        }
+    }
+
+    @MainActor
+    private func promoteHotkeyPressToHoldIfNeeded(generation: Int) {
+        guard hotkeySessionGeneration == generation else { return }
+        guard isHotkeyPressed else { return }
+        guard hotkeySessionControl == .pendingStartPress else { return }
+        guard appState.dictationState == .listening else { return }
+
+        hotkeySessionControl = .hold
+        appState.showsHoldIndicator = true
+    }
+
+    private func cancelHotkeyHoldActivationTask() {
+        hotkeyHoldActivationTask?.cancel()
+        hotkeyHoldActivationTask = nil
+    }
+
+    private func clearHotkeyInteractionState() {
+        cancelHotkeyHoldActivationTask()
+        hotkeySessionControl = .inactive
+        isHotkeyPressed = false
+        appState.showsHoldIndicator = false
+    }
+
+    private func resetSilenceEvaluationWindow() {
+        silenceStartTime = nil
+        silenceCandidateStartTime = nil
+        lastSilenceEvaluationAt = nil
+        previousAudioLevels = nil
+        recentAudioMotionSamples.removeAll()
     }
 
     private func logSilenceEvent(_ event: String, now: Date, metrics: SilenceMetrics) {

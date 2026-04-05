@@ -51,13 +51,13 @@ struct HotkeyServiceDisplayStringTests {
         #expect(!result.contains("⌘"))
     }
 
-    @Test("Default hotkey is Control+Space")
+    @Test("Default hotkey is Option+Space")
     func defaultHotkey() {
         let result = HotkeyService.displayString(
             keyCode: Constants.defaultHotkeyCode,
             modifiers: Constants.defaultHotkeyModifiers
         )
-        #expect(result.contains("⌃"))
+        #expect(result.contains("⌥"))
         #expect(result.contains("Space"))
     }
 

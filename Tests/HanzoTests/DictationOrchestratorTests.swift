@@ -325,6 +325,105 @@ struct DictationOrchestratorTests {
         #expect(appState.partialTranscript == "streaming transcript")
     }
 
+    // MARK: - hotkey tap or hold
+
+    @Test("Quick hotkey release keeps the session running as tap mode")
+    @MainActor func hotkeyQuickReleaseKeepsListening() async throws {
+        let sut = makeSUT()
+
+        sut.orchestrator.handleHotkeyDown()
+        #expect(sut.appState.dictationState == .listening)
+        #expect(sut.appState.showsHoldIndicator == true)
+
+        try await Task.sleep(nanoseconds: 100_000_000)
+        sut.orchestrator.handleHotkeyUp()
+
+        #expect(sut.appState.dictationState == .listening)
+        #expect(sut.appState.showsHoldIndicator == false)
+        #expect(sut.mockAudio.stopCaptureCalled == false)
+    }
+
+    @Test("Hotkey release after the hold threshold stops recording")
+    @MainActor func hotkeyHoldReleaseStopsRecording() async throws {
+        let sut = makeSUT()
+
+        sut.orchestrator.handleHotkeyDown()
+        try await Task.sleep(nanoseconds: 400_000_000)
+        #expect(sut.appState.showsHoldIndicator == true)
+
+        sut.orchestrator.handleHotkeyUp()
+
+        #expect(sut.appState.dictationState == .forging)
+        #expect(sut.appState.showsHoldIndicator == false)
+        #expect(sut.mockAudio.stopCaptureCalled == true)
+    }
+
+    @Test("Second hotkey press still stops a tap session immediately")
+    @MainActor func secondHotkeyPressStopsTapSession() async throws {
+        let sut = makeSUT()
+
+        sut.orchestrator.handleHotkeyDown()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        sut.orchestrator.handleHotkeyUp()
+        #expect(sut.appState.dictationState == .listening)
+
+        sut.orchestrator.handleHotkeyDown()
+
+        #expect(sut.appState.dictationState == .forging)
+        #expect(sut.mockAudio.stopCaptureCalled == true)
+
+        sut.orchestrator.handleHotkeyUp()
+        #expect(sut.appState.dictationState == .forging)
+    }
+
+    @Test("Silence auto-close is suspended while the hotkey is held")
+    @MainActor func silenceAutoCloseIsSuspendedWhileHoldingHotkey() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.silenceTimeout = 0.2
+        sut.appState.silenceTimeout = 0.2
+
+        sut.orchestrator.handleHotkeyDown()
+        sut.appState.partialTranscript = "hello"
+
+        let quietLevels: [Float] = [0.001, 0.0011, 0.001, 0.0011, 0.001, 0.0011, 0.001]
+        for _ in 0..<10 {
+            sut.mockAudio.simulateLevels(quietLevels)
+            try await Task.sleep(nanoseconds: 60_000_000)
+        }
+
+        #expect(sut.appState.dictationState == .listening)
+        #expect(sut.appState.showsHoldIndicator == true)
+        #expect(sut.mockAudio.stopCaptureCalled == false)
+        #expect(!sut.mockLogger.infoMessages.contains(where: { $0.contains("Silence auto-close after") }))
+    }
+
+    @Test("Silence auto-close resumes after a quick hotkey release")
+    @MainActor func silenceAutoCloseResumesAfterQuickRelease() async throws {
+        let sut = makeSUT()
+        sut.orchestrator.silenceTimeout = 0.2
+        sut.appState.silenceTimeout = 0.2
+
+        sut.orchestrator.handleHotkeyDown()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        sut.orchestrator.handleHotkeyUp()
+        sut.appState.partialTranscript = "hello"
+
+        let quietLevels: [Float] = [0.001, 0.0011, 0.001, 0.0011, 0.001, 0.0011, 0.001]
+        for _ in 0..<16 {
+            sut.mockAudio.simulateLevels(quietLevels)
+            try await Task.sleep(nanoseconds: 60_000_000)
+        }
+
+        let didAutoClose = await waitUntil(timeoutNanoseconds: 500_000_000) {
+            sut.mockAudio.stopCaptureCalled || sut.appState.dictationState != .listening
+        }
+
+        #expect(didAutoClose)
+        #expect(sut.mockAudio.stopCaptureCalled == true)
+        #expect(sut.appState.dictationState == .forging || sut.appState.dictationState == .idle)
+        #expect(sut.mockLogger.infoMessages.contains(where: { $0.contains("Silence auto-close after") }))
+    }
+
     // MARK: - toggle() from forging (no-op)
 
     @Test("toggle() from forging state is ignored")

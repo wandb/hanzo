@@ -71,7 +71,8 @@ enum Constants {
     static let hotkeyCodeKey = "hotkeyCode"
     static let hotkeyModifiersKey = "hotkeyModifiers"
     static let defaultHotkeyCode: UInt32 = 49    // Space (Carbon virtual key code)
-    static let defaultHotkeyModifiers: UInt32 = 4096  // Control (Carbon flag)
+    static let defaultHotkeyModifiers: UInt32 = 2048  // Option (Carbon flag)
+    static let hotkeyHoldThresholdSeconds: TimeInterval = 0.3
     static let logFileName = "hanzo.log"
     static let maxLogFileSizeMB = 10
     static let audioSampleRate: Double = 16000
