@@ -348,6 +348,7 @@ struct SettingsView: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .accessibilityLabel("Style")
                 }
             }
             .onChange(of: hudDisplayMode) {
@@ -366,6 +367,7 @@ struct SettingsView: View {
                         Text("Dark").tag(AppearanceMode.dark)
                     }
                     .pickerStyle(.segmented)
+                    .accessibilityLabel("Appearance")
                 }
             }
             .onChange(of: appearanceMode) {
@@ -382,6 +384,7 @@ struct SettingsView: View {
                         .toggleStyle(.switch)
                         .controlSize(.small)
                         .labelsHidden()
+                        .accessibilityLabel("Open at startup")
                 }
             }
             .onChange(of: launchAtLogin) {
