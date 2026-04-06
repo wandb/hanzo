@@ -33,6 +33,12 @@ struct SettingsView: View {
         }
         return Constants.defaultAppearanceMode
     }()
+    @State private var hudDisplayMode: HUDDisplayMode = {
+        if let raw = UserDefaults.standard.string(forKey: Constants.hudDisplayModeKey) {
+            return HUDDisplayMode(rawValue: raw) ?? Constants.defaultHUDDisplayMode
+        }
+        return Constants.defaultHUDDisplayMode
+    }()
     @State private var globalAutoSubmitMode: AutoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode()
     @State private var globalSilenceTimeout: Double = AppBehaviorSettings.globalSilenceTimeout()
     @State private var transcriptPostProcessingMode: TranscriptPostProcessingMode = AppBehaviorSettings.globalPostProcessingMode()
@@ -270,7 +276,7 @@ struct SettingsView: View {
 
             settingsSectionHeader(
                 "General",
-                subtitle: "Control startup behavior, appearance, and hotkey capture."
+                subtitle: "Control startup behavior, appearance, HUD presentation, and hotkey capture."
             )
 
             VStack(alignment: .leading, spacing: 6) {
@@ -347,6 +353,23 @@ struct SettingsView: View {
             .onChange(of: appearanceMode) {
                 UserDefaults.standard.set(appearanceMode.rawValue, forKey: Constants.appearanceModeKey)
                 appState.appearanceMode = appearanceMode
+            }
+
+            HStack {
+                Text("HUD")
+                    .font(.system(.body, design: .rounded))
+                Spacer()
+                Picker("", selection: $hudDisplayMode) {
+                    ForEach(HUDDisplayMode.allCases, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 180)
+            }
+            .onChange(of: hudDisplayMode) {
+                UserDefaults.standard.set(hudDisplayMode.rawValue, forKey: Constants.hudDisplayModeKey)
+                appState.hudDisplayMode = hudDisplayMode
             }
 
             Divider()

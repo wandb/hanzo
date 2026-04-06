@@ -28,6 +28,12 @@ final class AppState {
         }
         return Constants.defaultAppearanceMode
     }()
+    var hudDisplayMode: HUDDisplayMode = {
+        if let raw = UserDefaults.standard.string(forKey: Constants.hudDisplayModeKey) {
+            return HUDDisplayMode(rawValue: raw) ?? Constants.defaultHUDDisplayMode
+        }
+        return Constants.defaultHUDDisplayMode
+    }()
     var asrProvider: ASRProvider = {
         if let raw = UserDefaults.standard.string(forKey: Constants.asrProviderKey) {
             return ASRProvider(rawValue: raw) ?? Constants.defaultASRProvider

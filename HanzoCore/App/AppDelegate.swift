@@ -13,6 +13,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private var isStateObservationActive = false
+    private var lastObservedHUDDisplayMode: HUDDisplayMode?
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
     private let statusBarImage: NSImage = {
@@ -85,6 +86,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Observe state changes for icon and popover updates
+        lastObservedHUDDisplayMode = appState.hudDisplayMode
         startStateObservation()
 
         // Ensure prewarm starts at app launch instead of first dictation toggle.
@@ -137,8 +139,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Transcript Panel
 
     private func makeTranscriptPanel() -> TranscriptPanel {
+        let initialSize = HUDLayout.initialPanelSize(for: appState.hudDisplayMode)
         let panel = TranscriptPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 60),
+            contentRect: NSRect(x: 0, y: 0, width: initialSize.width, height: initialSize.height),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
@@ -173,10 +176,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showPanel() {
         guard let panel = transcriptPanel, !panel.isVisible else { return }
         guard let screen = NSScreen.main else { return }
-        panel.setContentSize(NSSize(width: 480, height: 60))
+        let panelSize = currentPanelSize()
+        lastObservedHUDDisplayMode = appState.hudDisplayMode
+        panel.setContentSize(panelSize)
         // Position horizontally centered, ~5% from the bottom of the screen
         let screenFrame = screen.visibleFrame
-        let x = screenFrame.midX - 240
+        let x = screenFrame.midX - panelSize.width / 2
         let y = screenFrame.origin.y + screenFrame.height * 0.05
         panel.setFrameOrigin(NSPoint(x: x, y: y))
         panel.orderFrontRegardless()
@@ -312,6 +317,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         withObservationTracking {
             _ = appState.dictationState
             _ = appState.isPopoverPresented
+            _ = appState.errorMessage
+            _ = appState.hudDisplayMode
             updateMenuBarIcon()
             syncPanelVisibility()
         } onChange: { [weak self] in
@@ -325,9 +332,54 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         let panelVisible = transcriptPanel?.isVisible ?? false
         if appState.isPopoverPresented && !panelVisible {
             showPanel()
+        } else if appState.isPopoverPresented && panelVisible {
+            syncVisiblePanelLayout()
         } else if !appState.isPopoverPresented && panelVisible {
             hidePanel()
         }
+    }
+
+    private func syncVisiblePanelLayout() {
+        guard let panel = transcriptPanel, panel.isVisible else { return }
+
+        let targetWidth = HUDLayout.panelWidth(
+            for: appState.hudDisplayMode,
+            dictationState: appState.dictationState,
+            hasErrorMessage: appState.errorMessage != nil
+        )
+        let hudModeChanged = lastObservedHUDDisplayMode != appState.hudDisplayMode
+        lastObservedHUDDisplayMode = appState.hudDisplayMode
+
+        let targetHeight: CGFloat
+        if hudModeChanged {
+            targetHeight = HUDLayout.initialPanelSize(for: appState.hudDisplayMode).height
+        } else {
+            targetHeight = panel.frame.height
+        }
+
+        guard abs(panel.frame.width - targetWidth) > 0.5 || abs(panel.frame.height - targetHeight) > 0.5 else {
+            return
+        }
+
+        let newFrame = NSRect(
+            x: panel.frame.midX - targetWidth / 2,
+            y: panel.frame.origin.y,
+            width: targetWidth,
+            height: targetHeight
+        )
+        panel.setFrame(newFrame, display: true)
+    }
+
+    private func currentPanelSize() -> NSSize {
+        let baseSize = HUDLayout.initialPanelSize(for: appState.hudDisplayMode)
+        return NSSize(
+            width: HUDLayout.panelWidth(
+                for: appState.hudDisplayMode,
+                dictationState: appState.dictationState,
+                hasErrorMessage: appState.errorMessage != nil
+            ),
+            height: baseSize.height
+        )
     }
 
     private func isSparkleReadyForUserChecks() -> Bool {
