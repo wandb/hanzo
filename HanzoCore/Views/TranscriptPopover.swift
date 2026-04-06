@@ -1,33 +1,48 @@
 import AppKit
 import SwiftUI
 
-private enum TranscriptPopoverLayout {
-    static let width: CGFloat = 480
-    static let fallbackMaxHeight: CGFloat = 760
-
-    static var maxHeight: CGFloat {
-        guard let screen = NSScreen.main else { return fallbackMaxHeight }
-        return max(480, screen.visibleFrame.height * 0.9)
-    }
-}
-
 struct TranscriptPopover: View {
     let appState: AppState
     var onSettingsChanged: (() -> Void)?
 
     var body: some View {
+        Group {
+            switch appState.hudDisplayMode {
+            case .full:
+                fullContent
+            case .compact:
+                compactContent
+            }
+        }
+        .frame(width: panelWidth)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxHeight: HUDLayout.maxHeight())
+        .background(
+            VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
+                .clipShape(RoundedRectangle(cornerRadius: HUDLayout.cornerRadius))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: HUDLayout.cornerRadius))
+        .preferredColorScheme(appState.preferredColorScheme)
+    }
+
+    private var panelWidth: CGFloat {
+        HUDLayout.panelWidth(
+            for: appState.hudDisplayMode,
+            dictationState: appState.dictationState,
+            hasErrorMessage: appState.errorMessage != nil
+        )
+    }
+
+    private var fullContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if appState.dictationState == .error, let message = appState.errorMessage {
-                Text(message)
-                    .font(.system(.caption, design: .rounded, weight: .medium))
-                    .foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if let errorMessage {
+                errorMessageView(errorMessage)
             } else if !appState.partialTranscript.isEmpty {
                 AnimatedTranscriptView(text: appState.partialTranscript)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            if appState.dictationState == .listening || appState.dictationState == .forging {
+            if isRecordingVisible {
                 ZStack {
                     AudioWaveformView(appState: appState)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -40,15 +55,37 @@ struct TranscriptPopover: View {
         .padding(.top, appState.partialTranscript.isEmpty ? 16 : 24)
         .padding(.horizontal, 24)
         .padding(.bottom, 16)
-        .frame(width: TranscriptPopoverLayout.width)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxHeight: TranscriptPopoverLayout.maxHeight)
-        .background(
-            VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
-                .clipShape(RoundedRectangle(cornerRadius: 22))
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 22))
-        .preferredColorScheme(appState.preferredColorScheme)
+    }
+
+    private var compactContent: some View {
+        VStack(alignment: .center, spacing: 0) {
+            if let errorMessage {
+                errorMessageView(errorMessage)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if isRecordingVisible {
+                AudioWaveformView(appState: appState)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+        .padding(.top, errorMessage == nil ? 12 : 16)
+        .padding(.horizontal, errorMessage == nil ? 12 : 24)
+        .padding(.bottom, errorMessage == nil ? 12 : 16)
+    }
+
+    private var isRecordingVisible: Bool {
+        appState.dictationState == .listening || appState.dictationState == .forging
+    }
+
+    private var errorMessage: String? {
+        guard appState.dictationState == .error else { return nil }
+        return appState.errorMessage
+    }
+
+    private func errorMessageView(_ message: String) -> some View {
+        Text(message)
+            .font(.system(.caption, design: .rounded, weight: .medium))
+            .foregroundStyle(.red)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

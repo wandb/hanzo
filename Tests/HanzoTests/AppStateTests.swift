@@ -3,7 +3,7 @@ import Testing
 import SwiftUI
 @testable import HanzoCore
 
-@Suite("AppState")
+@Suite("AppState", .serialized)
 struct AppStateTests {
 
     @Test("stateColor is secondary for idle")
@@ -84,5 +84,39 @@ struct AppStateTests {
         let state = AppState()
         state.appearanceMode = .dark
         #expect(state.preferredColorScheme == .dark)
+    }
+
+    @Test("hudDisplayMode defaults to configured default")
+    func hudDisplayModeDefault() {
+        let defaults = UserDefaults.standard
+        let prior = defaults.string(forKey: Constants.hudDisplayModeKey)
+        defer {
+            if let prior {
+                defaults.set(prior, forKey: Constants.hudDisplayModeKey)
+            } else {
+                defaults.removeObject(forKey: Constants.hudDisplayModeKey)
+            }
+        }
+        defaults.removeObject(forKey: Constants.hudDisplayModeKey)
+
+        let state = AppState()
+        #expect(state.hudDisplayMode == Constants.defaultHUDDisplayMode)
+    }
+
+    @Test("hudDisplayMode loads stored mode")
+    func hudDisplayModeStoredValue() {
+        let defaults = UserDefaults.standard
+        let prior = defaults.string(forKey: Constants.hudDisplayModeKey)
+        defer {
+            if let prior {
+                defaults.set(prior, forKey: Constants.hudDisplayModeKey)
+            } else {
+                defaults.removeObject(forKey: Constants.hudDisplayModeKey)
+            }
+        }
+        defaults.set(HUDDisplayMode.compact.rawValue, forKey: Constants.hudDisplayModeKey)
+
+        let state = AppState()
+        #expect(state.hudDisplayMode == .compact)
     }
 }
