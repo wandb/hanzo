@@ -286,6 +286,11 @@ struct SettingsView: View {
 
     // MARK: - General
 
+    private func generalTrailingControl<Control: View>(@ViewBuilder _ control: () -> Control) -> some View {
+        control()
+            .frame(width: menuInputWidth, alignment: .trailing)
+    }
+
     private var generalContent: some View {
         VStack(alignment: .leading, spacing: 24) {
             usageStatsContent
@@ -301,28 +306,30 @@ struct SettingsView: View {
                         .font(.system(.body, design: .rounded))
                     Spacer()
 
-                    Button {
-                        isRecordingHotkey.toggle()
-                    } label: {
-                        if isRecordingHotkey {
-                            Text("Press a key combo...")
-                                .font(.system(.body, design: .rounded))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(.blue.opacity(0.2))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                        } else {
-                            Text(HotkeyService.displayString(keyCode: hotkeyCode, modifiers: hotkeyModifiers))
-                                .font(.system(.body, design: .rounded, weight: .medium))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(.primary.opacity(0.08))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                    generalTrailingControl {
+                        Button {
+                            isRecordingHotkey.toggle()
+                        } label: {
+                            if isRecordingHotkey {
+                                Text("Press a key combo...")
+                                    .font(.system(.body, design: .rounded))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(.blue.opacity(0.2))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            } else {
+                                Text(HotkeyService.displayString(keyCode: hotkeyCode, modifiers: hotkeyModifiers))
+                                    .font(.system(.body, design: .rounded, weight: .medium))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(.primary.opacity(0.08))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                            }
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(isRecordingHotkey ? "Cancel hotkey recording" : "Set hotkey")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(isRecordingHotkey ? "Cancel hotkey recording" : "Set hotkey")
                 }
 
                 Text("Tap to start or stop. Hold to dictate, then release to stop.")
@@ -331,13 +338,54 @@ struct SettingsView: View {
             }
 
             HStack {
+                Text("Style")
+                    .font(.system(.body, design: .rounded))
+                Spacer()
+                generalTrailingControl {
+                    Picker("", selection: $hudDisplayMode) {
+                        ForEach(HUDDisplayMode.allCases, id: \.self) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityLabel("Style")
+                }
+            }
+            .onChange(of: hudDisplayMode) {
+                settings.hudDisplayMode = hudDisplayMode
+                appState.hudDisplayMode = hudDisplayMode
+            }
+
+            HStack {
+                Text("Appearance")
+                    .font(.system(.body, design: .rounded))
+                Spacer()
+                generalTrailingControl {
+                    Picker("", selection: $appearanceMode) {
+                        Text("System").tag(AppearanceMode.system)
+                        Text("Light").tag(AppearanceMode.light)
+                        Text("Dark").tag(AppearanceMode.dark)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityLabel("Appearance")
+                }
+            }
+            .onChange(of: appearanceMode) {
+                settings.appearanceMode = appearanceMode
+                appState.appearanceMode = appearanceMode
+            }
+
+            HStack {
                 Text("Open at startup")
                     .font(.system(.body, design: .rounded))
                 Spacer()
-                Toggle("", isOn: $launchAtLogin)
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .labelsHidden()
+                generalTrailingControl {
+                    Toggle("", isOn: $launchAtLogin)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .labelsHidden()
+                        .accessibilityLabel("Open at startup")
+                }
             }
             .onChange(of: launchAtLogin) {
                 do {
@@ -352,40 +400,6 @@ struct SettingsView: View {
                     LoggingService.shared.warn("Launch-at-login failed: \(error)")
                     launchAtLogin = SMAppService.mainApp.status == .enabled
                 }
-            }
-
-            HStack {
-                Text("Appearance")
-                    .font(.system(.body, design: .rounded))
-                Spacer()
-                Picker("", selection: $appearanceMode) {
-                    Text("System").tag(AppearanceMode.system)
-                    Text("Light").tag(AppearanceMode.light)
-                    Text("Dark").tag(AppearanceMode.dark)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 180)
-            }
-            .onChange(of: appearanceMode) {
-                settings.appearanceMode = appearanceMode
-                appState.appearanceMode = appearanceMode
-            }
-
-            HStack {
-                Text("HUD")
-                    .font(.system(.body, design: .rounded))
-                Spacer()
-                Picker("", selection: $hudDisplayMode) {
-                    ForEach(HUDDisplayMode.allCases, id: \.self) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 180)
-            }
-            .onChange(of: hudDisplayMode) {
-                settings.hudDisplayMode = hudDisplayMode
-                appState.hudDisplayMode = hudDisplayMode
             }
 
             Divider()
