@@ -3,6 +3,7 @@ import SwiftUI
 
 struct TranscriptPopover: View {
     let appState: AppState
+    let settings: AppSettingsProtocol
     var onSettingsChanged: (() -> Void)?
 
     var body: some View {
@@ -47,7 +48,11 @@ struct TranscriptPopover: View {
                     AudioWaveformView(appState: appState)
                         .frame(maxWidth: .infinity, alignment: .center)
 
-                    StatusFooterView(appState: appState, onSettingsChanged: onSettingsChanged)
+                    StatusFooterView(
+                        appState: appState,
+                        settings: settings,
+                        onSettingsChanged: onSettingsChanged
+                    )
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
@@ -124,6 +129,7 @@ private struct AnimatedTranscriptView: View {
 
 private struct StatusFooterView: View {
     let appState: AppState
+    let settings: AppSettingsProtocol
     var onSettingsChanged: (() -> Void)?
 
     private let silenceSteps: [Double] = [0, 1, 2, 3, 5]
@@ -211,13 +217,18 @@ private struct StatusFooterView: View {
         let newValue = silenceSteps[nextIndex]
         appState.silenceTimeout = newValue
         if let hudSettingsOverride = AppBehaviorSettings.hudSettingsOverride(
-            for: appState.activeTargetBundleIdentifier
+            for: appState.activeTargetBundleIdentifier,
+            settings: settings
         ) {
             var appOverride = hudSettingsOverride.appOverride
             appOverride.silenceTimeout = newValue
-            AppBehaviorSettings.saveOverride(appOverride, for: hudSettingsOverride.bundleIdentifier)
+            AppBehaviorSettings.saveOverride(
+                appOverride,
+                for: hudSettingsOverride.bundleIdentifier,
+                settings: settings
+            )
         } else {
-            AppBehaviorSettings.setGlobalSilenceTimeout(newValue)
+            AppBehaviorSettings.setGlobalSilenceTimeout(newValue, settings: settings)
         }
         onSettingsChanged?()
     }
@@ -229,13 +240,18 @@ private struct StatusFooterView: View {
         let newMode = modes[nextIndex]
         appState.autoSubmitMode = newMode
         if let hudSettingsOverride = AppBehaviorSettings.hudSettingsOverride(
-            for: appState.activeTargetBundleIdentifier
+            for: appState.activeTargetBundleIdentifier,
+            settings: settings
         ) {
             var appOverride = hudSettingsOverride.appOverride
             appOverride.autoSubmitMode = newMode
-            AppBehaviorSettings.saveOverride(appOverride, for: hudSettingsOverride.bundleIdentifier)
+            AppBehaviorSettings.saveOverride(
+                appOverride,
+                for: hudSettingsOverride.bundleIdentifier,
+                settings: settings
+            )
         } else {
-            AppBehaviorSettings.setGlobalAutoSubmitMode(newMode)
+            AppBehaviorSettings.setGlobalAutoSubmitMode(newMode, settings: settings)
         }
         onSettingsChanged?()
     }

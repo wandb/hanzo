@@ -6,51 +6,29 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     var appState: AppState
+    private let settings: AppSettingsProtocol
     var onSave: (() -> Void)?
     var onHotkeyChanged: (() -> Void)?
     var onClose: (() -> Void)?
 
-    @State private var asrProvider: ASRProvider = {
-        if let raw = UserDefaults.standard.string(forKey: Constants.asrProviderKey) {
-            return ASRProvider(rawValue: raw) ?? Constants.defaultASRProvider
-        }
-        return Constants.defaultASRProvider
-    }()
-    @State private var serverEndpoint: String = UserDefaults.standard.string(forKey: Constants.serverEndpointKey) ?? Constants.defaultServerEndpoint
-    @State private var serverPassword: String = UserDefaults.standard.string(forKey: Constants.customServerPasswordKey) ?? Constants.defaultCustomServerPassword
-    @State private var hotkeyCode: UInt32 = {
-        let val = UserDefaults.standard.integer(forKey: Constants.hotkeyCodeKey)
-        return val != 0 ? UInt32(val) : Constants.defaultHotkeyCode
-    }()
-    @State private var hotkeyModifiers: UInt32 = {
-        let val = UserDefaults.standard.integer(forKey: Constants.hotkeyModifiersKey)
-        return val != 0 ? UInt32(val) : Constants.defaultHotkeyModifiers
-    }()
-    @State private var launchAtLogin: Bool = SMAppService.mainApp.status == .enabled
-    @State private var appearanceMode: AppearanceMode = {
-        if let raw = UserDefaults.standard.string(forKey: Constants.appearanceModeKey) {
-            return AppearanceMode(rawValue: raw) ?? Constants.defaultAppearanceMode
-        }
-        return Constants.defaultAppearanceMode
-    }()
-    @State private var hudDisplayMode: HUDDisplayMode = {
-        if let raw = UserDefaults.standard.string(forKey: Constants.hudDisplayModeKey) {
-            return HUDDisplayMode(rawValue: raw) ?? Constants.defaultHUDDisplayMode
-        }
-        return Constants.defaultHUDDisplayMode
-    }()
-    @State private var globalAutoSubmitMode: AutoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode()
-    @State private var globalSilenceTimeout: Double = AppBehaviorSettings.globalSilenceTimeout()
-    @State private var transcriptPostProcessingMode: TranscriptPostProcessingMode = AppBehaviorSettings.globalPostProcessingMode()
-    @State private var llmPostProcessingPrompt: String = AppBehaviorSettings.globalLLMPostProcessingPrompt()
-    @State private var globalCommonTerms: String = AppBehaviorSettings.globalCommonTerms()
-    @State private var rewritePromptTemplate: String = TranscriptRewritePrompt.activeTemplate()
-    @State private var rewritePromptTemplateValidationError: String? = TranscriptRewritePrompt.validateTemplate(
-        TranscriptRewritePrompt.activeTemplate()
-    )
-    @State private var localLLMContextSize: Int = Constants.localLLMContextSize()
-    @State private var appBehaviorOverrides: [String: AppBehaviorOverride] = AppBehaviorSettings.loadOverrides()
-    @State private var supportedApps: [SupportedAppBehavior] = AppBehaviorSettings.supportedApps
+    @State private var asrProvider: ASRProvider
+    @State private var serverEndpoint: String
+    @State private var serverPassword: String
+    @State private var hotkeyCode: UInt32
+    @State private var hotkeyModifiers: UInt32
+    @State private var launchAtLogin: Bool
+    @State private var appearanceMode: AppearanceMode
+    @State private var hudDisplayMode: HUDDisplayMode
+    @State private var globalAutoSubmitMode: AutoSubmitMode
+    @State private var globalSilenceTimeout: Double
+    @State private var transcriptPostProcessingMode: TranscriptPostProcessingMode
+    @State private var llmPostProcessingPrompt: String
+    @State private var globalCommonTerms: String
+    @State private var rewritePromptTemplate: String
+    @State private var rewritePromptTemplateValidationError: String?
+    @State private var localLLMContextSize: Int
+    @State private var appBehaviorOverrides: [String: AppBehaviorOverride]
+    @State private var supportedApps: [SupportedAppBehavior]
     @State private var usageStats: UsageStatsSnapshot = UsageStatsStore.current()
     @State private var selectedSection: SettingsSection = .general
     @State private var rewriteTemplateValidationTask: Task<Void, Never>?
@@ -87,6 +65,44 @@ struct SettingsView: View {
         case general
         case transcription
         case app(String) // bundleIdentifier
+    }
+
+    init(
+        appState: AppState,
+        settings: AppSettingsProtocol = AppSettings.live,
+        onSave: (() -> Void)? = nil,
+        onHotkeyChanged: (() -> Void)? = nil,
+        onClose: (() -> Void)? = nil
+    ) {
+        self.appState = appState
+        self.settings = settings
+        self.onSave = onSave
+        self.onHotkeyChanged = onHotkeyChanged
+        self.onClose = onClose
+
+        _asrProvider = State(initialValue: settings.asrProvider)
+        _serverEndpoint = State(initialValue: settings.serverEndpoint)
+        _serverPassword = State(initialValue: settings.customServerPassword)
+        _hotkeyCode = State(initialValue: settings.hotkeyCode)
+        _hotkeyModifiers = State(initialValue: settings.hotkeyModifiers)
+        _launchAtLogin = State(initialValue: SMAppService.mainApp.status == .enabled)
+        _appearanceMode = State(initialValue: settings.appearanceMode)
+        _hudDisplayMode = State(initialValue: settings.hudDisplayMode)
+        _globalAutoSubmitMode = State(initialValue: settings.globalAutoSubmitMode)
+        _globalSilenceTimeout = State(initialValue: settings.globalSilenceTimeout)
+        _transcriptPostProcessingMode = State(initialValue: settings.globalTranscriptPostProcessingMode)
+        _llmPostProcessingPrompt = State(initialValue: settings.globalLLMPostProcessingPrompt)
+        _globalCommonTerms = State(initialValue: settings.globalCommonTerms)
+
+        let activeRewriteTemplate = TranscriptRewritePrompt.activeTemplate(settings: settings)
+        _rewritePromptTemplate = State(initialValue: activeRewriteTemplate)
+        _rewritePromptTemplateValidationError = State(
+            initialValue: TranscriptRewritePrompt.validateTemplate(activeRewriteTemplate)
+        )
+
+        _localLLMContextSize = State(initialValue: settings.localLLMContextSize)
+        _appBehaviorOverrides = State(initialValue: AppBehaviorSettings.loadOverrides(settings: settings))
+        _supportedApps = State(initialValue: AppBehaviorSettings.supportedApps(settings: settings))
     }
 
     var body: some View {
@@ -327,10 +343,10 @@ struct SettingsView: View {
                 do {
                     if launchAtLogin {
                         try SMAppService.mainApp.register()
-                        UserDefaults.standard.set(false, forKey: Constants.launchAtLoginDisabledByUserKey)
+                        settings.launchAtLoginDisabledByUser = false
                     } else {
                         try SMAppService.mainApp.unregister()
-                        UserDefaults.standard.set(true, forKey: Constants.launchAtLoginDisabledByUserKey)
+                        settings.launchAtLoginDisabledByUser = true
                     }
                 } catch {
                     LoggingService.shared.warn("Launch-at-login failed: \(error)")
@@ -351,7 +367,7 @@ struct SettingsView: View {
                 .frame(width: 180)
             }
             .onChange(of: appearanceMode) {
-                UserDefaults.standard.set(appearanceMode.rawValue, forKey: Constants.appearanceModeKey)
+                settings.appearanceMode = appearanceMode
                 appState.appearanceMode = appearanceMode
             }
 
@@ -368,7 +384,7 @@ struct SettingsView: View {
                 .frame(width: 180)
             }
             .onChange(of: hudDisplayMode) {
-                UserDefaults.standard.set(hudDisplayMode.rawValue, forKey: Constants.hudDisplayModeKey)
+                settings.hudDisplayMode = hudDisplayMode
                 appState.hudDisplayMode = hudDisplayMode
             }
 
@@ -503,7 +519,7 @@ struct SettingsView: View {
                 .frame(width: menuInputWidth, alignment: .trailing)
             }
             .onChange(of: globalSilenceTimeout) {
-                AppBehaviorSettings.setGlobalSilenceTimeout(globalSilenceTimeout)
+                AppBehaviorSettings.setGlobalSilenceTimeout(globalSilenceTimeout, settings: settings)
                 if appState.activeTargetBundleIdentifier == nil {
                     appState.silenceTimeout = globalSilenceTimeout
                 }
@@ -522,7 +538,7 @@ struct SettingsView: View {
                 .frame(width: menuInputWidth, alignment: .trailing)
             }
             .onChange(of: globalAutoSubmitMode) {
-                AppBehaviorSettings.setGlobalAutoSubmitMode(globalAutoSubmitMode)
+                AppBehaviorSettings.setGlobalAutoSubmitMode(globalAutoSubmitMode, settings: settings)
                 if appState.activeTargetBundleIdentifier == nil {
                     appState.autoSubmitMode = globalAutoSubmitMode
                 }
@@ -550,7 +566,10 @@ struct SettingsView: View {
                 }
             }
             .onChange(of: transcriptPostProcessingMode) {
-                AppBehaviorSettings.setGlobalPostProcessingMode(transcriptPostProcessingMode)
+                AppBehaviorSettings.setGlobalPostProcessingMode(
+                    transcriptPostProcessingMode,
+                    settings: settings
+                )
                 onSave?()
             }
 
@@ -619,7 +638,10 @@ struct SettingsView: View {
                         .accessibilityLabel("Instructions")
                 }
                 .onChange(of: llmPostProcessingPrompt) {
-                    AppBehaviorSettings.setGlobalLLMPostProcessingPrompt(llmPostProcessingPrompt)
+                    AppBehaviorSettings.setGlobalLLMPostProcessingPrompt(
+                        llmPostProcessingPrompt,
+                        settings: settings
+                    )
                     onSave?()
                 }
 
@@ -636,7 +658,7 @@ struct SettingsView: View {
                         .accessibilityLabel("Common terms")
                 }
                 .onChange(of: globalCommonTerms) {
-                    AppBehaviorSettings.setGlobalCommonTerms(globalCommonTerms)
+                    AppBehaviorSettings.setGlobalCommonTerms(globalCommonTerms, settings: settings)
                     onSave?()
                 }
             }
@@ -901,7 +923,7 @@ struct SettingsView: View {
             with: "\n"
         )
         let isCustomTemplate = normalizedCurrentTemplate != normalizedDefaultTemplate
-            || TranscriptRewritePrompt.customTemplate() != nil
+            || TranscriptRewritePrompt.customTemplate(settings: settings) != nil
 
         guard isCustomTemplate else { return false }
         return !TranscriptRewritePrompt.templateIncludesCommonTermsPlaceholder(rewritePromptTemplate)
@@ -924,7 +946,7 @@ struct SettingsView: View {
             return
         }
 
-        TranscriptRewritePrompt.setCustomTemplate(rewritePromptTemplate)
+        TranscriptRewritePrompt.setCustomTemplate(rewritePromptTemplate, settings: settings)
         onSave?()
     }
 
@@ -932,17 +954,17 @@ struct SettingsView: View {
         rewriteTemplateValidationTask?.cancel()
         rewritePromptTemplate = TranscriptRewritePrompt.defaultTemplate()
         rewritePromptTemplateValidationError = nil
-        TranscriptRewritePrompt.setCustomTemplate(nil)
+        TranscriptRewritePrompt.setCustomTemplate(nil, settings: settings)
         onSave?()
     }
 
     private func persistOverride(_ appOverride: AppBehaviorOverride, for bundleIdentifier: String) {
         if appOverride.hasOverrides {
             appBehaviorOverrides[bundleIdentifier] = appOverride
-            AppBehaviorSettings.saveOverride(appOverride, for: bundleIdentifier)
+            AppBehaviorSettings.saveOverride(appOverride, for: bundleIdentifier, settings: settings)
         } else {
             appBehaviorOverrides.removeValue(forKey: bundleIdentifier)
-            AppBehaviorSettings.saveOverride(nil, for: bundleIdentifier)
+            AppBehaviorSettings.saveOverride(nil, for: bundleIdentifier, settings: settings)
         }
 
         onSave?()
@@ -997,9 +1019,10 @@ struct SettingsView: View {
 
         let result = AppBehaviorSettings.addCustomApp(
             bundleIdentifier: bundleIdentifier,
-            displayName: appName
+            displayName: appName,
+            settings: settings
         )
-        supportedApps = AppBehaviorSettings.supportedApps
+        supportedApps = AppBehaviorSettings.supportedApps(settings: settings)
 
         switch result {
         case .added, .updated:
@@ -1016,24 +1039,27 @@ struct SettingsView: View {
     private func removeCustomApp(_ app: SupportedAppBehavior) {
         guard !app.isBuiltIn else { return }
 
-        _ = AppBehaviorSettings.removeCustomApp(bundleIdentifier: app.bundleIdentifier)
+        _ = AppBehaviorSettings.removeCustomApp(
+            bundleIdentifier: app.bundleIdentifier,
+            settings: settings
+        )
         appBehaviorOverrides.removeValue(forKey: app.bundleIdentifier)
-        supportedApps = AppBehaviorSettings.supportedApps
+        supportedApps = AppBehaviorSettings.supportedApps(settings: settings)
         onSave?()
     }
 
     private func saveTranscriptionSettings() {
-        UserDefaults.standard.set(asrProvider.rawValue, forKey: Constants.asrProviderKey)
-        UserDefaults.standard.set(serverEndpoint, forKey: Constants.serverEndpointKey)
-        UserDefaults.standard.set(serverPassword, forKey: Constants.customServerPasswordKey)
-        UserDefaults.standard.set(localLLMContextSize, forKey: Constants.localLLMContextSizeKey)
+        settings.asrProvider = asrProvider
+        settings.serverEndpoint = serverEndpoint
+        settings.customServerPassword = serverPassword
+        settings.localLLMContextSize = localLLMContextSize
         appState.asrProvider = asrProvider
         onSave?()
     }
 
     private func saveHotkey() {
-        UserDefaults.standard.set(Int(hotkeyCode), forKey: Constants.hotkeyCodeKey)
-        UserDefaults.standard.set(Int(hotkeyModifiers), forKey: Constants.hotkeyModifiersKey)
+        settings.hotkeyCode = hotkeyCode
+        settings.hotkeyModifiers = hotkeyModifiers
         onHotkeyChanged?()
     }
 

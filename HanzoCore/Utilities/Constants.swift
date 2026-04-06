@@ -146,11 +146,15 @@ enum Constants {
     static let usageStatsDictatedSecondsAllTimeKey = "usageStatsDictatedSecondsAllTime"
     static let usageStatsAutoSubmitsAllTimeKey = "usageStatsAutoSubmitsAllTime"
 
+    static func localLLMContextSize(settings: AppSettingsProtocol) -> Int {
+        settings.localLLMContextSize
+    }
+
     static func localLLMContextSize(defaults: UserDefaults = .standard) -> Int {
-        let configured = defaults.integer(forKey: Constants.localLLMContextSizeKey)
-        if Constants.supportedLocalLLMContextSizes.contains(configured) {
-            return configured
-        }
-        return Constants.defaultLocalLLMContextSize
+        localLLMContextSize(
+            settings: AppSettings(
+                store: UserDefaultsAppSettingsStore(defaults: defaults)
+            )
+        )
     }
 }

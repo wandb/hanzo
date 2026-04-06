@@ -27,10 +27,19 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }()
     private var updaterController: SPUStandardUpdaterController?
 
-    let appState = AppState()
-    private lazy var orchestrator = DictationOrchestrator(appState: appState)
-    private let hotkeyService = HotkeyService()
+    private let appSettings: AppSettingsProtocol
+    let appState: AppState
+    private lazy var orchestrator = DictationOrchestrator(appState: appState, settings: appSettings)
+    private lazy var hotkeyService = HotkeyService(settings: appSettings)
     private let logger = LoggingService.shared
+
+    public override init() {
+        let settingsStore = UserDefaultsAppSettingsStore(defaults: .standard)
+        let settings = AppSettings(store: settingsStore)
+        self.appSettings = settings
+        self.appState = AppState(settings: settings)
+        super.init()
+    }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         // Create status bar item
@@ -155,6 +164,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         let hostingController = NSHostingController(
             rootView: TranscriptPopover(
                 appState: appState,
+                settings: appSettings,
                 onSettingsChanged: { [weak self] in
                     self?.orchestrator.reloadSettings()
                 }
@@ -250,6 +260,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let settingsView = SettingsView(
             appState: appState,
+            settings: appSettings,
             onSave: { [weak self] in
                 self?.orchestrator.reloadSettings()
             },
@@ -418,11 +429,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // If the user re-enabled in System Settings after opting out, clear the stale flag
         if status == .enabled,
-           UserDefaults.standard.bool(forKey: Constants.launchAtLoginDisabledByUserKey) {
-            UserDefaults.standard.set(false, forKey: Constants.launchAtLoginDisabledByUserKey)
+           appSettings.launchAtLoginDisabledByUser {
+            appSettings.launchAtLoginDisabledByUser = false
         }
 
-        guard !UserDefaults.standard.bool(forKey: Constants.launchAtLoginDisabledByUserKey) else { return }
+        guard !appSettings.launchAtLoginDisabledByUser else { return }
 
         if status != .enabled {
             do {
@@ -436,16 +447,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Onboarding
 
     private func hasRequiredLocalModelsForCurrentSettings() -> Bool {
-        let provider: ASRProvider = {
-            if let raw = UserDefaults.standard.string(forKey: Constants.asrProviderKey),
-               let parsed = ASRProvider(rawValue: raw) {
-                return parsed
-            }
-            return Constants.defaultASRProvider
-        }()
+        let provider = appSettings.asrProvider
 
         let needsWhisper = provider == .local
-        let needsLLM = AppBehaviorSettings.globalPostProcessingMode() == .llm
+        let needsLLM = AppBehaviorSettings.globalPostProcessingMode(settings: appSettings) == .llm
 
         if needsWhisper && !hasLocalWhisperModel() {
             return false
@@ -509,6 +514,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         appState.allowsDictationStart = false
         let onboardingView = OnboardingContainerView(
             appState: appState,
+            settings: appSettings,
             onComplete: { [weak self] in
                 Task {
                     await LocalLLMRuntimeManager.shared.stop()

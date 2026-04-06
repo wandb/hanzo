@@ -2,16 +2,18 @@ import HotKey
 import AppKit
 
 final class HotkeyService {
+    private let settings: AppSettingsProtocol
     private var hotKey: HotKey?
     var onKeyDown: (() -> Void)?
     var onKeyUp: (() -> Void)?
 
-    func register() {
-        let keyCode = UInt32(UserDefaults.standard.integer(forKey: Constants.hotkeyCodeKey))
-        let modifiers = UInt32(UserDefaults.standard.integer(forKey: Constants.hotkeyModifiersKey))
+    init(settings: AppSettingsProtocol = AppSettings.live) {
+        self.settings = settings
+    }
 
-        let carbonKeyCode = keyCode != 0 ? keyCode : Constants.defaultHotkeyCode
-        let carbonModifiers = modifiers != 0 ? modifiers : Constants.defaultHotkeyModifiers
+    func register() {
+        let carbonKeyCode = settings.hotkeyCode
+        let carbonModifiers = settings.hotkeyModifiers
 
         hotKey = HotKey(carbonKeyCode: carbonKeyCode, carbonModifiers: carbonModifiers)
         hotKey?.keyDownHandler = { [weak self] in
