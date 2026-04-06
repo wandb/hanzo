@@ -3,7 +3,7 @@ import Testing
 import SwiftUI
 @testable import HanzoCore
 
-@Suite("AppState")
+@Suite("AppState", .serialized)
 struct AppStateTests {
 
     @Test("stateColor is secondary for idle")
