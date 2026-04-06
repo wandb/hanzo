@@ -40,42 +40,49 @@ enum TranscriptRewritePrompt {
         loadTemplate("rewrite")
     }
 
-    static func activeTemplate(defaults: UserDefaults = .standard) -> String {
-        if let customTemplate = customTemplate(defaults: defaults) {
+    static func activeTemplate(settings: AppSettingsProtocol) -> String {
+        if let customTemplate = customTemplate(settings: settings) {
             return customTemplate
         }
         return defaultTemplate()
     }
 
-    static func customTemplate(defaults: UserDefaults = .standard) -> String? {
-        guard let stored = defaults.string(forKey: Constants.rewritePromptTemplateKey) else {
-            return nil
-        }
-
-        let trimmed = stored.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : stored
+    static func activeTemplate(defaults: UserDefaults = .standard) -> String {
+        activeTemplate(settings: settings(from: defaults))
     }
 
-    static func setCustomTemplate(_ template: String?, defaults: UserDefaults = .standard) {
+    static func customTemplate(settings: AppSettingsProtocol) -> String? {
+        settings.customRewritePromptTemplate
+    }
+
+    static func customTemplate(defaults: UserDefaults = .standard) -> String? {
+        customTemplate(settings: settings(from: defaults))
+    }
+
+    static func setCustomTemplate(_ template: String?, settings: AppSettingsProtocol) {
         guard let template else {
-            defaults.removeObject(forKey: Constants.rewritePromptTemplateKey)
+            settings.customRewritePromptTemplate = nil
             return
         }
 
         let trimmed = template.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            defaults.removeObject(forKey: Constants.rewritePromptTemplateKey)
+            settings.customRewritePromptTemplate = nil
             return
         }
 
         let normalizedTemplate = template.replacingOccurrences(of: "\r\n", with: "\n")
         let normalizedDefault = defaultTemplate().replacingOccurrences(of: "\r\n", with: "\n")
         if normalizedTemplate == normalizedDefault {
-            defaults.removeObject(forKey: Constants.rewritePromptTemplateKey)
+            settings.customRewritePromptTemplate = nil
             return
         }
 
-        defaults.set(template, forKey: Constants.rewritePromptTemplateKey)
+        settings.customRewritePromptTemplate = template
+    }
+
+    static func setCustomTemplate(_ template: String?, defaults: UserDefaults = .standard) {
+        setCustomTemplate(template, settings: settings(from: defaults))
     }
 
     static func validateTemplate(_ template: String) -> String? {
@@ -192,7 +199,7 @@ enum TranscriptRewritePrompt {
         targetApp: String? = nil,
         commonTerms: [String] = [],
         templateOverride: String? = nil,
-        defaults: UserDefaults = .standard
+        settings: AppSettingsProtocol
     ) -> (system: String, user: String) {
         let normalizedInstructions = (instructions ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedCommonTerms = commonTerms
@@ -212,7 +219,7 @@ enum TranscriptRewritePrompt {
             vars["common_terms"] = normalizedCommonTerms.joined(separator: "\n")
         }
 
-        let candidateTemplate = templateOverride ?? activeTemplate(defaults: defaults)
+        let candidateTemplate = templateOverride ?? activeTemplate(settings: settings)
         let template = validateTemplate(candidateTemplate) == nil ? candidateTemplate : defaultTemplate()
         let rendered = renderTemplate(template, variables: vars)
 
@@ -224,6 +231,24 @@ enum TranscriptRewritePrompt {
 
         return (system.trimmingCharacters(in: .whitespacesAndNewlines),
                 user.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    static func render(
+        transcript: String,
+        instructions: String? = nil,
+        targetApp: String? = nil,
+        commonTerms: [String] = [],
+        templateOverride: String? = nil,
+        defaults: UserDefaults = .standard
+    ) -> (system: String, user: String) {
+        render(
+            transcript: transcript,
+            instructions: instructions,
+            targetApp: targetApp,
+            commonTerms: commonTerms,
+            templateOverride: templateOverride,
+            settings: settings(from: defaults)
+        )
     }
 
     static func templateIncludesCommonTermsPlaceholder(_ template: String) -> Bool {
@@ -255,6 +280,10 @@ enum TranscriptRewritePrompt {
             return fallbackTemplate
         }
         return template
+    }
+
+    private static func settings(from defaults: UserDefaults) -> AppSettingsProtocol {
+        AppSettings(store: UserDefaultsAppSettingsStore(defaults: defaults))
     }
 
     static func resourceBundle(

@@ -2,7 +2,17 @@ import SwiftUI
 
 struct APIKeyStep: View {
     var onNext: () -> Void
-    @State private var serverPassword: String = UserDefaults.standard.string(forKey: Constants.customServerPasswordKey) ?? Constants.defaultCustomServerPassword
+    private let settings: AppSettingsProtocol
+    @State private var serverPassword: String
+
+    init(
+        onNext: @escaping () -> Void,
+        settings: AppSettingsProtocol = AppSettings.live
+    ) {
+        self.onNext = onNext
+        self.settings = settings
+        _serverPassword = State(initialValue: settings.customServerPassword)
+    }
 
     var body: some View {
         VStack(spacing: 16) {
@@ -31,7 +41,7 @@ struct APIKeyStep: View {
             Button("Continue") {
                 let trimmed = serverPassword.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
-                    UserDefaults.standard.set(trimmed, forKey: Constants.customServerPasswordKey)
+                    settings.customServerPassword = trimmed
                 }
                 onNext()
             }

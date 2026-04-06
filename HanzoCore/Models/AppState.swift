@@ -16,30 +16,24 @@ final class AppState {
     var errorMessage: String?
     var audioLevels: [Float] = []
     var activeTargetBundleIdentifier: String?
-    var isOnboardingComplete: Bool = UserDefaults.standard.bool(forKey: Constants.onboardingCompleteKey)
+    var isOnboardingComplete: Bool
     var allowsDictationStart: Bool = true
     var isPopoverPresented: Bool = false
-    var silenceTimeout: Double = AppBehaviorSettings.globalSilenceTimeout()
+    var silenceTimeout: Double
     var showsHoldIndicator: Bool = false
-    var autoSubmitMode: AutoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode()
-    var appearanceMode: AppearanceMode = {
-        if let raw = UserDefaults.standard.string(forKey: Constants.appearanceModeKey) {
-            return AppearanceMode(rawValue: raw) ?? Constants.defaultAppearanceMode
-        }
-        return Constants.defaultAppearanceMode
-    }()
-    var hudDisplayMode: HUDDisplayMode = {
-        if let raw = UserDefaults.standard.string(forKey: Constants.hudDisplayModeKey) {
-            return HUDDisplayMode(rawValue: raw) ?? Constants.defaultHUDDisplayMode
-        }
-        return Constants.defaultHUDDisplayMode
-    }()
-    var asrProvider: ASRProvider = {
-        if let raw = UserDefaults.standard.string(forKey: Constants.asrProviderKey) {
-            return ASRProvider(rawValue: raw) ?? Constants.defaultASRProvider
-        }
-        return Constants.defaultASRProvider
-    }()
+    var autoSubmitMode: AutoSubmitMode
+    var appearanceMode: AppearanceMode
+    var hudDisplayMode: HUDDisplayMode
+    var asrProvider: ASRProvider
+
+    init(settings: AppSettingsProtocol = AppSettings.live) {
+        self.isOnboardingComplete = settings.onboardingComplete
+        self.silenceTimeout = settings.globalSilenceTimeout
+        self.autoSubmitMode = settings.globalAutoSubmitMode
+        self.appearanceMode = settings.appearanceMode
+        self.hudDisplayMode = settings.hudDisplayMode
+        self.asrProvider = settings.asrProvider
+    }
 
     var preferredColorScheme: ColorScheme {
         switch appearanceMode {

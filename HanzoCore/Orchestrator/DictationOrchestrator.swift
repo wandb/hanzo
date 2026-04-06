@@ -12,6 +12,7 @@ final class DictationOrchestrator {
     }
 
     private let appState: AppState
+    private let settings: AppSettingsProtocol
     private var audioService: AudioCaptureProtocol
     private let textInsertion: TextInsertionProtocol
     private let permissionService: PermissionServiceProtocol
@@ -76,11 +77,13 @@ final class DictationOrchestrator {
         localRuntimeManager: LocalASRRuntimeManagerProtocol = LocalASRRuntimeManager(),
         localLLMRuntimeManager: LocalLLMRuntimeManagerProtocol = LocalLLMRuntimeManager.shared,
         logger: LoggingServiceProtocol = LoggingService.shared,
+        settings: AppSettingsProtocol = AppSettings.live,
         frontmostApplicationProvider: @escaping () -> NSRunningApplication? = {
             NSWorkspace.shared.frontmostApplication
         }
     ) {
         self.appState = appState
+        self.settings = settings
         self.audioService = audioService
         self.textInsertion = textInsertion
         self.permissionService = permissionService
@@ -89,22 +92,23 @@ final class DictationOrchestrator {
         self.logger = logger
         self.frontmostApplicationProvider = frontmostApplicationProvider
 
-        self.autoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode()
-        self.silenceTimeout = AppBehaviorSettings.globalSilenceTimeout()
+        self.autoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode(settings: settings)
+        self.silenceTimeout = AppBehaviorSettings.globalSilenceTimeout(settings: settings)
+        let initialASRProvider = DictationOrchestrator.currentASRProvider(settings: settings)
 
         if let asrClient = asrClient {
             self.asrClient = asrClient
             self.isASRClientInjected = true
         } else {
-            self.asrClient = DictationOrchestrator.makeConfiguredASRClient()
+            self.asrClient = DictationOrchestrator.makeConfiguredASRClient(settings: settings)
             self.isASRClientInjected = false
         }
 
-        self.configuredASRProvider = DictationOrchestrator.currentASRProvider()
-        self.configuredLocalLLMContextSize = Constants.localLLMContextSize()
-        self.transcriptPostProcessingMode = AppBehaviorSettings.globalPostProcessingMode()
-        self.llmPostProcessingPrompt = AppBehaviorSettings.globalLLMPostProcessingPrompt()
-        self.commonTerms = CommonTerms.parse(AppBehaviorSettings.globalCommonTerms())
+        self.configuredASRProvider = initialASRProvider
+        self.configuredLocalLLMContextSize = settings.localLLMContextSize
+        self.transcriptPostProcessingMode = AppBehaviorSettings.globalPostProcessingMode(settings: settings)
+        self.llmPostProcessingPrompt = AppBehaviorSettings.globalLLMPostProcessingPrompt(settings: settings)
+        self.commonTerms = CommonTerms.parse(AppBehaviorSettings.globalCommonTerms(settings: settings))
 
         appState.autoSubmitMode = self.autoSubmitMode
         appState.silenceTimeout = self.silenceTimeout
@@ -141,12 +145,12 @@ final class DictationOrchestrator {
             applyEffectiveBehavior(for: nil)
         }
 
-        configuredASRProvider = DictationOrchestrator.currentASRProvider()
-        configuredLocalLLMContextSize = Constants.localLLMContextSize()
+        configuredASRProvider = DictationOrchestrator.currentASRProvider(settings: settings)
+        configuredLocalLLMContextSize = settings.localLLMContextSize
         appState.asrProvider = configuredASRProvider
 
         if !isASRClientInjected {
-            asrClient = DictationOrchestrator.makeConfiguredASRClient()
+            asrClient = DictationOrchestrator.makeConfiguredASRClient(settings: settings)
         }
 
         let shouldRestartLocalRuntime = previousProvider == .local
@@ -344,7 +348,10 @@ final class DictationOrchestrator {
         previousApp = frontmostApplicationProvider()
         activeSessionTargetBundleIdentifier = previousApp?.bundleIdentifier
         if let activeSessionTargetBundleIdentifier,
-           AppBehaviorSettings.isSupported(bundleIdentifier: activeSessionTargetBundleIdentifier) {
+           AppBehaviorSettings.isSupported(
+            bundleIdentifier: activeSessionTargetBundleIdentifier,
+            settings: settings
+           ) {
             applyEffectiveBehavior(for: activeSessionTargetBundleIdentifier)
             logger.info("Resolved app behavior for \(activeSessionTargetBundleIdentifier)")
         } else {
@@ -700,23 +707,17 @@ final class DictationOrchestrator {
         }
     }
 
-    private static func currentASRProvider() -> ASRProvider {
-        if let raw = UserDefaults.standard.string(forKey: Constants.asrProviderKey),
-           let provider = ASRProvider(rawValue: raw) {
-            return provider
-        }
-        return Constants.defaultASRProvider
+    private static func currentASRProvider(settings: AppSettingsProtocol) -> ASRProvider {
+        settings.asrProvider
     }
 
-    private static func makeConfiguredASRClient() -> ASRClientProtocol {
-        let provider = currentASRProvider()
+    private static func makeConfiguredASRClient(settings: AppSettingsProtocol) -> ASRClientProtocol {
+        let provider = currentASRProvider(settings: settings)
 
         switch provider {
         case .server:
-            let baseURL = UserDefaults.standard.string(forKey: Constants.serverEndpointKey)
-                ?? Constants.defaultServerEndpoint
-            let password = UserDefaults.standard.string(forKey: Constants.customServerPasswordKey)
-                ?? Constants.defaultCustomServerPassword
+            let baseURL = settings.serverEndpoint
+            let password = settings.customServerPassword
             return ASRClient(baseURL: baseURL, apiKey: password, requestTimeout: 15)
         case .local:
             return LocalWhisperASRClient()
@@ -724,7 +725,10 @@ final class DictationOrchestrator {
     }
 
     private func applyEffectiveBehavior(for targetBundleIdentifier: String?) {
-        let resolved = AppBehaviorSettings.resolvedBehavior(for: targetBundleIdentifier)
+        let resolved = AppBehaviorSettings.resolvedBehavior(
+            for: targetBundleIdentifier,
+            settings: settings
+        )
         autoSubmitMode = resolved.autoSubmitMode
         silenceTimeout = resolved.silenceTimeout
         transcriptPostProcessingMode = resolved.postProcessingMode

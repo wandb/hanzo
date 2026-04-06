@@ -39,6 +39,7 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
     private let fileManager: FileManager
     private let inferenceSession: URLSession
     private let modelDownloadSession: URLSession
+    private let settings: AppSettingsProtocol
 
     private var serverProcess: Process?
     private var isStartingRuntime = false
@@ -49,10 +50,12 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
 
     init(
         logger: LoggingServiceProtocol = LoggingService.shared,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        settings: AppSettingsProtocol = AppSettings.live
     ) {
         self.logger = logger
         self.fileManager = fileManager
+        self.settings = settings
 
         let inferenceConfig = URLSessionConfiguration.default
         inferenceConfig.timeoutIntervalForRequest = Constants.localLLMRequestTimeoutSeconds
@@ -284,9 +287,7 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
     private func resolveLlamaServerExecutableURL() throws -> URL {
         var candidates: [String] = []
 
-        let defaults = UserDefaults.standard
-        if let overridePath = defaults.string(forKey: Constants.localLLMServerExecutableOverrideKey),
-           !overridePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if let overridePath = settings.localLLMServerExecutableOverridePath {
             candidates.append(overridePath)
         }
 
@@ -323,7 +324,7 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
 
     private func launchServer(executableURL: URL, modelURL: URL) throws {
         let threadCount = max(1, ProcessInfo.processInfo.activeProcessorCount - 1)
-        let contextSize = Constants.localLLMContextSize()
+        let contextSize = settings.localLLMContextSize
 
         let process = Process()
         process.executableURL = executableURL
@@ -651,7 +652,8 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
             transcript: transcript,
             instructions: instructions,
             targetApp: targetApp,
-            commonTerms: commonTerms
+            commonTerms: commonTerms,
+            settings: settings
         )
 
         let userMessage = "/no_think\n" + prompt.user
@@ -706,7 +708,7 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
     }
 
     private func rewriteMaxTokens(transcript: String, systemPrompt: String, userMessage: String) -> Int {
-        let contextSize = Constants.localLLMContextSize()
+        let contextSize = settings.localLLMContextSize
         let transcriptTokens = estimateTokenCount(transcript)
         let promptTokens = estimateTokenCount(systemPrompt) + estimateTokenCount(userMessage)
 

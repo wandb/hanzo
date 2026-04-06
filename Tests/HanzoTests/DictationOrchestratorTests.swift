@@ -8,9 +8,32 @@ struct DictationOrchestratorTests {
 
     // MARK: - Helpers
 
+    final class TestSettingsContext {
+        let settings: AppSettingsProtocol
+
+        private let suiteName: String
+        private let defaults: UserDefaults
+
+        init() {
+            let suiteName = "DictationOrchestratorTests.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suiteName)!
+            defaults.removePersistentDomain(forName: suiteName)
+
+            self.suiteName = suiteName
+            self.defaults = defaults
+            self.settings = AppSettings(store: UserDefaultsAppSettingsStore(defaults: defaults))
+        }
+
+        deinit {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+    }
+
     struct SUT {
+        let settingsContext: TestSettingsContext
         let orchestrator: DictationOrchestrator
         let appState: AppState
+        let settings: AppSettingsProtocol
         let mockASR: MockASRClient
         let mockAudio: MockAudioCaptureService
         let mockText: MockTextInsertionService
@@ -18,6 +41,10 @@ struct DictationOrchestratorTests {
         let mockLogger: MockLogger
         let mockLocalRuntime: MockLocalASRRuntimeManager
         let mockLLM: MockLocalLLMRuntimeManager
+    }
+
+    func makeSettings() -> TestSettingsContext {
+        TestSettingsContext()
     }
 
     func makeSUT(
@@ -37,14 +64,21 @@ struct DictationOrchestratorTests {
         localLLMRuntimeManager: MockLocalLLMRuntimeManager = MockLocalLLMRuntimeManager(),
         postProcessingMode: TranscriptPostProcessingMode = .off,
         llmPostProcessingPrompt: String = "",
+        globalCommonTerms: String? = nil,
+        asrProvider: ASRProvider = .local,
         frontmostApplicationProvider: @escaping () -> NSRunningApplication? = { nil }
     ) -> SUT {
-        // Set global post-processing settings so the orchestrator picks them up.
-        AppBehaviorSettings.setGlobalAutoSubmitMode(autoSubmitMode)
-        AppBehaviorSettings.setGlobalPostProcessingMode(postProcessingMode)
-        AppBehaviorSettings.setGlobalLLMPostProcessingPrompt(llmPostProcessingPrompt)
+        let settingsContext = makeSettings()
+        let settings = settingsContext.settings
+        settings.globalAutoSubmitMode = autoSubmitMode
+        settings.globalTranscriptPostProcessingMode = postProcessingMode
+        settings.globalLLMPostProcessingPrompt = llmPostProcessingPrompt
+        if let globalCommonTerms {
+            settings.globalCommonTerms = globalCommonTerms
+        }
+        settings.asrProvider = asrProvider
 
-        let appState = AppState()
+        let appState = AppState(settings: settings)
         let mockASR = MockASRClient()
         mockASR.startStreamResult = asrStartResult
         mockASR.sendChunkResult = asrChunkResult
@@ -69,11 +103,14 @@ struct DictationOrchestratorTests {
             localRuntimeManager: localRuntimeManager,
             localLLMRuntimeManager: localLLMRuntimeManager,
             logger: mockLogger,
+            settings: settings,
             frontmostApplicationProvider: frontmostApplicationProvider
         )
         return SUT(
+            settingsContext: settingsContext,
             orchestrator: orchestrator,
             appState: appState,
+            settings: settings,
             mockASR: mockASR,
             mockAudio: mockAudio,
             mockText: mockText,
@@ -118,22 +155,12 @@ struct DictationOrchestratorTests {
 
     @Test("Init does not prewarm LLM when permissions are granted")
     @MainActor func initDoesNotPrewarmLLM() async throws {
-        let defaults = UserDefaults.standard
-        let priorProvider = defaults.string(forKey: Constants.asrProviderKey)
-        defer {
-            if let priorProvider {
-                defaults.set(priorProvider, forKey: Constants.asrProviderKey)
-            } else {
-                defaults.removeObject(forKey: Constants.asrProviderKey)
-            }
-        }
-        defaults.set(ASRProvider.server.rawValue, forKey: Constants.asrProviderKey)
-
         let mockLLM = MockLocalLLMRuntimeManager()
         _ = makeSUT(
             onboardingComplete: false,
             localLLMRuntimeManager: mockLLM,
-            postProcessingMode: .llm
+            postProcessingMode: .llm,
+            asrProvider: .server
         )
 
         let didPrewarm = await waitUntil(timeoutNanoseconds: 200_000_000) {
@@ -294,7 +321,9 @@ struct DictationOrchestratorTests {
 
     @Test("Transcript remains visible while forging until HUD dismissal")
     @MainActor func transcriptRemainsVisibleDuringForging() async throws {
-        let appState = AppState()
+        let settingsContext = makeSettings()
+        let settings = settingsContext.settings
+        let appState = AppState(settings: settings)
         let asr = SlowFinishingASRClient()
         let mockAudio = MockAudioCaptureService()
         let mockText = MockTextInsertionService()
@@ -309,6 +338,7 @@ struct DictationOrchestratorTests {
             textInsertion: mockText,
             permissionService: mockPerms,
             logger: mockLogger,
+            settings: settings,
             frontmostApplicationProvider: { nil }
         )
 
@@ -464,7 +494,9 @@ struct DictationOrchestratorTests {
 
     @Test("cancel() during forging does not transition to error")
     @MainActor func cancelDuringForgingStaysIdle() async throws {
-        let appState = AppState()
+        let settingsContext = makeSettings()
+        let settings = settingsContext.settings
+        let appState = AppState(settings: settings)
         let asr = SlowFinishingASRClient()
         let mockAudio = MockAudioCaptureService()
         let mockText = MockTextInsertionService()
@@ -479,6 +511,7 @@ struct DictationOrchestratorTests {
             textInsertion: mockText,
             permissionService: mockPerms,
             logger: mockLogger,
+            settings: settings,
             frontmostApplicationProvider: { NSRunningApplication.current }
         )
 
@@ -1032,7 +1065,9 @@ struct DictationOrchestratorTests {
 
     @Test("Late chunk response from previous session is ignored")
     @MainActor func lateChunkResponseFromPreviousSessionIgnored() async throws {
-        let appState = AppState()
+        let settingsContext = makeSettings()
+        let settings = settingsContext.settings
+        let appState = AppState(settings: settings)
         let delayedASR = DelayedSessionASRClient()
         let mockAudio = MockAudioCaptureService()
         let mockText = MockTextInsertionService()
@@ -1047,6 +1082,7 @@ struct DictationOrchestratorTests {
             textInsertion: mockText,
             permissionService: mockPerms,
             logger: mockLogger,
+            settings: settings,
             frontmostApplicationProvider: { nil }
         )
 
@@ -1112,22 +1148,12 @@ struct DictationOrchestratorTests {
 
     @Test("Final transcript is unchanged when post-processing mode is off")
     @MainActor func finalTranscriptUnchangedWhenPostProcessingIsOff() async throws {
-        let defaults = UserDefaults.standard
-        let originalCommonTerms = defaults.string(forKey: Constants.commonTermsKey)
-        AppBehaviorSettings.setGlobalCommonTerms("LLM\nPyTorch")
-        defer {
-            if let originalCommonTerms {
-                defaults.set(originalCommonTerms, forKey: Constants.commonTermsKey)
-            } else {
-                defaults.removeObject(forKey: Constants.commonTermsKey)
-            }
-        }
-
         let sut = makeSUT(
             asrFinishResult: .success(
                 ASRFinishResponse(text: "Um this is still untouched.", language: "en")
             ),
             postProcessingMode: .off,
+            globalCommonTerms: "LLM\nPyTorch",
             frontmostApplicationProvider: { NSRunningApplication.current }
         )
 
@@ -1203,17 +1229,6 @@ struct DictationOrchestratorTests {
 
     @Test("LLM mode passes global common terms to local rewrite")
     @MainActor func llmModePassesGlobalCommonTerms() async throws {
-        let defaults = UserDefaults.standard
-        let originalCommonTerms = defaults.string(forKey: Constants.commonTermsKey)
-        AppBehaviorSettings.setGlobalCommonTerms("LLM\nPyTorch\nLLM")
-        defer {
-            if let originalCommonTerms {
-                defaults.set(originalCommonTerms, forKey: Constants.commonTermsKey)
-            } else {
-                defaults.removeObject(forKey: Constants.commonTermsKey)
-            }
-        }
-
         let mockLLM = MockLocalLLMRuntimeManager()
         mockLLM.postProcessResult = .success("Normalized output")
         let sut = makeSUT(
@@ -1223,6 +1238,7 @@ struct DictationOrchestratorTests {
             localLLMRuntimeManager: mockLLM,
             postProcessingMode: .llm,
             llmPostProcessingPrompt: "Keep terms accurate.",
+            globalCommonTerms: "LLM\nPyTorch\nLLM",
             frontmostApplicationProvider: { NSRunningApplication.current }
         )
 
