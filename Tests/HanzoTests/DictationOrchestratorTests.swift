@@ -8,7 +8,29 @@ struct DictationOrchestratorTests {
 
     // MARK: - Helpers
 
+    final class TestSettingsContext {
+        let settings: AppSettingsProtocol
+
+        private let suiteName: String
+        private let defaults: UserDefaults
+
+        init() {
+            let suiteName = "DictationOrchestratorTests.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suiteName)!
+            defaults.removePersistentDomain(forName: suiteName)
+
+            self.suiteName = suiteName
+            self.defaults = defaults
+            self.settings = AppSettings(store: UserDefaultsAppSettingsStore(defaults: defaults))
+        }
+
+        deinit {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+    }
+
     struct SUT {
+        let settingsContext: TestSettingsContext
         let orchestrator: DictationOrchestrator
         let appState: AppState
         let settings: AppSettingsProtocol
@@ -21,11 +43,8 @@ struct DictationOrchestratorTests {
         let mockLLM: MockLocalLLMRuntimeManager
     }
 
-    func makeSettings() -> AppSettingsProtocol {
-        let suiteName = "DictationOrchestratorTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        return AppSettings(store: UserDefaultsAppSettingsStore(defaults: defaults))
+    func makeSettings() -> TestSettingsContext {
+        TestSettingsContext()
     }
 
     func makeSUT(
@@ -49,7 +68,8 @@ struct DictationOrchestratorTests {
         asrProvider: ASRProvider = .local,
         frontmostApplicationProvider: @escaping () -> NSRunningApplication? = { nil }
     ) -> SUT {
-        let settings = makeSettings()
+        let settingsContext = makeSettings()
+        let settings = settingsContext.settings
         settings.globalAutoSubmitMode = autoSubmitMode
         settings.globalTranscriptPostProcessingMode = postProcessingMode
         settings.globalLLMPostProcessingPrompt = llmPostProcessingPrompt
@@ -87,6 +107,7 @@ struct DictationOrchestratorTests {
             frontmostApplicationProvider: frontmostApplicationProvider
         )
         return SUT(
+            settingsContext: settingsContext,
             orchestrator: orchestrator,
             appState: appState,
             settings: settings,
@@ -300,7 +321,8 @@ struct DictationOrchestratorTests {
 
     @Test("Transcript remains visible while forging until HUD dismissal")
     @MainActor func transcriptRemainsVisibleDuringForging() async throws {
-        let settings = makeSettings()
+        let settingsContext = makeSettings()
+        let settings = settingsContext.settings
         let appState = AppState(settings: settings)
         let asr = SlowFinishingASRClient()
         let mockAudio = MockAudioCaptureService()
@@ -472,7 +494,8 @@ struct DictationOrchestratorTests {
 
     @Test("cancel() during forging does not transition to error")
     @MainActor func cancelDuringForgingStaysIdle() async throws {
-        let settings = makeSettings()
+        let settingsContext = makeSettings()
+        let settings = settingsContext.settings
         let appState = AppState(settings: settings)
         let asr = SlowFinishingASRClient()
         let mockAudio = MockAudioCaptureService()
@@ -1042,7 +1065,8 @@ struct DictationOrchestratorTests {
 
     @Test("Late chunk response from previous session is ignored")
     @MainActor func lateChunkResponseFromPreviousSessionIgnored() async throws {
-        let settings = makeSettings()
+        let settingsContext = makeSettings()
+        let settings = settingsContext.settings
         let appState = AppState(settings: settings)
         let delayedASR = DelayedSessionASRClient()
         let mockAudio = MockAudioCaptureService()
