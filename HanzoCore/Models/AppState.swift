@@ -22,6 +22,7 @@ final class AppState {
     var silenceTimeout: Double = AppBehaviorSettings.globalSilenceTimeout()
     var showsHoldIndicator: Bool = false
     var autoSubmitMode: AutoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode()
+    var recentDictations: [RecentDictationEntry] = []
     var appearanceMode: AppearanceMode = {
         if let raw = UserDefaults.standard.string(forKey: Constants.appearanceModeKey) {
             return AppearanceMode(rawValue: raw) ?? Constants.defaultAppearanceMode

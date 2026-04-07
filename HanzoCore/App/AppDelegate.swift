@@ -24,6 +24,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         return MenuBarIcon.radialWaveform()
     }()
+    private let recentDictationDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
+    }()
     private var updaterController: SPUStandardUpdaterController?
 
     let appState = AppState()
@@ -214,6 +220,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(checkForUpdatesMenuItem)
 
         menu.addItem(.separator())
+        menu.addItem(makeRecentDictationsMenuItem())
+        menu.addItem(.separator())
+
         let githubMenuItem = NSMenuItem(
             title: "Hanzo on GitHub",
             action: #selector(openRepository),
@@ -268,6 +277,16 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openRepository() {
         NSWorkspace.shared.open(Self.repositoryURL)
+    }
+
+    @objc private func copyRecentDictationFromMenu(_ sender: NSMenuItem) {
+        guard let idString = sender.representedObject as? String,
+              let id = UUID(uuidString: idString) else { return }
+        orchestrator.copyRecentDictation(id: id)
+    }
+
+    @objc private func clearRecentDictationsFromMenu() {
+        orchestrator.clearRecentDictations()
     }
 
     // MARK: - App Monitoring
@@ -404,6 +423,58 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         return true
+    }
+
+    private func makeRecentDictationsMenuItem() -> NSMenuItem {
+        let menuItem = NSMenuItem(title: "Recent Dictations", action: nil, keyEquivalent: "")
+        if let recentIcon = NSImage(
+            systemSymbolName: "clock.arrow.circlepath",
+            accessibilityDescription: "Recent Dictations"
+        ) {
+            menuItem.image = recentIcon
+        }
+        let submenu = NSMenu(title: "Recent Dictations")
+        let entries = appState.recentDictations
+
+        if entries.isEmpty {
+            let emptyItem = NSMenuItem(title: "No recent dictations", action: nil, keyEquivalent: "")
+            emptyItem.isEnabled = false
+            submenu.addItem(emptyItem)
+        } else {
+            for entry in entries {
+                let title = "\(recentDictationDateFormatter.string(from: entry.createdAt))  \(dictationPreview(entry.text))"
+                let item = NSMenuItem(
+                    title: title,
+                    action: #selector(copyRecentDictationFromMenu(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = entry.id.uuidString
+                submenu.addItem(item)
+            }
+            submenu.addItem(.separator())
+        }
+
+        let clearItem = NSMenuItem(
+            title: "Clear Recent Dictations",
+            action: #selector(clearRecentDictationsFromMenu),
+            keyEquivalent: ""
+        )
+        clearItem.target = self
+        clearItem.isEnabled = !entries.isEmpty
+        submenu.addItem(clearItem)
+
+        menuItem.submenu = submenu
+        return menuItem
+    }
+
+    private func dictationPreview(_ text: String, maxCharacters: Int = 56) -> String {
+        let singleLine = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard singleLine.count > maxCharacters else { return singleLine }
+        let cutoff = singleLine.index(singleLine.startIndex, offsetBy: maxCharacters - 3)
+        return "\(singleLine[..<cutoff])..."
     }
 
     private func hasLocalWhisperModel() -> Bool {

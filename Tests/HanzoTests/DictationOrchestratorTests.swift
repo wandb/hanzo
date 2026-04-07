@@ -18,6 +18,7 @@ struct DictationOrchestratorTests {
         let mockLogger: MockLogger
         let mockLocalRuntime: MockLocalASRRuntimeManager
         let mockLLM: MockLocalLLMRuntimeManager
+        let mockRecentDictations: MockRecentDictationStore
     }
 
     func makeSUT(
@@ -37,7 +38,9 @@ struct DictationOrchestratorTests {
         localLLMRuntimeManager: MockLocalLLMRuntimeManager = MockLocalLLMRuntimeManager(),
         postProcessingMode: TranscriptPostProcessingMode = .off,
         llmPostProcessingPrompt: String = "",
-        frontmostApplicationProvider: @escaping () -> NSRunningApplication? = { nil }
+        recentHistoryEntries: [RecentDictationEntry] = [],
+        frontmostApplicationProvider: @escaping () -> NSRunningApplication? = { nil },
+        workspaceFrontmostApplicationProvider: (() -> NSRunningApplication?)? = nil
     ) -> SUT {
         // Set global post-processing settings so the orchestrator picks them up.
         AppBehaviorSettings.setGlobalAutoSubmitMode(autoSubmitMode)
@@ -58,18 +61,24 @@ struct DictationOrchestratorTests {
         mockPerms.hasMicrophonePermission = micPermission
         mockPerms.hasAccessibilityPermission = accessibilityPermission
         let mockLogger = MockLogger()
+        let mockRecentDictations = MockRecentDictationStore()
+        mockRecentDictations.entries = recentHistoryEntries
         appState.isOnboardingComplete = onboardingComplete
+
+        let resolvedWorkspaceFrontmostProvider = workspaceFrontmostApplicationProvider ?? frontmostApplicationProvider
 
         let orchestrator = DictationOrchestrator(
             appState: appState,
             asrClient: mockASR,
             audioService: mockAudio,
             textInsertion: mockText,
+            recentDictationStore: mockRecentDictations,
             permissionService: mockPerms,
             localRuntimeManager: localRuntimeManager,
             localLLMRuntimeManager: localLLMRuntimeManager,
             logger: mockLogger,
-            frontmostApplicationProvider: frontmostApplicationProvider
+            frontmostApplicationProvider: frontmostApplicationProvider,
+            workspaceFrontmostApplicationProvider: resolvedWorkspaceFrontmostProvider
         )
         return SUT(
             orchestrator: orchestrator,
@@ -80,7 +89,8 @@ struct DictationOrchestratorTests {
             mockPerms: mockPerms,
             mockLogger: mockLogger,
             mockLocalRuntime: localRuntimeManager,
-            mockLLM: localLLMRuntimeManager
+            mockLLM: localLLMRuntimeManager,
+            mockRecentDictations: mockRecentDictations
         )
     }
 
@@ -114,6 +124,58 @@ struct DictationOrchestratorTests {
     func initialStateIsIdle() {
         let sut = makeSUT()
         #expect(sut.appState.dictationState == .idle)
+    }
+
+    @Test("Init loads recent dictation history into app state")
+    func initLoadsRecentDictationHistory() {
+        let historyEntry = RecentDictationEntry(
+            id: UUID(),
+            text: "existing history item",
+            createdAt: Date(timeIntervalSince1970: 12345),
+            sourceBundleIdentifier: "com.example.editor",
+            sourceAppName: "Example Editor",
+            insertOutcome: .inserted
+        )
+
+        let sut = makeSUT(recentHistoryEntries: [historyEntry])
+
+        #expect(sut.mockRecentDictations.loadCallCount == 1)
+        #expect(sut.appState.recentDictations == [historyEntry])
+    }
+
+    @Test("copyRecentDictation copies selected history text to clipboard")
+    @MainActor func copyRecentDictationCopiesSelectedText() {
+        let historyEntry = RecentDictationEntry(
+            id: UUID(),
+            text: "copy me",
+            createdAt: Date(timeIntervalSince1970: 12345),
+            sourceBundleIdentifier: "com.example.editor",
+            sourceAppName: "Example Editor",
+            insertOutcome: .inserted
+        )
+        let sut = makeSUT(recentHistoryEntries: [historyEntry])
+
+        sut.orchestrator.copyRecentDictation(id: historyEntry.id)
+
+        #expect(sut.mockText.copiedTexts == ["copy me"])
+    }
+
+    @Test("clearRecentDictations clears store and app state history")
+    @MainActor func clearRecentDictationsClearsStoreAndState() {
+        let historyEntry = RecentDictationEntry(
+            id: UUID(),
+            text: "clear me",
+            createdAt: Date(timeIntervalSince1970: 12345),
+            sourceBundleIdentifier: "com.example.editor",
+            sourceAppName: "Example Editor",
+            insertOutcome: .inserted
+        )
+        let sut = makeSUT(recentHistoryEntries: [historyEntry])
+
+        sut.orchestrator.clearRecentDictations()
+
+        #expect(sut.mockRecentDictations.clearCallCount == 1)
+        #expect(sut.appState.recentDictations.isEmpty)
     }
 
     @Test("Init does not prewarm LLM when permissions are granted")
@@ -301,12 +363,14 @@ struct DictationOrchestratorTests {
         let mockPerms = MockPermissionService()
         mockPerms.hasMicrophonePermission = true
         let mockLogger = MockLogger()
+        let mockRecentDictations = MockRecentDictationStore()
 
         let orchestrator = DictationOrchestrator(
             appState: appState,
             asrClient: asr,
             audioService: mockAudio,
             textInsertion: mockText,
+            recentDictationStore: mockRecentDictations,
             permissionService: mockPerms,
             logger: mockLogger,
             frontmostApplicationProvider: { nil }
@@ -471,12 +535,14 @@ struct DictationOrchestratorTests {
         let mockPerms = MockPermissionService()
         mockPerms.hasMicrophonePermission = true
         let mockLogger = MockLogger()
+        let mockRecentDictations = MockRecentDictationStore()
 
         let orchestrator = DictationOrchestrator(
             appState: appState,
             asrClient: asr,
             audioService: mockAudio,
             textInsertion: mockText,
+            recentDictationStore: mockRecentDictations,
             permissionService: mockPerms,
             logger: mockLogger,
             frontmostApplicationProvider: { NSRunningApplication.current }
@@ -1039,12 +1105,14 @@ struct DictationOrchestratorTests {
         let mockPerms = MockPermissionService()
         mockPerms.hasMicrophonePermission = true
         let mockLogger = MockLogger()
+        let mockRecentDictations = MockRecentDictationStore()
 
         let orchestrator = DictationOrchestrator(
             appState: appState,
             asrClient: delayedASR,
             audioService: mockAudio,
             textInsertion: mockText,
+            recentDictationStore: mockRecentDictations,
             permissionService: mockPerms,
             logger: mockLogger,
             frontmostApplicationProvider: { nil }
@@ -1108,6 +1176,130 @@ struct DictationOrchestratorTests {
             sut.appState.dictationState == .error
         }
         #expect(isError)
+    }
+
+    @Test("Successful insertion records recent history with inserted outcome")
+    @MainActor func successfulInsertionRecordsInsertedHistoryOutcome() async throws {
+        let transcript = "history success transcript"
+        let sut = makeSUT(
+            asrFinishResult: .success(
+                ASRFinishResponse(text: transcript, language: "en")
+            ),
+            frontmostApplicationProvider: { NSRunningApplication.current },
+            workspaceFrontmostApplicationProvider: { NSRunningApplication.current }
+        )
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let settled = await waitUntil(timeoutNanoseconds: 5_000_000_000) {
+            sut.appState.dictationState == .idle && sut.mockRecentDictations.appendCallCount == 1
+        }
+        #expect(settled)
+        #expect(sut.mockRecentDictations.entries.count == 1)
+        #expect(sut.mockRecentDictations.entries.first?.text == transcript)
+        #expect(sut.mockRecentDictations.entries.first?.insertOutcome == .inserted)
+        #expect(sut.mockText.copiedTexts.isEmpty)
+    }
+
+    @Test("Insertion failure copies to clipboard and stores failed history")
+    @MainActor func insertionFailureRunsClipboardAndHistoryFallback() async throws {
+        let transcript = "fallback transcript"
+        let sut = makeSUT(
+            autoSubmitMode: .enter,
+            asrFinishResult: .success(
+                ASRFinishResponse(text: transcript, language: "en")
+            ),
+            frontmostApplicationProvider: { NSRunningApplication.current },
+            workspaceFrontmostApplicationProvider: { NSRunningApplication.current }
+        )
+        sut.mockText.insertResult = .failed(.focusedElementNotEditable)
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let fellBack = await waitUntil(timeoutNanoseconds: 5_000_000_000) {
+            sut.mockText.copiedTexts == [transcript]
+                && sut.mockRecentDictations.appendCallCount == 1
+        }
+
+        #expect(fellBack)
+        #expect(sut.mockText.returnSimulated == false)
+        #expect(sut.mockRecentDictations.entries.first?.insertOutcome == .failed)
+    }
+
+    @Test("No target app triggers failure fallback and stores failed history")
+    @MainActor func noTargetAppRunsFailureFallbackAndHistory() async throws {
+        let transcript = "no target transcript"
+        let sut = makeSUT(
+            autoSubmitMode: .enter,
+            asrFinishResult: .success(
+                ASRFinishResponse(text: transcript, language: "en")
+            )
+        )
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let fellBack = await waitUntil(timeoutNanoseconds: 5_000_000_000) {
+            sut.mockText.copiedTexts == [transcript]
+                && sut.mockRecentDictations.appendCallCount == 1
+        }
+
+        #expect(fellBack)
+        #expect(sut.mockText.insertedTexts.isEmpty)
+        #expect(sut.mockText.returnSimulated == false)
+        #expect(sut.mockRecentDictations.entries.first?.insertOutcome == .failed)
+    }
+
+    @Test("Activation failure triggers fallback without paste attempt")
+    @MainActor func activationFailureRunsFallbackWithoutPasteAttempt() async throws {
+        let transcript = "activation failure transcript"
+        let sut = makeSUT(
+            autoSubmitMode: .enter,
+            asrFinishResult: .success(
+                ASRFinishResponse(text: transcript, language: "en")
+            ),
+            frontmostApplicationProvider: { NSRunningApplication.current },
+            workspaceFrontmostApplicationProvider: { nil }
+        )
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let fellBack = await waitUntil(timeoutNanoseconds: 5_000_000_000) {
+            sut.mockText.copiedTexts == [transcript]
+                && sut.mockRecentDictations.appendCallCount == 1
+        }
+
+        #expect(fellBack)
+        #expect(sut.mockText.insertedTexts.isEmpty)
+        #expect(sut.mockText.returnSimulated == false)
+        #expect(sut.mockRecentDictations.entries.first?.insertOutcome == .failed)
+    }
+
+    @Test("Empty final transcript does not append recent history")
+    @MainActor func emptyFinalTranscriptDoesNotAppendRecentHistory() async throws {
+        let sut = makeSUT(
+            asrFinishResult: .success(
+                ASRFinishResponse(text: "[music]", language: "en")
+            )
+        )
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let isIdle = await waitUntil(timeoutNanoseconds: 5_000_000_000) {
+            sut.appState.dictationState == .idle
+        }
+
+        #expect(isIdle)
+        #expect(sut.mockRecentDictations.appendCallCount == 0)
     }
 
     @Test("Final transcript is unchanged when post-processing mode is off")

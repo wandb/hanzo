@@ -1,11 +1,24 @@
 import AppKit
 import CoreGraphics
+import ApplicationServices
 
 final class TextInsertionService: TextInsertionProtocol {
     private let logger = LoggingService.shared
 
-    func insertText(_ text: String) async {
-        guard !text.isEmpty else { return }
+    func insertText(_ text: String) async -> TextInsertionResult {
+        guard !text.isEmpty else { return .inserted }
+        guard AXIsProcessTrusted() else {
+            logger.warn("Text insertion failed: accessibility permission missing")
+            return .failed(.accessibilityPermissionMissing)
+        }
+        guard let focusedElement = focusedElement() else {
+            logger.warn("Text insertion failed: no focused accessibility element")
+            return .failed(.noFocusedElement)
+        }
+        guard isEditable(element: focusedElement) else {
+            logger.warn("Text insertion failed: focused element is not editable")
+            return .failed(.focusedElementNotEditable)
+        }
 
         let pasteboard = NSPasteboard.general
         let savedContents = savePasteboard(pasteboard)
@@ -16,7 +29,11 @@ final class TextInsertionService: TextInsertionProtocol {
         // Small delay to ensure pasteboard is ready.
         try? await Task.sleep(for: Constants.textInsertionPasteboardReadyDelay)
 
-        simulatePaste()
+        guard simulatePaste() else {
+            restorePasteboard(pasteboard, contents: savedContents)
+            logger.info("Clipboard restored after failed text insertion attempt")
+            return .failed(.pasteEventCreationFailed)
+        }
 
         // Allow target apps time to consume Cmd+V before submit keystrokes.
         try? await Task.sleep(for: Constants.textInsertionSettleDelay)
@@ -24,6 +41,7 @@ final class TextInsertionService: TextInsertionProtocol {
         logger.info("Clipboard restored after text insertion")
 
         logger.info("Text inserted (\(text.count) chars)")
+        return .inserted
     }
 
     func copyToClipboard(_ text: String) {
@@ -68,14 +86,14 @@ final class TextInsertionService: TextInsertionProtocol {
 
     // MARK: - Private
 
-    private func simulatePaste() {
+    private func simulatePaste() -> Bool {
         let source = CGEventSource(stateID: .combinedSessionState)
 
         // Key code 9 = V key
         guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
               let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else {
             logger.error("Failed to create CGEvent for paste")
-            return
+            return false
         }
 
         keyDown.flags = .maskCommand
@@ -83,6 +101,31 @@ final class TextInsertionService: TextInsertionProtocol {
 
         keyDown.post(tap: .cghidEventTap)
         keyUp.post(tap: .cghidEventTap)
+        return true
+    }
+
+    private func focusedElement() -> AXUIElement? {
+        let systemWideElement = AXUIElementCreateSystemWide()
+        var focusedElementValue: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(
+            systemWideElement,
+            kAXFocusedUIElementAttribute as CFString,
+            &focusedElementValue
+        )
+
+        guard result == .success, let focusedElementValue else { return nil }
+        guard CFGetTypeID(focusedElementValue) == AXUIElementGetTypeID() else { return nil }
+        return unsafeBitCast(focusedElementValue, to: AXUIElement.self)
+    }
+
+    private func isEditable(element: AXUIElement) -> Bool {
+        var isSettable = DarwinBoolean(false)
+        let result = AXUIElementIsAttributeSettable(
+            element,
+            kAXValueAttribute as CFString,
+            &isSettable
+        )
+        return result == .success && isSettable.boolValue
     }
 
     private func savePasteboard(_ pb: NSPasteboard) -> [NSPasteboard.PasteboardType: Data] {
