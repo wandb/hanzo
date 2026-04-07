@@ -146,6 +146,10 @@ enum Constants {
     static let usageStatsDictatedSecondsAllTimeKey = "usageStatsDictatedSecondsAllTime"
     static let usageStatsAutoSubmitsAllTimeKey = "usageStatsAutoSubmitsAllTime"
 
+    // Recent dictation history
+    static let recentDictationsKey = "recentDictations"
+    static let recentDictationsMaxCount = 20
+
     static func localLLMContextSize(settings: AppSettingsProtocol) -> Int {
         settings.localLLMContextSize
     }

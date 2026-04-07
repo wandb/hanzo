@@ -5,16 +5,18 @@ final class MockTextInsertionService: TextInsertionProtocol {
     var copiedTexts: [String] = []
     var returnSimulated = false
     var cmdReturnSimulated = false
+    var insertResult: TextInsertionResult = .inserted
     var insertionDelayNanoseconds: UInt64 = 0
     var eventLog: [String] = []
 
-    func insertText(_ text: String) async {
+    func insertText(_ text: String) async -> TextInsertionResult {
         eventLog.append("insert:start")
         insertedTexts.append(text)
         if insertionDelayNanoseconds > 0 {
             try? await Task.sleep(nanoseconds: insertionDelayNanoseconds)
         }
         eventLog.append("insert:end")
+        return insertResult
     }
 
     func copyToClipboard(_ text: String) {

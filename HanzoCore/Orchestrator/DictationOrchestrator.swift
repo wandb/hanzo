@@ -15,11 +15,13 @@ final class DictationOrchestrator {
     private let settings: AppSettingsProtocol
     private var audioService: AudioCaptureProtocol
     private let textInsertion: TextInsertionProtocol
+    private let recentDictationStore: RecentDictationStoreProtocol
     private let permissionService: PermissionServiceProtocol
     private let localRuntimeManager: LocalASRRuntimeManagerProtocol
     private let localLLMRuntimeManager: LocalLLMRuntimeManagerProtocol
     private let logger: LoggingServiceProtocol
     private let frontmostApplicationProvider: () -> NSRunningApplication?
+    private let workspaceFrontmostApplicationProvider: () -> NSRunningApplication?
 
     private var asrClient: ASRClientProtocol
     private let isASRClientInjected: Bool
@@ -73,6 +75,7 @@ final class DictationOrchestrator {
         asrClient: ASRClientProtocol? = nil,
         audioService: AudioCaptureProtocol = AudioCaptureService(),
         textInsertion: TextInsertionProtocol = TextInsertionService(),
+        recentDictationStore: RecentDictationStoreProtocol = RecentDictationStore(),
         permissionService: PermissionServiceProtocol = PermissionService.shared,
         localRuntimeManager: LocalASRRuntimeManagerProtocol = LocalASRRuntimeManager(),
         localLLMRuntimeManager: LocalLLMRuntimeManagerProtocol = LocalLLMRuntimeManager.shared,
@@ -80,17 +83,22 @@ final class DictationOrchestrator {
         settings: AppSettingsProtocol = AppSettings.live,
         frontmostApplicationProvider: @escaping () -> NSRunningApplication? = {
             NSWorkspace.shared.frontmostApplication
+        },
+        workspaceFrontmostApplicationProvider: @escaping () -> NSRunningApplication? = {
+            NSWorkspace.shared.frontmostApplication
         }
     ) {
         self.appState = appState
         self.settings = settings
         self.audioService = audioService
         self.textInsertion = textInsertion
+        self.recentDictationStore = recentDictationStore
         self.permissionService = permissionService
         self.localRuntimeManager = localRuntimeManager
         self.localLLMRuntimeManager = localLLMRuntimeManager
         self.logger = logger
         self.frontmostApplicationProvider = frontmostApplicationProvider
+        self.workspaceFrontmostApplicationProvider = workspaceFrontmostApplicationProvider
 
         self.autoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode(settings: settings)
         self.silenceTimeout = AppBehaviorSettings.globalSilenceTimeout(settings: settings)
@@ -113,6 +121,7 @@ final class DictationOrchestrator {
         appState.autoSubmitMode = self.autoSubmitMode
         appState.silenceTimeout = self.silenceTimeout
         appState.asrProvider = self.configuredASRProvider
+        appState.recentDictations = recentDictationStore.load()
 
         self.audioService.onAudioChunk = { [weak self] data in
             self?.handleAudioChunk(data)
@@ -304,6 +313,20 @@ final class DictationOrchestrator {
             appState.audioLevels = []
             appState.isPopoverPresented = false
         }
+    }
+
+    @MainActor
+    func copyRecentDictation(id: UUID) {
+        guard let entry = appState.recentDictations.first(where: { $0.id == id }) else { return }
+        textInsertion.copyToClipboard(entry.text)
+        logger.info("Copied recent dictation from history (\(entry.text.count) chars)")
+    }
+
+    @MainActor
+    func clearRecentDictations() {
+        recentDictationStore.clear()
+        appState.recentDictations = []
+        logger.info("Cleared recent dictation history")
     }
 
     func shutdown() {
@@ -504,27 +527,64 @@ final class DictationOrchestrator {
 
                 // PHASE 2: Activate target app and paste
                 var autoSubmitTriggered = false
-                if !finalText.isEmpty, let targetApp {
-                    await MainActor.run {
-                        _ = targetApp.activate()
-                    }
-                    try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
-
-                    // Verify target app is frontmost; retry once if not
-                    let frontmost = NSWorkspace.shared.frontmostApplication
-                    if frontmost?.processIdentifier != targetApp.processIdentifier {
-                        logger.warn("Target app not frontmost after activation, retrying")
+                var insertionResult: TextInsertionResult = .inserted
+                if !finalText.isEmpty {
+                    if let targetApp {
                         await MainActor.run {
                             _ = targetApp.activate()
                         }
-                        try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
+                        try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
+
+                        // Verify target app is frontmost; retry once if not
+                        var frontmost = await MainActor.run {
+                            workspaceFrontmostApplicationProvider()
+                        }
+                        if frontmost?.processIdentifier != targetApp.processIdentifier {
+                            logger.warn("Target app not frontmost after activation, retrying")
+                            await MainActor.run {
+                                _ = targetApp.activate()
+                            }
+                            try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
+                            frontmost = await MainActor.run {
+                                workspaceFrontmostApplicationProvider()
+                            }
+                        }
+
+                        if frontmost?.processIdentifier != targetApp.processIdentifier {
+                            logger.warn("Text insertion failed: target app activation failed")
+                            insertionResult = .failed(.targetAppActivationFailed)
+                        } else {
+                            // PHASE 3: Paste
+                            insertionResult = await insertTextOnMainActor(finalText)
+
+                            // PHASE 4: Auto-submit
+                            if insertionResult == .inserted {
+                                autoSubmitTriggered = await triggerAutoSubmitOnMainActor()
+                            }
+                        }
+                    } else {
+                        logger.warn("Text insertion failed: no target app available")
+                        insertionResult = .failed(.noTargetAppAvailable)
                     }
 
-                    // PHASE 3: Paste
-                    await insertTextOnMainActor(finalText)
+                    await recordRecentDictation(
+                        text: finalText,
+                        sourceApp: targetApp,
+                        sourceAppName: targetAppName,
+                        insertionResult: insertionResult
+                    )
 
-                    // PHASE 4: Auto-submit
-                    autoSubmitTriggered = await triggerAutoSubmitOnMainActor()
+                    if case let .failed(reason) = insertionResult {
+                        await MainActor.run {
+                            textInsertion.copyToClipboard(finalText)
+                            appState.menuBarToast = MenuBarToast(
+                                message: "Couldn’t insert text. It’s in your clipboard."
+                            )
+                        }
+                        logger.warn(
+                            "Text insertion failed (\(reason.rawValue)); copied forged text to clipboard"
+                        )
+                    }
                 }
 
                 recordUsageStats(
@@ -588,7 +648,7 @@ final class DictationOrchestrator {
     }
 
     @MainActor
-    private func insertTextOnMainActor(_ text: String) async {
+    private func insertTextOnMainActor(_ text: String) async -> TextInsertionResult {
         await textInsertion.insertText(text)
     }
 
@@ -603,6 +663,43 @@ final class DictationOrchestrator {
             return true
         case .off:
             return false
+        }
+    }
+
+    private func recordRecentDictation(
+        text: String,
+        sourceApp: NSRunningApplication?,
+        sourceAppName: String?,
+        insertionResult: TextInsertionResult
+    ) async {
+        let entry = RecentDictationEntry(
+            id: UUID(),
+            text: text,
+            createdAt: Date(),
+            sourceBundleIdentifier: sourceApp?.bundleIdentifier,
+            sourceAppName: sourceAppName,
+            insertOutcome: recentDictationInsertOutcome(for: insertionResult)
+        )
+        recentDictationStore.append(entry)
+
+        await MainActor.run {
+            appState.recentDictations.insert(entry, at: 0)
+            if appState.recentDictations.count > Constants.recentDictationsMaxCount {
+                appState.recentDictations.removeLast(
+                    appState.recentDictations.count - Constants.recentDictationsMaxCount
+                )
+            }
+        }
+    }
+
+    private func recentDictationInsertOutcome(
+        for insertionResult: TextInsertionResult
+    ) -> RecentDictationInsertOutcome {
+        switch insertionResult {
+        case .inserted:
+            return .inserted
+        case .failed:
+            return .failed
         }
     }
 
