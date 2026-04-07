@@ -11,6 +11,7 @@ enum TranscriptRewritePrompt {
     - When intent is explicit, follow app-specific patterns for mentions, commands, and channels.
     - Do not add @mentions, /commands, or #channels if intent is unclear.
     - Return only the rewritten text with no analysis or commentary.
+    - The user message contains the raw transcript text to rewrite.
 
     Rewrite context:
     {{#target_app}}App: {{target_app}}
@@ -19,12 +20,8 @@ enum TranscriptRewritePrompt {
     {{/instructions}}{{#common_terms}}Common terms:
     {{common_terms}}
     {{/common_terms}}
-
-    Transcript:
-    {{transcript}}
     """
     private static let allowedInterpolationKeys: Set<String> = [
-        "transcript",
         "instructions",
         "target_app",
         "common_terms"
@@ -52,7 +49,16 @@ enum TranscriptRewritePrompt {
     }
 
     static func customTemplate(settings: AppSettingsProtocol) -> String? {
-        settings.customRewritePromptTemplate
+        guard let template = settings.customRewritePromptTemplate else {
+            return nil
+        }
+
+        guard validateTemplate(template) == nil else {
+            settings.customRewritePromptTemplate = nil
+            return nil
+        }
+
+        return template
     }
 
     static func customTemplate(defaults: UserDefaults = .standard) -> String? {
@@ -99,7 +105,6 @@ enum TranscriptRewritePrompt {
         let nsRange = NSRange(template.startIndex..., in: template)
         let matches = tokenRegex.matches(in: template, range: nsRange)
         var sectionStack: [String] = []
-        var hasTranscriptPlaceholder = false
 
         for match in matches {
             guard let tokenRange = Range(match.range(at: 1), in: template) else {
@@ -135,18 +140,10 @@ enum TranscriptRewritePrompt {
             guard allowedInterpolationKeys.contains(token) else {
                 return "Unsupported placeholder '{{\(token)}}'."
             }
-
-            if token == "transcript" {
-                hasTranscriptPlaceholder = true
-            }
         }
 
         if let openSection = sectionStack.last {
             return "Missing closing section tag for '{{#\(openSection)}}'."
-        }
-
-        guard hasTranscriptPlaceholder else {
-            return "Template must include '{{transcript}}'."
         }
 
         let withoutTokens = tokenRegex.stringByReplacingMatches(in: template, range: nsRange, withTemplate: "")
@@ -154,11 +151,9 @@ enum TranscriptRewritePrompt {
             return "Template has malformed placeholder braces."
         }
 
-        let sampleTranscript = "Sample transcript text."
         let renderedWithAllVariables = renderTemplate(
             template,
             variables: [
-                "transcript": sampleTranscript,
                 "instructions": "Use a concise style.",
                 "target_app": "Slack",
                 "common_terms": "LLM\nPyTorch"
@@ -166,7 +161,7 @@ enum TranscriptRewritePrompt {
         )
         let renderedWithoutOptionalVariables = renderTemplate(
             template,
-            variables: ["transcript": sampleTranscript]
+            variables: [:]
         )
 
         if renderedWithAllVariables.contains("{{")
@@ -176,39 +171,27 @@ enum TranscriptRewritePrompt {
             return "Template has unresolved placeholders after rendering."
         }
 
-        if !renderedWithAllVariables.contains(sampleTranscript)
-            || !renderedWithoutOptionalVariables.contains(sampleTranscript) {
-            return "Template failed to insert transcript text."
-        }
-
-        let parts = renderedWithAllVariables.components(separatedBy: "\n\n")
-        let system = parts.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let user = parts.dropFirst().joined(separator: "\n\n").trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if system.isEmpty || user.isEmpty {
-            return "Template must include system and user sections separated by a blank line."
+        if renderedWithoutOptionalVariables.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "Template must render non-empty system instructions."
         }
 
         return nil
     }
 
-    /// Renders the rewrite prompt template, returning (systemMessage, userMessage).
+    /// Renders the rewrite prompt template as the system message.
     static func render(
-        transcript: String,
         instructions: String? = nil,
         targetApp: String? = nil,
         commonTerms: [String] = [],
         templateOverride: String? = nil,
         settings: AppSettingsProtocol
-    ) -> (system: String, user: String) {
+    ) -> String {
         let normalizedInstructions = (instructions ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedCommonTerms = commonTerms
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
 
-        var vars: [String: String] = [
-            "transcript": transcript
-        ]
+        var vars: [String: String] = [:]
         if !normalizedInstructions.isEmpty {
             vars["instructions"] = normalizedInstructions
         }
@@ -223,26 +206,17 @@ enum TranscriptRewritePrompt {
         let template = validateTemplate(candidateTemplate) == nil ? candidateTemplate : defaultTemplate()
         let rendered = renderTemplate(template, variables: vars)
 
-        // Split on the first blank line — everything before is the system message,
-        // everything after is the user message.
-        let parts = rendered.components(separatedBy: "\n\n")
-        let system = parts.first ?? ""
-        let user = parts.dropFirst().joined(separator: "\n\n")
-
-        return (system.trimmingCharacters(in: .whitespacesAndNewlines),
-                user.trimmingCharacters(in: .whitespacesAndNewlines))
+        return rendered.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func render(
-        transcript: String,
         instructions: String? = nil,
         targetApp: String? = nil,
         commonTerms: [String] = [],
         templateOverride: String? = nil,
         defaults: UserDefaults = .standard
-    ) -> (system: String, user: String) {
+    ) -> String {
         render(
-            transcript: transcript,
             instructions: instructions,
             targetApp: targetApp,
             commonTerms: commonTerms,

@@ -29,8 +29,10 @@ struct TranscriptRewritePromptTests {
         #expect(template.contains("Preserve tokens starting with @, /, or #."))
         #expect(template.contains("follow app-specific patterns for mentions, commands, and channels"))
         #expect(template.contains("Do not add @mentions, /commands, or #channels if intent is unclear."))
+        #expect(template.contains("The user message contains the raw transcript text to rewrite."))
         #expect(template.contains("{{#common_terms}}"))
         #expect(template.contains("{{common_terms}}"))
+        #expect(!template.contains("{{transcript}}"))
     }
 
     @Test("resource bundle resolver finds packaged app resources")
@@ -70,24 +72,20 @@ struct TranscriptRewritePromptTests {
         #expect(resolved?.standardizedFileURL == bundleURL.standardizedFileURL)
     }
 
-    @Test("validation fails when transcript placeholder is missing")
-    func validationFailsWhenTranscriptPlaceholderMissing() {
+    @Test("validation allows template without transcript placeholder")
+    func validationAllowsTemplateWithoutTranscriptPlaceholder() {
         let template = """
         System instructions.
-
-        Rewrite without transcript variable.
         """
 
         let validationError = TranscriptRewritePrompt.validateTemplate(template)
-        #expect(validationError == "Template must include '{{transcript}}'.")
+        #expect(validationError == nil)
     }
 
     @Test("validation fails for unsupported placeholder")
     func validationFailsForUnsupportedPlaceholder() {
         let template = """
         System instructions.
-
-        Transcript: {{transcript}}
         Foo: {{foo}}
         """
 
@@ -99,11 +97,9 @@ struct TranscriptRewritePromptTests {
     func validationSupportsCommonTermsPlaceholderAndSection() {
         let template = """
         System instructions.
-
         {{#common_terms}}Preferred terms:
         {{common_terms}}
         {{/common_terms}}
-        Transcript: {{transcript}}
         """
 
         let validationError = TranscriptRewritePrompt.validateTemplate(template)
@@ -115,116 +111,130 @@ struct TranscriptRewritePromptTests {
         withDefaults { defaults in
             let customTemplate = """
             System rewrite policy.
-
             {{#instructions}}Instruction: {{instructions}}
             {{/instructions}}{{#target_app}}Target app: {{target_app}}
-            {{/target_app}}Transcript: {{transcript}}
+            {{/target_app}}
             """
 
             #expect(TranscriptRewritePrompt.validateTemplate(customTemplate) == nil)
             TranscriptRewritePrompt.setCustomTemplate(customTemplate, defaults: defaults)
 
             let rendered = TranscriptRewritePrompt.render(
-                transcript: "hello world",
                 instructions: "Make this concise.",
                 targetApp: "Slack",
                 defaults: defaults
             )
 
-            #expect(rendered.system == "System rewrite policy.")
-            #expect(rendered.user.contains("Make this concise."))
-            #expect(rendered.user.contains("Slack"))
-            #expect(rendered.user.contains("hello world"))
+            #expect(rendered.contains("System rewrite policy."))
+            #expect(rendered.contains("Make this concise."))
+            #expect(rendered.contains("Slack"))
 
             let withoutOptionalValues = TranscriptRewritePrompt.render(
-                transcript: "hello world",
                 instructions: nil,
                 targetApp: nil,
                 defaults: defaults
             )
 
-            #expect(!withoutOptionalValues.user.contains("Instruction:"))
-            #expect(!withoutOptionalValues.user.contains("Target app:"))
-            #expect(withoutOptionalValues.user.contains("hello world"))
+            #expect(!withoutOptionalValues.contains("Instruction:"))
+            #expect(!withoutOptionalValues.contains("Target app:"))
         }
     }
 
     @Test("render includes common terms when provided")
     func renderIncludesCommonTermsWhenProvided() {
         let rendered = TranscriptRewritePrompt.render(
-            transcript: "fix lmm typo",
             instructions: "Keep it concise.",
             targetApp: "Cursor",
             commonTerms: ["LLM", "PyTorch"]
         )
 
-        #expect(rendered.user.contains("Common terms:"))
-        #expect(rendered.user.contains("LLM"))
-        #expect(rendered.user.contains("PyTorch"))
+        #expect(rendered.contains("Common terms:"))
+        #expect(rendered.contains("LLM"))
+        #expect(rendered.contains("PyTorch"))
     }
 
     @Test("render omits common terms section when terms are empty")
     func renderOmitsCommonTermsSectionWhenTermsEmpty() {
         let rendered = TranscriptRewritePrompt.render(
-            transcript: "plain transcript",
             instructions: nil,
             targetApp: nil,
             commonTerms: []
         )
 
-        #expect(!rendered.user.contains("Common terms:"))
+        #expect(!rendered.contains("Common terms:"))
     }
 
     @Test("templateIncludesCommonTermsPlaceholder detects interpolation token")
     func templateIncludesCommonTermsPlaceholderDetectsInterpolationToken() {
         #expect(
             TranscriptRewritePrompt.templateIncludesCommonTermsPlaceholder(
-                "System\\n\\n{{#common_terms}}x{{/common_terms}}\\n{{transcript}}"
+                "System\\n\\n{{#common_terms}}x{{/common_terms}}"
             ) == false
         )
         #expect(
             TranscriptRewritePrompt.templateIncludesCommonTermsPlaceholder(
-                "System\\n\\n{{common_terms}}\\n{{transcript}}"
+                "System\\n\\n{{common_terms}}"
             )
         )
         #expect(
             !TranscriptRewritePrompt.templateIncludesCommonTermsPlaceholder(
-                "System\\n\\n{{transcript}}"
+                "System"
             )
         )
+    }
+
+    @Test("validation fails for transcript placeholder")
+    func validationFailsForTranscriptPlaceholder() {
+        let template = """
+        System instructions.
+        Transcript: {{transcript}}
+        """
+
+        let validationError = TranscriptRewritePrompt.validateTemplate(template)
+        #expect(validationError == "Unsupported placeholder '{{transcript}}'.")
     }
 
     @Test("validation fails for legacy user_prompt placeholder")
     func validationFailsForLegacyUserPromptPlaceholder() {
         let legacyTemplate = """
         System rewrite policy.
-
         {{#user_prompt}}Instruction: {{user_prompt}}{{/user_prompt}}
-        Transcript: {{transcript}}
         """
 
         let validationError = TranscriptRewritePrompt.validateTemplate(legacyTemplate)
         #expect(validationError == "Unsupported section '{{#user_prompt}}'.")
     }
 
+    @Test("custom template clears stored invalid template")
+    func customTemplateClearsStoredInvalidTemplate() {
+        withDefaults { defaults in
+            defaults.set(
+                "Broken template {{transcript}}",
+                forKey: Constants.rewritePromptTemplateKey
+            )
+
+            #expect(TranscriptRewritePrompt.customTemplate(defaults: defaults) == nil)
+            #expect(defaults.string(forKey: Constants.rewritePromptTemplateKey) == nil)
+        }
+    }
+
     @Test("render falls back to default template when stored template is invalid")
     func renderFallsBackToDefaultTemplateWhenStoredTemplateInvalid() {
         withDefaults { defaults in
             defaults.set(
-                "Broken template {{#instructions}} {{invalid}}",
+                "Broken template {{transcript}}",
                 forKey: Constants.rewritePromptTemplateKey
             )
 
             let rendered = TranscriptRewritePrompt.render(
-                transcript: "sample text",
                 instructions: nil,
                 targetApp: nil,
                 defaults: defaults
             )
 
-            #expect(!rendered.system.isEmpty)
-            #expect(rendered.user.contains("sample text"))
-            #expect(!rendered.user.contains("{{"))
+            #expect(!rendered.isEmpty)
+            #expect(rendered.contains("The user message contains the raw transcript text to rewrite."))
+            #expect(!rendered.contains("{{"))
         }
     }
 }
