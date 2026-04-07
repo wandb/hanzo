@@ -16,6 +16,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastObservedHUDDisplayMode: HUDDisplayMode?
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
+    private var menuBarToastPanel: NSPanel?
+    private var menuBarToastDismissTask: Task<Void, Never>?
+    private var lastObservedMenuBarToastID: UUID?
     private let statusBarImage: NSImage = {
         if Constants.isDevBuild {
             return MenuBarIcon.radialWaveform(
@@ -126,6 +129,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationWillTerminate(_ notification: Notification) {
         stopStateObservation()
+        menuBarToastDismissTask?.cancel()
+        menuBarToastPanel?.orderOut(nil)
         orchestrator.shutdownAndWait()
         if let localEventMonitor { NSEvent.removeMonitor(localEventMonitor) }
         if let globalEventMonitor { NSEvent.removeMonitor(globalEventMonitor) }
@@ -144,6 +149,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func statusItemClicked() {
+        hideMenuBarToast()
         if appState.dictationState == .listening || appState.dictationState == .forging {
             togglePanel()
         } else {
@@ -349,8 +355,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = appState.isPopoverPresented
             _ = appState.errorMessage
             _ = appState.hudDisplayMode
+            _ = appState.menuBarToast
             updateMenuBarIcon()
             syncPanelVisibility()
+            syncMenuBarToast()
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.observeStateChanges()
@@ -409,6 +417,96 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 hasErrorMessage: appState.errorMessage != nil
             ),
             height: baseSize.height
+        )
+    }
+
+    private func syncMenuBarToast() {
+        guard let toast = appState.menuBarToast else {
+            hideMenuBarToast()
+            return
+        }
+        guard toast.id != lastObservedMenuBarToastID else { return }
+        showMenuBarToast(toast)
+    }
+
+    private func showMenuBarToast(_ toast: MenuBarToast) {
+        guard let button = statusItem.button else { return }
+
+        let panel = menuBarToastPanel ?? makeMenuBarToastPanel()
+        let rootView = MenuBarToastView(
+            message: toast.message,
+            colorScheme: appState.preferredColorScheme
+        )
+        let hostingController = NSHostingController(rootView: rootView)
+        panel.contentViewController = hostingController
+        hostingController.view.layoutSubtreeIfNeeded()
+
+        let fittingSize = hostingController.view.fittingSize
+        panel.setContentSize(
+            NSSize(
+                width: max(180, fittingSize.width),
+                height: max(34, fittingSize.height)
+            )
+        )
+        positionMenuBarToast(panel, anchoredTo: button)
+        panel.orderFrontRegardless()
+
+        lastObservedMenuBarToastID = toast.id
+        menuBarToastDismissTask?.cancel()
+        menuBarToastDismissTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_800_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self else { return }
+                guard self.appState.menuBarToast?.id == toast.id else { return }
+                self.appState.menuBarToast = nil
+            }
+        }
+    }
+
+    private func hideMenuBarToast() {
+        menuBarToastPanel?.orderOut(nil)
+    }
+
+    private func makeMenuBarToastPanel() -> NSPanel {
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 220, height: 36),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: true
+        )
+        panel.level = .statusBar
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.ignoresMouseEvents = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle]
+        panel.isMovableByWindowBackground = false
+        menuBarToastPanel = panel
+        return panel
+    }
+
+    private func positionMenuBarToast(_ panel: NSPanel, anchoredTo button: NSStatusBarButton) {
+        guard let window = button.window else { return }
+
+        let buttonFrameInWindow = button.convert(button.bounds, to: nil)
+        let buttonFrameOnScreen = window.convertToScreen(buttonFrameInWindow)
+        let screenFrame = window.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? buttonFrameOnScreen
+        let panelSize = panel.frame.size
+
+        let unclampedX = buttonFrameOnScreen.midX - panelSize.width / 2
+        let x = min(
+            max(unclampedX, screenFrame.minX + 8),
+            screenFrame.maxX - panelSize.width - 8
+        )
+        let y = max(
+            screenFrame.minY + 8,
+            buttonFrameOnScreen.minY - panelSize.height - 6
+        )
+
+        panel.setFrame(
+            NSRect(origin: NSPoint(x: x, y: y), size: panelSize),
+            display: true
         )
     }
 

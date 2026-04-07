@@ -1237,6 +1237,7 @@ struct DictationOrchestratorTests {
         #expect(sut.mockRecentDictations.entries.first?.text == transcript)
         #expect(sut.mockRecentDictations.entries.first?.insertOutcome == .inserted)
         #expect(sut.mockText.copiedTexts.isEmpty)
+        #expect(sut.appState.menuBarToast == nil)
     }
 
     @Test("Insertion failure copies to clipboard and stores failed history")
@@ -1264,6 +1265,7 @@ struct DictationOrchestratorTests {
         #expect(fellBack)
         #expect(sut.mockText.returnSimulated == false)
         #expect(sut.mockRecentDictations.entries.first?.insertOutcome == .failed)
+        #expect(sut.appState.menuBarToast?.message == "Couldn’t insert text. It’s in your clipboard.")
     }
 
     @Test("No target app triggers failure fallback and stores failed history")
@@ -1289,6 +1291,7 @@ struct DictationOrchestratorTests {
         #expect(sut.mockText.insertedTexts.isEmpty)
         #expect(sut.mockText.returnSimulated == false)
         #expect(sut.mockRecentDictations.entries.first?.insertOutcome == .failed)
+        #expect(sut.appState.menuBarToast?.message == "Couldn’t insert text. It’s in your clipboard.")
         #expect(
             sut.mockLogger.warnMessages.contains {
                 $0.contains("Text insertion failed (noTargetAppAvailable); copied forged text to clipboard")

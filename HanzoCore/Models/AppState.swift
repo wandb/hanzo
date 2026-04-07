@@ -9,6 +9,16 @@ enum DictationState: String {
     case error
 }
 
+struct MenuBarToast: Identifiable, Equatable {
+    let id: UUID
+    let message: String
+
+    init(message: String, id: UUID = UUID()) {
+        self.id = id
+        self.message = message
+    }
+}
+
 @Observable
 final class AppState {
     var dictationState: DictationState = .idle
@@ -23,6 +33,7 @@ final class AppState {
     var showsHoldIndicator: Bool = false
     var autoSubmitMode: AutoSubmitMode
     var recentDictations: [RecentDictationEntry] = []
+    var menuBarToast: MenuBarToast?
     var appearanceMode: AppearanceMode
     var hudDisplayMode: HUDDisplayMode
     var asrProvider: ASRProvider

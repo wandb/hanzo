@@ -61,6 +61,14 @@ struct AppStateTests {
         }
     }
 
+    @Test("menuBarToast defaults to nil")
+    func menuBarToastDefault() {
+        withSettings { settings in
+            let state = AppState(settings: settings)
+            #expect(state.menuBarToast == nil)
+        }
+    }
+
     @Test("asrProvider defaults to configured default")
     func asrProviderDefault() {
         withSettings { settings in

@@ -573,6 +573,9 @@ final class DictationOrchestrator {
                     if case let .failed(reason) = insertionResult {
                         await MainActor.run {
                             textInsertion.copyToClipboard(finalText)
+                            appState.menuBarToast = MenuBarToast(
+                                message: "Couldn’t insert text. It’s in your clipboard."
+                            )
                         }
                         logger.warn(
                             "Text insertion failed (\(reason.rawValue)); copied forged text to clipboard"
