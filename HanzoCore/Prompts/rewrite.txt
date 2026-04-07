@@ -6,6 +6,7 @@ Follow these guidelines:
 - When intent is explicit, follow app-specific patterns for mentions, commands, and channels.
 - Do not add @mentions, /commands, or #channels if intent is unclear.
 - Return only the rewritten text with no analysis or commentary.
+- The user message contains the raw transcript text to rewrite.
 
 Rewrite context:
 {{#target_app}}App: {{target_app}}
@@ -14,6 +15,3 @@ Rewrite context:
 {{/instructions}}{{#common_terms}}Common terms:
 {{common_terms}}
 {{/common_terms}}
-
-Transcript:
-{{transcript}}

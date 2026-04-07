@@ -39,10 +39,10 @@ struct SettingsView: View {
     private let segmentedInputWidth: CGFloat = 220
     private let menuInputWidth: CGFloat = 180
     private let postProcessingHelpText = "Automatically edits transcribed text for clarity and formatting using your local model. App-specific instructions override global defaults."
-    private let instructionsHelpText = "Global auto edit instructions inserted into the template as {{instructions}}. Used only when an app has no app-specific instruction source."
+    private let instructionsHelpText = "Global auto edit instructions inserted into the system template as {{instructions}}. Used only when an app has no app-specific instruction source."
     private let commonTermsHelpText = "Preferred vocabulary for rewrite. One term per line. Injected only when your template includes {{common_terms}}."
     private let appCommonTermsHelpText = "Per-app terms are merged after global terms. One term per line."
-    private let rewriteTemplateHelpText = "Template used to build the auto edit request for the local model."
+    private let rewriteTemplateHelpText = "System prompt template used to guide the local auto edit model. The transcript is sent separately as the user message."
     private let localLLMContextHelpText = "Maximum context window for local auto edit inference. If the app is using too much memory, try lowering this setting."
     private let silenceTimeoutHelpText = "Stop recording after this much silence. Off disables it."
     private let autoSubmitHelpText = "Press Enter or Cmd+Enter automatically after insert."
@@ -604,7 +604,7 @@ struct SettingsView: View {
                             scheduleRewriteTemplateValidation()
                         }
 
-                    Text("Placeholders: {{transcript}}, {{instructions}}, {{target_app}}, {{common_terms}}, {{#instructions}}...{{/instructions}}, {{#target_app}}...{{/target_app}}, {{#common_terms}}...{{/common_terms}}")
+                    Text("Placeholders: {{instructions}}, {{target_app}}, {{common_terms}}, {{#instructions}}...{{/instructions}}, {{#target_app}}...{{/target_app}}, {{#common_terms}}...{{/common_terms}}")
                         .font(.system(.caption, design: .rounded))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
