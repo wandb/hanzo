@@ -655,17 +655,18 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
             settings: settings
         )
 
-        let userMessage = "/no_think\n" + transcript
+        let systemPrompt = "/no_think\n" + prompt
+        let userMessage = transcript
         let maxTokens = rewriteMaxTokens(
             transcript: transcript,
-            systemPrompt: prompt,
+            systemPrompt: systemPrompt,
             userMessage: userMessage
         )
 
         let requestBody = ChatCompletionRequest(
             model: "qwen3-4b",
             messages: [
-                ChatMessage(role: "system", content: prompt),
+                ChatMessage(role: "system", content: systemPrompt),
                 ChatMessage(role: "user", content: userMessage)
             ],
             temperature: 0.2,

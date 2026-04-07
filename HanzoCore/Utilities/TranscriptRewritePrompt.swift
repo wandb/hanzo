@@ -202,8 +202,12 @@ enum TranscriptRewritePrompt {
             vars["common_terms"] = normalizedCommonTerms.joined(separator: "\n")
         }
 
-        let candidateTemplate = templateOverride ?? activeTemplate(settings: settings)
-        let template = validateTemplate(candidateTemplate) == nil ? candidateTemplate : defaultTemplate()
+        let template: String
+        if let templateOverride {
+            template = validateTemplate(templateOverride) == nil ? templateOverride : defaultTemplate()
+        } else {
+            template = activeTemplate(settings: settings)
+        }
         let rendered = renderTemplate(template, variables: vars)
 
         return rendered.trimmingCharacters(in: .whitespacesAndNewlines)
