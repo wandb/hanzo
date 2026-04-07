@@ -560,7 +560,7 @@ final class DictationOrchestrator {
                         }
                     } else {
                         logger.warn("Text insertion failed: no target app available")
-                        insertionResult = .failed(.targetAppActivationFailed)
+                        insertionResult = .failed(.noTargetAppAvailable)
                     }
 
                     await recordRecentDictation(

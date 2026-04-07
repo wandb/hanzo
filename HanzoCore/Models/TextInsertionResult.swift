@@ -5,6 +5,7 @@ enum TextInsertionFailureReason: String, Codable, Equatable {
     case noFocusedElement
     case focusedElementNotEditable
     case pasteEventCreationFailed
+    case noTargetAppAvailable
     case targetAppActivationFailed
 }
 

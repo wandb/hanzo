@@ -1289,6 +1289,11 @@ struct DictationOrchestratorTests {
         #expect(sut.mockText.insertedTexts.isEmpty)
         #expect(sut.mockText.returnSimulated == false)
         #expect(sut.mockRecentDictations.entries.first?.insertOutcome == .failed)
+        #expect(
+            sut.mockLogger.warnMessages.contains {
+                $0.contains("Text insertion failed (noTargetAppAvailable); copied forged text to clipboard")
+            }
+        )
     }
 
     @Test("Activation failure triggers fallback without paste attempt")
