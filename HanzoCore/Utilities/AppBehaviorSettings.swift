@@ -98,18 +98,26 @@ enum AppBehaviorSettings {
     private static let decoder = JSONDecoder()
 
     static var supportedApps: [SupportedAppBehavior] {
-        supportedApps(defaults: .standard)
+        supportedApps(settings: AppSettings.live)
     }
 
     static func supportedApps(defaults: UserDefaults = .standard) -> [SupportedAppBehavior] {
-        builtInApps + loadCustomApps(defaults: defaults).sorted {
+        supportedApps(settings: settings(from: defaults))
+    }
+
+    static func supportedApps(settings: AppSettingsProtocol) -> [SupportedAppBehavior] {
+        builtInApps + loadCustomApps(settings: settings).sorted {
             $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
         }
     }
 
     static func isSupported(bundleIdentifier: String?, defaults: UserDefaults = .standard) -> Bool {
+        isSupported(bundleIdentifier: bundleIdentifier, settings: settings(from: defaults))
+    }
+
+    static func isSupported(bundleIdentifier: String?, settings: AppSettingsProtocol) -> Bool {
         guard let bundleIdentifier else { return false }
-        return supportedApps(defaults: defaults).contains { $0.bundleIdentifier == bundleIdentifier }
+        return supportedApps(settings: settings).contains { $0.bundleIdentifier == bundleIdentifier }
     }
 
     @discardableResult
@@ -117,6 +125,19 @@ enum AppBehaviorSettings {
         bundleIdentifier: String,
         displayName: String,
         defaults: UserDefaults = .standard
+    ) -> AddCustomAppResult {
+        addCustomApp(
+            bundleIdentifier: bundleIdentifier,
+            displayName: displayName,
+            settings: settings(from: defaults)
+        )
+    }
+
+    @discardableResult
+    static func addCustomApp(
+        bundleIdentifier: String,
+        displayName: String,
+        settings: AppSettingsProtocol
     ) -> AddCustomAppResult {
         let cleanedBundleIdentifier = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanedBundleIdentifier.isEmpty else {
@@ -130,14 +151,14 @@ enum AppBehaviorSettings {
             return .alreadyExists
         }
 
-        var customApps = loadStoredCustomApps(defaults: defaults)
+        var customApps = loadStoredCustomApps(settings: settings)
         if let existingIndex = customApps.firstIndex(where: { $0.bundleIdentifier == cleanedBundleIdentifier }) {
             if customApps[existingIndex].displayName != finalDisplayName {
                 customApps[existingIndex] = StoredCustomAppBehavior(
                     bundleIdentifier: cleanedBundleIdentifier,
                     displayName: finalDisplayName
                 )
-                saveStoredCustomApps(customApps, defaults: defaults)
+                saveStoredCustomApps(customApps, settings: settings)
                 return .updated
             }
 
@@ -150,7 +171,7 @@ enum AppBehaviorSettings {
                 displayName: finalDisplayName
             )
         )
-        saveStoredCustomApps(customApps, defaults: defaults)
+        saveStoredCustomApps(customApps, settings: settings)
         return .added
     }
 
@@ -160,7 +181,20 @@ enum AppBehaviorSettings {
         removeOverride: Bool = true,
         defaults: UserDefaults = .standard
     ) -> Bool {
-        var customApps = loadStoredCustomApps(defaults: defaults)
+        removeCustomApp(
+            bundleIdentifier: bundleIdentifier,
+            removeOverride: removeOverride,
+            settings: settings(from: defaults)
+        )
+    }
+
+    @discardableResult
+    static func removeCustomApp(
+        bundleIdentifier: String,
+        removeOverride: Bool = true,
+        settings: AppSettingsProtocol
+    ) -> Bool {
+        var customApps = loadStoredCustomApps(settings: settings)
         let originalCount = customApps.count
         customApps.removeAll { $0.bundleIdentifier == bundleIdentifier }
 
@@ -168,79 +202,104 @@ enum AppBehaviorSettings {
             return false
         }
 
-        saveStoredCustomApps(customApps, defaults: defaults)
+        saveStoredCustomApps(customApps, settings: settings)
         if removeOverride {
-            saveOverride(nil, for: bundleIdentifier, defaults: defaults)
+            saveOverride(nil, for: bundleIdentifier, settings: settings)
         }
 
         return true
     }
 
     static func globalAutoSubmitMode(defaults: UserDefaults = .standard) -> AutoSubmitMode {
-        if let raw = defaults.string(forKey: Constants.autoSubmitKey) {
-            return AutoSubmitMode(rawValue: raw) ?? Constants.defaultAutoSubmitMode
-        }
-        return Constants.defaultAutoSubmitMode
+        globalAutoSubmitMode(settings: settings(from: defaults))
+    }
+
+    static func globalAutoSubmitMode(settings: AppSettingsProtocol) -> AutoSubmitMode {
+        settings.globalAutoSubmitMode
     }
 
     static func globalSilenceTimeout(defaults: UserDefaults = .standard) -> Double {
-        let storedTimeout = defaults.object(forKey: Constants.silenceTimeoutKey)
-        return storedTimeout != nil
-            ? defaults.double(forKey: Constants.silenceTimeoutKey)
-            : Constants.defaultSilenceTimeout
+        globalSilenceTimeout(settings: settings(from: defaults))
+    }
+
+    static func globalSilenceTimeout(settings: AppSettingsProtocol) -> Double {
+        settings.globalSilenceTimeout
     }
 
     static func setGlobalAutoSubmitMode(_ mode: AutoSubmitMode, defaults: UserDefaults = .standard) {
-        defaults.set(mode.rawValue, forKey: Constants.autoSubmitKey)
+        setGlobalAutoSubmitMode(mode, settings: settings(from: defaults))
+    }
+
+    static func setGlobalAutoSubmitMode(_ mode: AutoSubmitMode, settings: AppSettingsProtocol) {
+        settings.globalAutoSubmitMode = mode
     }
 
     static func setGlobalSilenceTimeout(_ timeout: Double, defaults: UserDefaults = .standard) {
-        defaults.set(timeout, forKey: Constants.silenceTimeoutKey)
+        setGlobalSilenceTimeout(timeout, settings: settings(from: defaults))
+    }
+
+    static func setGlobalSilenceTimeout(_ timeout: Double, settings: AppSettingsProtocol) {
+        settings.globalSilenceTimeout = timeout
     }
 
     static func globalPostProcessingMode(defaults: UserDefaults = .standard) -> TranscriptPostProcessingMode {
-        if let raw = defaults.string(forKey: Constants.transcriptPostProcessingModeKey) {
-            if let mode = TranscriptPostProcessingMode(rawValue: raw) {
-                return mode
-            }
-        }
-        return Constants.defaultTranscriptPostProcessingMode
+        globalPostProcessingMode(settings: settings(from: defaults))
+    }
+
+    static func globalPostProcessingMode(settings: AppSettingsProtocol) -> TranscriptPostProcessingMode {
+        settings.globalTranscriptPostProcessingMode
     }
 
     static func setGlobalPostProcessingMode(
         _ mode: TranscriptPostProcessingMode,
         defaults: UserDefaults = .standard
     ) {
-        defaults.set(mode.rawValue, forKey: Constants.transcriptPostProcessingModeKey)
+        setGlobalPostProcessingMode(mode, settings: settings(from: defaults))
+    }
+
+    static func setGlobalPostProcessingMode(
+        _ mode: TranscriptPostProcessingMode,
+        settings: AppSettingsProtocol
+    ) {
+        settings.globalTranscriptPostProcessingMode = mode
     }
 
     static func globalLLMPostProcessingPrompt(defaults: UserDefaults = .standard) -> String {
-        let stored = defaults.string(forKey: Constants.llmPostProcessingPromptKey)
-        return stored?.trimmingCharacters(in: .whitespacesAndNewlines)
-            ?? Constants.defaultLLMPostProcessingPrompt
+        globalLLMPostProcessingPrompt(settings: settings(from: defaults))
+    }
+
+    static func globalLLMPostProcessingPrompt(settings: AppSettingsProtocol) -> String {
+        settings.globalLLMPostProcessingPrompt
     }
 
     static func setGlobalLLMPostProcessingPrompt(
         _ prompt: String,
         defaults: UserDefaults = .standard
     ) {
-        defaults.set(
-            prompt.trimmingCharacters(in: .whitespacesAndNewlines),
-            forKey: Constants.llmPostProcessingPromptKey
-        )
+        setGlobalLLMPostProcessingPrompt(prompt, settings: settings(from: defaults))
+    }
+
+    static func setGlobalLLMPostProcessingPrompt(
+        _ prompt: String,
+        settings: AppSettingsProtocol
+    ) {
+        settings.globalLLMPostProcessingPrompt = prompt
     }
 
     static func globalCommonTerms(defaults: UserDefaults = .standard) -> String {
-        defaults.string(forKey: Constants.commonTermsKey) ?? ""
+        globalCommonTerms(settings: settings(from: defaults))
+    }
+
+    static func globalCommonTerms(settings: AppSettingsProtocol) -> String {
+        settings.globalCommonTerms
     }
 
     static func setGlobalCommonTerms(_ terms: String, defaults: UserDefaults = .standard) {
-        let normalized = terms.replacingOccurrences(of: "\r\n", with: "\n")
-        if normalized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            defaults.removeObject(forKey: Constants.commonTermsKey)
-            return
-        }
-        defaults.set(normalized, forKey: Constants.commonTermsKey)
+        setGlobalCommonTerms(terms, settings: settings(from: defaults))
+    }
+
+    static func setGlobalCommonTerms(_ terms: String, settings: AppSettingsProtocol) {
+        settings.globalCommonTerms = terms
     }
 
     static func builtInDefaultLLMPostProcessingPrompt(for bundleIdentifier: String) -> String? {
@@ -248,7 +307,11 @@ enum AppBehaviorSettings {
     }
 
     static func loadOverrides(defaults: UserDefaults = .standard) -> [String: AppBehaviorOverride] {
-        guard let data = defaults.data(forKey: Constants.appBehaviorOverridesKey) else {
+        loadOverrides(settings: settings(from: defaults))
+    }
+
+    static func loadOverrides(settings: AppSettingsProtocol) -> [String: AppBehaviorOverride] {
+        guard let data = settings.appBehaviorOverridesData else {
             return [:]
         }
 
@@ -260,23 +323,41 @@ enum AppBehaviorSettings {
     }
 
     static func override(for bundleIdentifier: String, defaults: UserDefaults = .standard) -> AppBehaviorOverride? {
-        loadOverrides(defaults: defaults)[bundleIdentifier]
+        override(for: bundleIdentifier, settings: settings(from: defaults))
+    }
+
+    static func override(for bundleIdentifier: String, settings: AppSettingsProtocol) -> AppBehaviorOverride? {
+        loadOverrides(settings: settings)[bundleIdentifier]
     }
 
     static func shouldPersistHUDSettingsToAppOverride(
         for bundleIdentifier: String?,
         defaults: UserDefaults = .standard
     ) -> Bool {
-        hudSettingsOverride(for: bundleIdentifier, defaults: defaults) != nil
+        shouldPersistHUDSettingsToAppOverride(for: bundleIdentifier, settings: settings(from: defaults))
+    }
+
+    static func shouldPersistHUDSettingsToAppOverride(
+        for bundleIdentifier: String?,
+        settings: AppSettingsProtocol
+    ) -> Bool {
+        hudSettingsOverride(for: bundleIdentifier, settings: settings) != nil
     }
 
     static func hudSettingsOverride(
         for bundleIdentifier: String?,
         defaults: UserDefaults = .standard
     ) -> (bundleIdentifier: String, appOverride: AppBehaviorOverride)? {
+        hudSettingsOverride(for: bundleIdentifier, settings: settings(from: defaults))
+    }
+
+    static func hudSettingsOverride(
+        for bundleIdentifier: String?,
+        settings: AppSettingsProtocol
+    ) -> (bundleIdentifier: String, appOverride: AppBehaviorOverride)? {
         guard let bundleIdentifier,
-              isSupported(bundleIdentifier: bundleIdentifier, defaults: defaults),
-              let appOverride = override(for: bundleIdentifier, defaults: defaults),
+              isSupported(bundleIdentifier: bundleIdentifier, settings: settings),
+              let appOverride = override(for: bundleIdentifier, settings: settings),
               appOverride.hasOverrides else {
             return nil
         }
@@ -289,7 +370,15 @@ enum AppBehaviorSettings {
         for bundleIdentifier: String,
         defaults: UserDefaults = .standard
     ) {
-        var overrides = loadOverrides(defaults: defaults)
+        saveOverride(appOverride, for: bundleIdentifier, settings: settings(from: defaults))
+    }
+
+    static func saveOverride(
+        _ appOverride: AppBehaviorOverride?,
+        for bundleIdentifier: String,
+        settings: AppSettingsProtocol
+    ) {
+        var overrides = loadOverrides(settings: settings)
 
         if let appOverride, appOverride.hasOverrides {
             overrides[bundleIdentifier] = appOverride
@@ -297,21 +386,28 @@ enum AppBehaviorSettings {
             overrides.removeValue(forKey: bundleIdentifier)
         }
 
-        saveOverrides(overrides, defaults: defaults)
+        saveOverrides(overrides, settings: settings)
     }
 
     static func resolvedBehavior(
         for bundleIdentifier: String?,
         defaults: UserDefaults = .standard
     ) -> ResolvedAppBehavior {
-        let globalAutoSubmitMode = globalAutoSubmitMode(defaults: defaults)
-        let globalSilenceTimeout = globalSilenceTimeout(defaults: defaults)
-        let globalPostProcessing = globalPostProcessingMode(defaults: defaults)
-        let globalLLMPrompt = globalLLMPostProcessingPrompt(defaults: defaults)
-        let globalCommonTermsRaw = globalCommonTerms(defaults: defaults)
+        resolvedBehavior(for: bundleIdentifier, settings: settings(from: defaults))
+    }
+
+    static func resolvedBehavior(
+        for bundleIdentifier: String?,
+        settings: AppSettingsProtocol
+    ) -> ResolvedAppBehavior {
+        let globalAutoSubmitMode = globalAutoSubmitMode(settings: settings)
+        let globalSilenceTimeout = globalSilenceTimeout(settings: settings)
+        let globalPostProcessing = globalPostProcessingMode(settings: settings)
+        let globalLLMPrompt = globalLLMPostProcessingPrompt(settings: settings)
+        let globalCommonTermsRaw = globalCommonTerms(settings: settings)
 
         guard let bundleIdentifier,
-              isSupported(bundleIdentifier: bundleIdentifier, defaults: defaults) else {
+              isSupported(bundleIdentifier: bundleIdentifier, settings: settings) else {
             return ResolvedAppBehavior(
                 autoSubmitMode: globalAutoSubmitMode,
                 silenceTimeout: globalSilenceTimeout,
@@ -322,7 +418,7 @@ enum AppBehaviorSettings {
             )
         }
 
-        let appOverride = override(for: bundleIdentifier, defaults: defaults)
+        let appOverride = override(for: bundleIdentifier, settings: settings)
         let resolvedAutoSubmitMode = appOverride?.autoSubmitMode ?? globalAutoSubmitMode
         let resolvedSilenceTimeout = appOverride?.silenceTimeout ?? globalSilenceTimeout
         let resolvedPostProcessing = appOverride?.postProcessingMode ?? globalPostProcessing
@@ -347,20 +443,20 @@ enum AppBehaviorSettings {
 
     private static func saveOverrides(
         _ overrides: [String: AppBehaviorOverride],
-        defaults: UserDefaults
+        settings: AppSettingsProtocol
     ) {
         guard !overrides.isEmpty else {
-            defaults.removeObject(forKey: Constants.appBehaviorOverridesKey)
+            settings.appBehaviorOverridesData = nil
             return
         }
 
         if let encoded = try? encoder.encode(overrides) {
-            defaults.set(encoded, forKey: Constants.appBehaviorOverridesKey)
+            settings.appBehaviorOverridesData = encoded
         }
     }
 
-    private static func loadCustomApps(defaults: UserDefaults = .standard) -> [SupportedAppBehavior] {
-        loadStoredCustomApps(defaults: defaults).map {
+    private static func loadCustomApps(settings: AppSettingsProtocol) -> [SupportedAppBehavior] {
+        loadStoredCustomApps(settings: settings).map {
             SupportedAppBehavior(
                 bundleIdentifier: $0.bundleIdentifier,
                 displayName: $0.displayName,
@@ -369,8 +465,8 @@ enum AppBehaviorSettings {
         }
     }
 
-    private static func loadStoredCustomApps(defaults: UserDefaults) -> [StoredCustomAppBehavior] {
-        guard let data = defaults.data(forKey: Constants.appBehaviorCustomAppsKey) else {
+    private static func loadStoredCustomApps(settings: AppSettingsProtocol) -> [StoredCustomAppBehavior] {
+        guard let data = settings.appBehaviorCustomAppsData else {
             return []
         }
 
@@ -383,15 +479,19 @@ enum AppBehaviorSettings {
 
     private static func saveStoredCustomApps(
         _ customApps: [StoredCustomAppBehavior],
-        defaults: UserDefaults
+        settings: AppSettingsProtocol
     ) {
         guard !customApps.isEmpty else {
-            defaults.removeObject(forKey: Constants.appBehaviorCustomAppsKey)
+            settings.appBehaviorCustomAppsData = nil
             return
         }
 
         if let encoded = try? encoder.encode(customApps) {
-            defaults.set(encoded, forKey: Constants.appBehaviorCustomAppsKey)
+            settings.appBehaviorCustomAppsData = encoded
         }
+    }
+
+    private static func settings(from defaults: UserDefaults) -> AppSettingsProtocol {
+        AppSettings(store: UserDefaultsAppSettingsStore(defaults: defaults))
     }
 }

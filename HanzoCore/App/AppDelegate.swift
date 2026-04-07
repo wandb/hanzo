@@ -13,6 +13,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private var isStateObservationActive = false
+    private var lastObservedHUDDisplayMode: HUDDisplayMode?
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
     private let statusBarImage: NSImage = {
@@ -32,10 +33,19 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }()
     private var updaterController: SPUStandardUpdaterController?
 
-    let appState = AppState()
-    private lazy var orchestrator = DictationOrchestrator(appState: appState)
-    private let hotkeyService = HotkeyService()
+    private let appSettings: AppSettingsProtocol
+    let appState: AppState
+    private lazy var orchestrator = DictationOrchestrator(appState: appState, settings: appSettings)
+    private lazy var hotkeyService = HotkeyService(settings: appSettings)
     private let logger = LoggingService.shared
+
+    public override init() {
+        let settingsStore = UserDefaultsAppSettingsStore(defaults: .standard)
+        let settings = AppSettings(store: settingsStore)
+        self.appSettings = settings
+        self.appState = AppState(settings: settings)
+        super.init()
+    }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         // Create status bar item
@@ -91,6 +101,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Observe state changes for icon and popover updates
+        lastObservedHUDDisplayMode = appState.hudDisplayMode
         startStateObservation()
 
         // Ensure prewarm starts at app launch instead of first dictation toggle.
@@ -143,8 +154,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Transcript Panel
 
     private func makeTranscriptPanel() -> TranscriptPanel {
+        let initialSize = HUDLayout.initialPanelSize(for: appState.hudDisplayMode)
         let panel = TranscriptPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 60),
+            contentRect: NSRect(x: 0, y: 0, width: initialSize.width, height: initialSize.height),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
@@ -158,6 +170,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         let hostingController = NSHostingController(
             rootView: TranscriptPopover(
                 appState: appState,
+                settings: appSettings,
                 onSettingsChanged: { [weak self] in
                     self?.orchestrator.reloadSettings()
                 }
@@ -179,10 +192,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showPanel() {
         guard let panel = transcriptPanel, !panel.isVisible else { return }
         guard let screen = NSScreen.main else { return }
-        panel.setContentSize(NSSize(width: 480, height: 60))
+        let panelSize = currentPanelSize()
+        lastObservedHUDDisplayMode = appState.hudDisplayMode
+        panel.setContentSize(panelSize)
         // Position horizontally centered, ~5% from the bottom of the screen
         let screenFrame = screen.visibleFrame
-        let x = screenFrame.midX - 240
+        let x = screenFrame.midX - panelSize.width / 2
         let y = screenFrame.origin.y + screenFrame.height * 0.05
         panel.setFrameOrigin(NSPoint(x: x, y: y))
         panel.orderFrontRegardless()
@@ -254,6 +269,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let settingsView = SettingsView(
             appState: appState,
+            settings: appSettings,
             onSave: { [weak self] in
                 self?.orchestrator.reloadSettings()
             },
@@ -331,6 +347,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         withObservationTracking {
             _ = appState.dictationState
             _ = appState.isPopoverPresented
+            _ = appState.errorMessage
+            _ = appState.hudDisplayMode
             updateMenuBarIcon()
             syncPanelVisibility()
         } onChange: { [weak self] in
@@ -344,9 +362,54 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         let panelVisible = transcriptPanel?.isVisible ?? false
         if appState.isPopoverPresented && !panelVisible {
             showPanel()
+        } else if appState.isPopoverPresented && panelVisible {
+            syncVisiblePanelLayout()
         } else if !appState.isPopoverPresented && panelVisible {
             hidePanel()
         }
+    }
+
+    private func syncVisiblePanelLayout() {
+        guard let panel = transcriptPanel, panel.isVisible else { return }
+
+        let targetWidth = HUDLayout.panelWidth(
+            for: appState.hudDisplayMode,
+            dictationState: appState.dictationState,
+            hasErrorMessage: appState.errorMessage != nil
+        )
+        let hudModeChanged = lastObservedHUDDisplayMode != appState.hudDisplayMode
+        lastObservedHUDDisplayMode = appState.hudDisplayMode
+
+        let targetHeight: CGFloat
+        if hudModeChanged {
+            targetHeight = HUDLayout.initialPanelSize(for: appState.hudDisplayMode).height
+        } else {
+            targetHeight = panel.frame.height
+        }
+
+        guard abs(panel.frame.width - targetWidth) > 0.5 || abs(panel.frame.height - targetHeight) > 0.5 else {
+            return
+        }
+
+        let newFrame = NSRect(
+            x: panel.frame.midX - targetWidth / 2,
+            y: panel.frame.origin.y,
+            width: targetWidth,
+            height: targetHeight
+        )
+        panel.setFrame(newFrame, display: true)
+    }
+
+    private func currentPanelSize() -> NSSize {
+        let baseSize = HUDLayout.initialPanelSize(for: appState.hudDisplayMode)
+        return NSSize(
+            width: HUDLayout.panelWidth(
+                for: appState.hudDisplayMode,
+                dictationState: appState.dictationState,
+                hasErrorMessage: appState.errorMessage != nil
+            ),
+            height: baseSize.height
+        )
     }
 
     private func isSparkleReadyForUserChecks() -> Bool {
@@ -385,11 +448,11 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // If the user re-enabled in System Settings after opting out, clear the stale flag
         if status == .enabled,
-           UserDefaults.standard.bool(forKey: Constants.launchAtLoginDisabledByUserKey) {
-            UserDefaults.standard.set(false, forKey: Constants.launchAtLoginDisabledByUserKey)
+           appSettings.launchAtLoginDisabledByUser {
+            appSettings.launchAtLoginDisabledByUser = false
         }
 
-        guard !UserDefaults.standard.bool(forKey: Constants.launchAtLoginDisabledByUserKey) else { return }
+        guard !appSettings.launchAtLoginDisabledByUser else { return }
 
         if status != .enabled {
             do {
@@ -403,16 +466,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Onboarding
 
     private func hasRequiredLocalModelsForCurrentSettings() -> Bool {
-        let provider: ASRProvider = {
-            if let raw = UserDefaults.standard.string(forKey: Constants.asrProviderKey),
-               let parsed = ASRProvider(rawValue: raw) {
-                return parsed
-            }
-            return Constants.defaultASRProvider
-        }()
+        let provider = appSettings.asrProvider
 
         let needsWhisper = provider == .local
-        let needsLLM = AppBehaviorSettings.globalPostProcessingMode() == .llm
+        let needsLLM = AppBehaviorSettings.globalPostProcessingMode(settings: appSettings) == .llm
 
         if needsWhisper && !hasLocalWhisperModel() {
             return false
@@ -528,6 +585,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         appState.allowsDictationStart = false
         let onboardingView = OnboardingContainerView(
             appState: appState,
+            settings: appSettings,
             onComplete: { [weak self] in
                 Task {
                     await LocalLLMRuntimeManager.shared.stop()

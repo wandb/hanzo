@@ -4,6 +4,7 @@ struct OnboardingContainerView: View {
     @State private var currentStep = Self.initialStep()
     @State private var llmCleanupTask: Task<Void, Never>?
     var appState: AppState
+    var settings: AppSettingsProtocol
     var onComplete: () -> Void
 
     private static func initialStep() -> Int {
@@ -48,7 +49,7 @@ struct OnboardingContainerView: View {
                 }
             case 4:
                 AppCustomizationStep {
-                    UserDefaults.standard.set(true, forKey: Constants.onboardingCompleteKey)
+                    settings.onboardingComplete = true
                     onComplete()
                 }
             default:
@@ -61,11 +62,11 @@ struct OnboardingContainerView: View {
         .frame(width: 480, height: 380)
         .hudBackground()
         .onAppear {
-            if UserDefaults.standard.string(forKey: Constants.asrProviderKey) == nil {
-                UserDefaults.standard.set(ASRProvider.local.rawValue, forKey: Constants.asrProviderKey)
+            if !settings.hasConfiguredASRProvider {
+                settings.asrProvider = .local
             }
-            if UserDefaults.standard.string(forKey: Constants.transcriptPostProcessingModeKey) == nil {
-                AppBehaviorSettings.setGlobalPostProcessingMode(.llm)
+            if !settings.hasConfiguredTranscriptPostProcessingMode {
+                AppBehaviorSettings.setGlobalPostProcessingMode(.llm, settings: settings)
             }
             updateDictationAvailability(for: currentStep)
         }
