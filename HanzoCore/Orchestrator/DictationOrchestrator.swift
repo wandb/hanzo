@@ -536,14 +536,18 @@ final class DictationOrchestrator {
                         try? await Task.sleep(nanoseconds: 300_000_000) // 300ms
 
                         // Verify target app is frontmost; retry once if not
-                        var frontmost = workspaceFrontmostApplicationProvider()
+                        var frontmost = await MainActor.run {
+                            workspaceFrontmostApplicationProvider()
+                        }
                         if frontmost?.processIdentifier != targetApp.processIdentifier {
                             logger.warn("Target app not frontmost after activation, retrying")
                             await MainActor.run {
                                 _ = targetApp.activate()
                             }
                             try? await Task.sleep(nanoseconds: 200_000_000) // 200ms
-                            frontmost = workspaceFrontmostApplicationProvider()
+                            frontmost = await MainActor.run {
+                                workspaceFrontmostApplicationProvider()
+                            }
                         }
 
                         if frontmost?.processIdentifier != targetApp.processIdentifier {
