@@ -26,4 +26,12 @@ struct TextInsertionPolicyTests {
         #expect(policy.preferredMethod == .accessibilityValueReplacement)
         #expect(policy.allowsPermissivePasteFallback == true)
     }
+
+    @Test("Warp enables permissive paste fallback without AX value replacement")
+    func warpUsesPasteboardFallbackPolicy() {
+        let policy = TextInsertionPolicy.resolved(for: "dev.warp.Warp-Stable")
+
+        #expect(policy.preferredMethod == .pasteboard)
+        #expect(policy.allowsPermissivePasteFallback == true)
+    }
 }

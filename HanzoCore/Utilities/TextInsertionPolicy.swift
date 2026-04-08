@@ -18,6 +18,10 @@ struct TextInsertionPolicy: Equatable {
         "com.anthropic.claudefordesktop": TextInsertionPolicy(
             preferredMethod: .accessibilityValueReplacement,
             allowsPermissivePasteFallback: true
+        ),
+        "dev.warp.Warp-Stable": TextInsertionPolicy(
+            preferredMethod: .pasteboard,
+            allowsPermissivePasteFallback: true
         )
     ]
 
