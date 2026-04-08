@@ -14,6 +14,7 @@ final class TextInsertionService: TextInsertionProtocol {
 
         let frontmostApplication = NSWorkspace.shared.frontmostApplication
         let frontmostBundleIdentifier = frontmostApplication?.bundleIdentifier
+        let targetProcessIdentifier = frontmostApplication.map { pid_t($0.processIdentifier) }
         let insertionPolicy = TextInsertionPolicy.resolved(for: frontmostBundleIdentifier)
         let focusedElement = focusedElement()
             ?? focusedElementForFrontmostApplication(frontmostApplication)
@@ -24,7 +25,7 @@ final class TextInsertionService: TextInsertionProtocol {
                     "No focused accessibility element for \(frontmostBundleIdentifier ?? "unknown app"); " +
                         "attempting permissive paste fallback"
                 )
-                return await pasteViaClipboard(text)
+                return await pasteViaClipboard(text, targetProcessIdentifier: targetProcessIdentifier)
             }
 
             logger.warn("Text insertion failed: no focused accessibility element")
@@ -37,7 +38,7 @@ final class TextInsertionService: TextInsertionProtocol {
                     "Focused element not editable for \(frontmostBundleIdentifier ?? "unknown app"); " +
                         "attempting permissive paste fallback"
                 )
-                return await pasteViaClipboard(text)
+                return await pasteViaClipboard(text, targetProcessIdentifier: targetProcessIdentifier)
             }
 
             logger.warn("Text insertion failed: focused element is not editable")
@@ -50,10 +51,10 @@ final class TextInsertionService: TextInsertionProtocol {
             return .inserted
         }
 
-        return await pasteViaClipboard(text)
+        return await pasteViaClipboard(text, targetProcessIdentifier: targetProcessIdentifier)
     }
 
-    private func pasteViaClipboard(_ text: String) async -> TextInsertionResult {
+    private func pasteViaClipboard(_ text: String, targetProcessIdentifier: pid_t?) async -> TextInsertionResult {
         guard !text.isEmpty else { return .inserted }
 
         let pasteboard = NSPasteboard.general
@@ -65,7 +66,7 @@ final class TextInsertionService: TextInsertionProtocol {
         // Small delay to ensure pasteboard is ready.
         try? await Task.sleep(for: Constants.textInsertionPasteboardReadyDelay)
 
-        guard simulatePaste() else {
+        guard simulatePaste(targetProcessIdentifier: targetProcessIdentifier) else {
             restorePasteboard(pasteboard, contents: savedContents)
             logger.info("Clipboard restored after failed text insertion attempt")
             return .failed(.pasteEventCreationFailed)
@@ -120,7 +121,7 @@ final class TextInsertionService: TextInsertionProtocol {
 
     // MARK: - Private
 
-    private func simulatePaste() -> Bool {
+    private func simulatePaste(targetProcessIdentifier: pid_t?) -> Bool {
         let source = CGEventSource(stateID: .combinedSessionState)
 
         // Key code 9 = V key
@@ -133,12 +134,16 @@ final class TextInsertionService: TextInsertionProtocol {
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
 
-        postKeyEvents(keyDown: keyDown, keyUp: keyUp)
+        postKeyEvents(keyDown: keyDown, keyUp: keyUp, targetProcessIdentifier: targetProcessIdentifier)
         return true
     }
 
-    private func postKeyEvents(keyDown: CGEvent, keyUp: CGEvent) {
-        if let pid = frontmostProcessIdentifier() {
+    private func postKeyEvents(
+        keyDown: CGEvent,
+        keyUp: CGEvent,
+        targetProcessIdentifier: pid_t? = nil
+    ) {
+        if let pid = targetProcessIdentifier {
             keyDown.postToPid(pid)
             keyUp.postToPid(pid)
             return
@@ -146,13 +151,6 @@ final class TextInsertionService: TextInsertionProtocol {
 
         keyDown.post(tap: .cghidEventTap)
         keyUp.post(tap: .cghidEventTap)
-    }
-
-    private func frontmostProcessIdentifier() -> pid_t? {
-        guard let frontmostApplication = NSWorkspace.shared.frontmostApplication else {
-            return nil
-        }
-        return pid_t(frontmostApplication.processIdentifier)
     }
 
     private func focusedElementForFrontmostApplication(_ app: NSRunningApplication?) -> AXUIElement? {
