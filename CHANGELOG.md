@@ -2,6 +2,18 @@
 
 All notable changes to Hanzo are documented in this file.
 
+## [1.3.0] - 2026-04-08
+
+- Refine text insertion fallbacks (#72) @adamwdraper
+- Send rewrite transcript as user message (#71) @adamwdraper
+- Add insert fallback and recent dictation history (#70) @adamwdraper
+- Reorder and align General settings controls (#69) @adamwdraper
+- Refactor settings persistence behind typed store (#68) @adamwdraper
+- Add compact HUD display mode (#67) @adamwdraper
+- Show hold mode in HUD during forging (#66) @adamwdraper
+- Prepare 1.2.0 release (#65) @adamwdraper
+
+
 ## [1.2.0] - 2026-04-04
 
 - Use app picker to add custom app settings (#64) @adamwdraper
