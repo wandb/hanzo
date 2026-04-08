@@ -11,14 +11,50 @@ final class TextInsertionService: TextInsertionProtocol {
             logger.warn("Text insertion failed: accessibility permission missing")
             return .failed(.accessibilityPermissionMissing)
         }
-        guard let focusedElement = focusedElement() else {
+
+        let frontmostApplication = NSWorkspace.shared.frontmostApplication
+        let frontmostBundleIdentifier = frontmostApplication?.bundleIdentifier
+        let insertionPolicy = TextInsertionPolicy.resolved(for: frontmostBundleIdentifier)
+        let focusedElement = focusedElement()
+            ?? focusedElementForFrontmostApplication(frontmostApplication)
+
+        guard let focusedElement else {
+            if insertionPolicy.allowsPermissivePasteFallback {
+                logger.warn(
+                    "No focused accessibility element for \(frontmostBundleIdentifier ?? "unknown app"); " +
+                        "attempting permissive paste fallback"
+                )
+                return await pasteViaClipboard(text)
+            }
+
             logger.warn("Text insertion failed: no focused accessibility element")
             return .failed(.noFocusedElement)
         }
+
         guard isEditable(element: focusedElement) else {
+            if insertionPolicy.allowsPermissivePasteFallback {
+                logger.warn(
+                    "Focused element not editable for \(frontmostBundleIdentifier ?? "unknown app"); " +
+                        "attempting permissive paste fallback"
+                )
+                return await pasteViaClipboard(text)
+            }
+
             logger.warn("Text insertion failed: focused element is not editable")
             return .failed(.focusedElementNotEditable)
         }
+
+        if insertionPolicy.preferredMethod == .accessibilityValueReplacement,
+           insertTextViaAXValue(text, into: focusedElement) {
+            logger.info("Text inserted via accessibility value replacement (\(text.count) chars)")
+            return .inserted
+        }
+
+        return await pasteViaClipboard(text)
+    }
+
+    private func pasteViaClipboard(_ text: String) async -> TextInsertionResult {
+        guard !text.isEmpty else { return .inserted }
 
         let pasteboard = NSPasteboard.general
         let savedContents = savePasteboard(pasteboard)
@@ -61,8 +97,7 @@ final class TextInsertionService: TextInsertionProtocol {
             return
         }
 
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
+        postKeyEvents(keyDown: keyDown, keyUp: keyUp)
         logger.info("Simulated Return key press")
     }
 
@@ -79,8 +114,7 @@ final class TextInsertionService: TextInsertionProtocol {
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
 
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
+        postKeyEvents(keyDown: keyDown, keyUp: keyUp)
         logger.info("Simulated Cmd+Return key press")
     }
 
@@ -99,9 +133,41 @@ final class TextInsertionService: TextInsertionProtocol {
         keyDown.flags = .maskCommand
         keyUp.flags = .maskCommand
 
+        postKeyEvents(keyDown: keyDown, keyUp: keyUp)
+        return true
+    }
+
+    private func postKeyEvents(keyDown: CGEvent, keyUp: CGEvent) {
+        if let pid = frontmostProcessIdentifier() {
+            keyDown.postToPid(pid)
+            keyUp.postToPid(pid)
+            return
+        }
+
         keyDown.post(tap: .cghidEventTap)
         keyUp.post(tap: .cghidEventTap)
-        return true
+    }
+
+    private func frontmostProcessIdentifier() -> pid_t? {
+        guard let frontmostApplication = NSWorkspace.shared.frontmostApplication else {
+            return nil
+        }
+        return pid_t(frontmostApplication.processIdentifier)
+    }
+
+    private func focusedElementForFrontmostApplication(_ app: NSRunningApplication?) -> AXUIElement? {
+        guard let app else { return nil }
+        let applicationElement = AXUIElementCreateApplication(app.processIdentifier)
+        var focusedElementValue: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(
+            applicationElement,
+            kAXFocusedUIElementAttribute as CFString,
+            &focusedElementValue
+        )
+
+        guard result == .success, let focusedElementValue else { return nil }
+        guard CFGetTypeID(focusedElementValue) == AXUIElementGetTypeID() else { return nil }
+        return unsafeBitCast(focusedElementValue, to: AXUIElement.self)
     }
 
     private func focusedElement() -> AXUIElement? {
@@ -119,13 +185,104 @@ final class TextInsertionService: TextInsertionProtocol {
     }
 
     private func isEditable(element: AXUIElement) -> Bool {
+        // AppKit fields usually expose AXValue as settable; web/electron editors
+        // often expose editability via text-range or editable-ancestor attributes.
+        if isAttributeSettable(element: element, attribute: kAXValueAttribute as CFString) {
+            return true
+        }
+        if isAttributeSettable(element: element, attribute: kAXSelectedTextRangeAttribute as CFString) {
+            return true
+        }
+        if hasAXUIElementAttribute(element: element, attribute: "AXEditableAncestor" as CFString) {
+            return true
+        }
+        if hasAXUIElementAttribute(element: element, attribute: "AXHighestEditableAncestor" as CFString) {
+            return true
+        }
+        return false
+    }
+
+    private func isAttributeSettable(element: AXUIElement, attribute: CFString) -> Bool {
         var isSettable = DarwinBoolean(false)
-        let result = AXUIElementIsAttributeSettable(
+        let result = AXUIElementIsAttributeSettable(element, attribute, &isSettable)
+        return result == .success && isSettable.boolValue
+    }
+
+    private func hasAXUIElementAttribute(element: AXUIElement, attribute: CFString) -> Bool {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(element, attribute, &value)
+        guard result == .success, let value else { return false }
+        return CFGetTypeID(value) == AXUIElementGetTypeID()
+    }
+
+    private func insertTextViaAXValue(_ text: String, into element: AXUIElement) -> Bool {
+        guard isAttributeSettable(element: element, attribute: kAXValueAttribute as CFString),
+              let currentValue = stringAttribute(element: element, attribute: kAXValueAttribute as CFString),
+              let selectedRange = selectedTextRange(element: element) else {
+            return false
+        }
+
+        guard selectedRange.location >= 0, selectedRange.length >= 0 else {
+            return false
+        }
+
+        let currentNSString = currentValue as NSString
+        let replacementLocation = selectedRange.location
+        let replacementLength = selectedRange.length
+        guard replacementLocation <= currentNSString.length,
+              replacementLocation + replacementLength <= currentNSString.length else {
+            return false
+        }
+
+        let replacementRange = NSRange(location: replacementLocation, length: replacementLength)
+        let updatedValue = currentNSString.replacingCharacters(in: replacementRange, with: text)
+        let setResult = AXUIElementSetAttributeValue(
             element,
             kAXValueAttribute as CFString,
-            &isSettable
+            updatedValue as CFString
         )
-        return result == .success && isSettable.boolValue
+        guard setResult == .success else {
+            return false
+        }
+
+        let caretLocation = replacementLocation + (text as NSString).length
+        setSelectedTextRange(element: element, location: caretLocation, length: 0)
+        return true
+    }
+
+    private func stringAttribute(element: AXUIElement, attribute: CFString) -> String? {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(element, attribute, &value)
+        guard result == .success, let value else { return nil }
+        guard CFGetTypeID(value) == CFStringGetTypeID() else { return nil }
+        return (value as? String)
+    }
+
+    private func selectedTextRange(element: AXUIElement) -> CFRange? {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(
+            element,
+            kAXSelectedTextRangeAttribute as CFString,
+            &value
+        )
+        guard result == .success, let value else { return nil }
+        guard CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        let axValue = unsafeBitCast(value, to: AXValue.self)
+        guard AXValueGetType(axValue) == .cfRange else { return nil }
+
+        var range = CFRange(location: 0, length: 0)
+        guard AXValueGetValue(axValue, .cfRange, &range) else { return nil }
+        return range
+    }
+
+    private func setSelectedTextRange(element: AXUIElement, location: Int, length: Int) {
+        var range = CFRange(location: location, length: length)
+        guard let axRange = AXValueCreate(.cfRange, &range) else { return }
+        _ = AXUIElementSetAttributeValue(
+            element,
+            kAXSelectedTextRangeAttribute as CFString,
+            axRange
+        )
     }
 
     private func savePasteboard(_ pb: NSPasteboard) -> [NSPasteboard.PasteboardType: Data] {
