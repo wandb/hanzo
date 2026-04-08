@@ -46,6 +46,20 @@ struct TextInsertionServiceTests {
         #expect(context.selectedRange == NSRange(location: 0, length: 0))
     }
 
+    @Test("placeholder-looking sentinel does not override non-empty character counts")
+    func placeholderSentinelDoesNotOverrideNonEmptyCharacterCounts() {
+        let context = TextInsertionService.normalizedAXValueInsertionContext(
+            currentValue: "Reply...",
+            selectedRange: CFRange(location: 1, length: 0),
+            placeholderValue: nil,
+            numberOfCharacters: 1,
+            placeholderSentinels: ["Reply...", "Reply…"]
+        )
+
+        #expect(context.currentValue == "Reply...")
+        #expect(context.selectedRange == NSRange(location: 1, length: 0))
+    }
+
     @Test("missing placeholder leaves content unchanged")
     func missingPlaceholderLeavesContentUnchanged() {
         let context = TextInsertionService.normalizedAXValueInsertionContext(

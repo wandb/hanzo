@@ -21,8 +21,10 @@ final class TextInsertionService: TextInsertionProtocol {
         let frontmostBundleIdentifier = frontmostApplication?.bundleIdentifier
         let targetProcessIdentifier = frontmostApplication.map { pid_t($0.processIdentifier) }
         let insertionPolicy = TextInsertionPolicy.resolved(for: frontmostBundleIdentifier)
-        let focusedElement = focusedElement()
-            ?? focusedElementForFrontmostApplication(frontmostApplication)
+        let focusedElement = resolvedFocusedElement(
+            targetProcessIdentifier: targetProcessIdentifier,
+            frontmostApplication: frontmostApplication
+        )
 
         guard let focusedElement else {
             if insertionPolicy.allowsPermissivePasteFallback {
@@ -187,6 +189,33 @@ final class TextInsertionService: TextInsertionProtocol {
         return unsafeBitCast(focusedElementValue, to: AXUIElement.self)
     }
 
+    private func resolvedFocusedElement(
+        targetProcessIdentifier: pid_t?,
+        frontmostApplication: NSRunningApplication?
+    ) -> AXUIElement? {
+        guard let systemWideFocusedElement = focusedElement() else {
+            return focusedElementForFrontmostApplication(frontmostApplication)
+        }
+
+        guard let targetProcessIdentifier else {
+            return systemWideFocusedElement
+        }
+
+        guard processIdentifier(for: systemWideFocusedElement) == targetProcessIdentifier else {
+            logger.warn("System-wide focused element PID mismatched frontmost app; retrying app-scoped lookup")
+            return focusedElementForFrontmostApplication(frontmostApplication)
+        }
+
+        return systemWideFocusedElement
+    }
+
+    private func processIdentifier(for element: AXUIElement) -> pid_t? {
+        var processIdentifier: pid_t = 0
+        let result = AXUIElementGetPid(element, &processIdentifier)
+        guard result == .success else { return nil }
+        return processIdentifier
+    }
+
     private func isEditable(element: AXUIElement) -> Bool {
         // AppKit fields usually expose AXValue as settable; web/electron editors
         // often expose editability via text-range or editable-ancestor attributes.
@@ -309,7 +338,10 @@ final class TextInsertionService: TextInsertionProtocol {
 
         if let placeholderValue,
            normalizedCurrentValue == normalizedPlaceholderCandidate(placeholderValue) {
-            return true
+            return placeholderCharacterCountLooksEmpty(
+                numberOfCharacters,
+                placeholderLength: currentValue.count
+            )
         }
 
         guard !placeholderSentinels.isEmpty else {
@@ -326,7 +358,20 @@ final class TextInsertionService: TextInsertionProtocol {
         guard let numberOfCharacters else {
             return true
         }
-        return numberOfCharacters <= currentValue.count
+        return placeholderCharacterCountLooksEmpty(
+            numberOfCharacters,
+            placeholderLength: currentValue.count
+        )
+    }
+
+    private static func placeholderCharacterCountLooksEmpty(
+        _ numberOfCharacters: Int?,
+        placeholderLength: Int
+    ) -> Bool {
+        guard let numberOfCharacters else {
+            return true
+        }
+        return numberOfCharacters == 0 || numberOfCharacters == placeholderLength
     }
 
     private static func normalizedPlaceholderCandidate(_ text: String) -> String {
