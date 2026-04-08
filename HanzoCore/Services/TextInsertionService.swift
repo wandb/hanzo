@@ -2,6 +2,11 @@ import AppKit
 import CoreGraphics
 import ApplicationServices
 
+struct AXValueInsertionContext: Equatable {
+    let currentValue: String
+    let selectedRange: NSRange
+}
+
 final class TextInsertionService: TextInsertionProtocol {
     private let logger = LoggingService.shared
 
@@ -220,13 +225,24 @@ final class TextInsertionService: TextInsertionProtocol {
             return false
         }
 
-        guard selectedRange.location >= 0, selectedRange.length >= 0 else {
-            return false
+        let placeholderValue = stringAttribute(element: element, attribute: kAXPlaceholderValueAttribute as CFString)
+        let numberOfCharacters = integerAttribute(element: element, attribute: kAXNumberOfCharactersAttribute as CFString)
+        let insertionContext = Self.normalizedAXValueInsertionContext(
+            currentValue: currentValue,
+            selectedRange: selectedRange,
+            placeholderValue: placeholderValue,
+            numberOfCharacters: numberOfCharacters
+        )
+
+        if insertionContext.currentValue.isEmpty,
+           !currentValue.isEmpty,
+           placeholderValue == currentValue {
+            logger.info("Treating placeholder accessibility value as empty before replacement")
         }
 
-        let currentNSString = currentValue as NSString
-        let replacementLocation = selectedRange.location
-        let replacementLength = selectedRange.length
+        let currentNSString = insertionContext.currentValue as NSString
+        let replacementLocation = insertionContext.selectedRange.location
+        let replacementLength = insertionContext.selectedRange.length
         guard replacementLocation <= currentNSString.length,
               replacementLocation + replacementLength <= currentNSString.length else {
             return false
@@ -248,12 +264,74 @@ final class TextInsertionService: TextInsertionProtocol {
         return true
     }
 
+    static func normalizedAXValueInsertionContext(
+        currentValue: String,
+        selectedRange: CFRange,
+        placeholderValue: String?,
+        numberOfCharacters: Int?
+    ) -> AXValueInsertionContext {
+        let sanitizedRange = NSRange(
+            location: max(0, selectedRange.location),
+            length: max(0, selectedRange.length)
+        )
+
+        guard shouldTreatPlaceholderAsEmpty(
+            currentValue: currentValue,
+            placeholderValue: placeholderValue,
+            numberOfCharacters: numberOfCharacters
+        ) else {
+            return AXValueInsertionContext(
+                currentValue: currentValue,
+                selectedRange: sanitizedRange
+            )
+        }
+
+        return AXValueInsertionContext(
+            currentValue: "",
+            selectedRange: NSRange(location: 0, length: 0)
+        )
+    }
+
+    private static func shouldTreatPlaceholderAsEmpty(
+        currentValue: String,
+        placeholderValue: String?,
+        numberOfCharacters: Int?
+    ) -> Bool {
+        guard let placeholderValue,
+              currentValue == placeholderValue else {
+            return false
+        }
+
+        guard let numberOfCharacters else {
+            return true
+        }
+        return numberOfCharacters == 0
+    }
+
     private func stringAttribute(element: AXUIElement, attribute: CFString) -> String? {
         var value: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(element, attribute, &value)
         guard result == .success, let value else { return nil }
         guard CFGetTypeID(value) == CFStringGetTypeID() else { return nil }
         return (value as? String)
+    }
+
+    private func integerAttribute(element: AXUIElement, attribute: CFString) -> Int? {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(element, attribute, &value)
+        guard result == .success, let value else { return nil }
+        guard CFGetTypeID(value) == CFNumberGetTypeID() else { return nil }
+
+        var number: Int = 0
+        guard CFNumberGetValue(
+            unsafeBitCast(value, to: CFNumber.self),
+            .intType,
+            &number
+        ) else {
+            return nil
+        }
+
+        return number
     }
 
     private func selectedTextRange(element: AXUIElement) -> CFRange? {
