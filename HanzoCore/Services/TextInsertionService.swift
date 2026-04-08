@@ -51,7 +51,7 @@ final class TextInsertionService: TextInsertionProtocol {
         }
 
         if insertionPolicy.preferredMethod == .accessibilityValueReplacement,
-           insertTextViaAXValue(text, into: focusedElement) {
+           insertTextViaAXValue(text, into: focusedElement, policy: insertionPolicy) {
             logger.info("Text inserted via accessibility value replacement (\(text.count) chars)")
             return .inserted
         }
@@ -218,7 +218,11 @@ final class TextInsertionService: TextInsertionProtocol {
         return CFGetTypeID(value) == AXUIElementGetTypeID()
     }
 
-    private func insertTextViaAXValue(_ text: String, into element: AXUIElement) -> Bool {
+    private func insertTextViaAXValue(
+        _ text: String,
+        into element: AXUIElement,
+        policy: TextInsertionPolicy
+    ) -> Bool {
         guard isAttributeSettable(element: element, attribute: kAXValueAttribute as CFString),
               let currentValue = stringAttribute(element: element, attribute: kAXValueAttribute as CFString),
               let selectedRange = selectedTextRange(element: element) else {
@@ -231,7 +235,8 @@ final class TextInsertionService: TextInsertionProtocol {
             currentValue: currentValue,
             selectedRange: selectedRange,
             placeholderValue: placeholderValue,
-            numberOfCharacters: numberOfCharacters
+            numberOfCharacters: numberOfCharacters,
+            placeholderSentinels: policy.placeholderSentinels
         )
 
         if insertionContext.currentValue.isEmpty,
@@ -268,7 +273,8 @@ final class TextInsertionService: TextInsertionProtocol {
         currentValue: String,
         selectedRange: CFRange,
         placeholderValue: String?,
-        numberOfCharacters: Int?
+        numberOfCharacters: Int?,
+        placeholderSentinels: Set<String>
     ) -> AXValueInsertionContext {
         let sanitizedRange = NSRange(
             location: max(0, selectedRange.location),
@@ -278,7 +284,8 @@ final class TextInsertionService: TextInsertionProtocol {
         guard shouldTreatPlaceholderAsEmpty(
             currentValue: currentValue,
             placeholderValue: placeholderValue,
-            numberOfCharacters: numberOfCharacters
+            numberOfCharacters: numberOfCharacters,
+            placeholderSentinels: placeholderSentinels
         ) else {
             return AXValueInsertionContext(
                 currentValue: currentValue,
@@ -295,17 +302,38 @@ final class TextInsertionService: TextInsertionProtocol {
     private static func shouldTreatPlaceholderAsEmpty(
         currentValue: String,
         placeholderValue: String?,
-        numberOfCharacters: Int?
+        numberOfCharacters: Int?,
+        placeholderSentinels: Set<String>
     ) -> Bool {
-        guard let placeholderValue,
-              currentValue == placeholderValue else {
+        let normalizedCurrentValue = normalizedPlaceholderCandidate(currentValue)
+
+        if let placeholderValue,
+           normalizedCurrentValue == normalizedPlaceholderCandidate(placeholderValue) {
+            return true
+        }
+
+        guard !placeholderSentinels.isEmpty else {
+            return false
+        }
+
+        let currentIsSentinel = placeholderSentinels.contains {
+            normalizedCurrentValue == normalizedPlaceholderCandidate($0)
+        }
+        guard currentIsSentinel else {
             return false
         }
 
         guard let numberOfCharacters else {
             return true
         }
-        return numberOfCharacters == 0
+        return numberOfCharacters <= currentValue.count
+    }
+
+    private static func normalizedPlaceholderCandidate(_ text: String) -> String {
+        text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\u{2026}", with: "...")
+            .lowercased()
     }
 
     private func stringAttribute(element: AXUIElement, attribute: CFString) -> String? {

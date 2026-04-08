@@ -8,20 +8,24 @@ enum PreferredTextInsertionMethod: String, Equatable {
 struct TextInsertionPolicy: Equatable {
     let preferredMethod: PreferredTextInsertionMethod
     let allowsPermissivePasteFallback: Bool
+    let placeholderSentinels: Set<String>
 
     static let defaultPolicy = TextInsertionPolicy(
         preferredMethod: .pasteboard,
-        allowsPermissivePasteFallback: false
+        allowsPermissivePasteFallback: false,
+        placeholderSentinels: []
     )
 
     private static let appOverrides: [String: TextInsertionPolicy] = [
         "com.anthropic.claudefordesktop": TextInsertionPolicy(
             preferredMethod: .accessibilityValueReplacement,
-            allowsPermissivePasteFallback: true
+            allowsPermissivePasteFallback: true,
+            placeholderSentinels: ["Reply...", "Reply…"]
         ),
         "dev.warp.Warp-Stable": TextInsertionPolicy(
             preferredMethod: .pasteboard,
-            allowsPermissivePasteFallback: true
+            allowsPermissivePasteFallback: true,
+            placeholderSentinels: []
         )
     ]
 
