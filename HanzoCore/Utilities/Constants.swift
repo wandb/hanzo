@@ -47,6 +47,9 @@ enum Constants {
     static let localWhisperPartialTargetDecodeSeconds: Double = 0.9
     static let partialTranscriptAggressiveRecoveryAfterSeconds: Double = 6.0
     static let localWhisperSessionTTLSeconds: Double = 180.0
+    static let localWhisperShortFinalRetryMaxOriginalSeconds: Double = 1.5
+    static let localWhisperShortFinalRetryMinimumSeconds: Double = 1.5
+    static let localWhisperShortFinalRetryPaddingSeconds: Double = 0.35
     static let localLLMModelsSubfolderName = "llm"
     static let localLLMModelRepository = "Qwen/Qwen3-4B-GGUF"
     static let localLLMModelFileName = "Qwen3-4B-Q4_K_M.gguf"
