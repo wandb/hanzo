@@ -41,6 +41,12 @@ struct AppBehaviorOverride: Codable, Equatable {
             || llmPostProcessingPrompt != nil
             || commonTerms != nil
     }
+
+    var hasHUDOverrides: Bool {
+        autoSubmitMode != nil
+            || silenceTimeout != nil
+            || postProcessingMode != nil
+    }
 }
 
 struct ResolvedAppBehavior {
@@ -379,7 +385,7 @@ enum AppBehaviorSettings {
         guard let bundleIdentifier,
               isSupported(bundleIdentifier: bundleIdentifier, settings: settings),
               let appOverride = override(for: bundleIdentifier, settings: settings),
-              appOverride.hasOverrides else {
+              appOverride.hasHUDOverrides else {
             return nil
         }
 

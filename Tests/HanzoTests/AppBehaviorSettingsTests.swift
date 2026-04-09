@@ -161,6 +161,14 @@ struct AppBehaviorSettingsTests {
     func hasOverridesWithOnlyPostProcessingMode() {
         let override = AppBehaviorOverride(postProcessingMode: .off)
         #expect(override.hasOverrides == true)
+        #expect(override.hasHUDOverrides == true)
+    }
+
+    @Test("hasHUDOverrides ignores instruction-only overrides")
+    func hasHUDOverridesIgnoresInstructionOnlyOverrides() {
+        let override = AppBehaviorOverride(llmPostProcessingPrompt: "Prompt", commonTerms: "CoreWeave")
+        #expect(override.hasOverrides == true)
+        #expect(override.hasHUDOverrides == false)
     }
 
     @Test("resolvedBehavior uses global instructions for built-in apps when no override exists")
@@ -387,6 +395,39 @@ struct AppBehaviorSettingsTests {
             #expect(
                 AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(
                     for: bundleIdentifier,
+                    defaults: defaults
+                )
+            )
+        }
+    }
+
+    @Test("shouldPersistHUDSettingsToAppOverride is false for supported app with instruction-only override")
+    func shouldPersistHUDSettingsToAppOverrideForInstructionOnlyOverride() {
+        withDefaults { defaults in
+            let bundleIdentifier = "com.tinyspeck.slackmacgap"
+            AppBehaviorSettings.saveOverride(
+                AppBehaviorOverride(llmPostProcessingPrompt: "Slack prompt"),
+                for: bundleIdentifier,
+                defaults: defaults
+            )
+
+            #expect(
+                !AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(
+                    for: bundleIdentifier,
+                    defaults: defaults
+                )
+            )
+        }
+    }
+
+    @Test("seeded built-in instruction overrides do not opt apps into HUD persistence")
+    func seededBuiltInInstructionOverridesDoNotOptIntoHUDPersistence() {
+        withDefaults { defaults in
+            AppBehaviorSettings.seedBuiltInAppInstructionOverridesIfNeeded(defaults: defaults)
+
+            #expect(
+                !AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(
+                    for: "com.tinyspeck.slackmacgap",
                     defaults: defaults
                 )
             )
