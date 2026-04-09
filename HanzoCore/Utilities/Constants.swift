@@ -96,6 +96,7 @@ enum Constants {
     static let llmPostProcessingPromptKey = "llmPostProcessingPrompt"
     static let commonTermsKey = "commonTerms"
     static let rewritePromptTemplateKey = "rewritePromptTemplate"
+    static let builtInAppInstructionOverridesSeededKey = "builtInAppInstructionOverridesSeeded"
     static let defaultLLMPostProcessingPrompt = ""
 
     // Launch at login

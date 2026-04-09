@@ -51,6 +51,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
+        AppBehaviorSettings.seedBuiltInAppInstructionOverridesIfNeeded(settings: appSettings)
+
         // Create status bar item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         updateMenuBarIcon()

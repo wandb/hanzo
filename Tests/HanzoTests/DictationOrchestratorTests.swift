@@ -1453,6 +1453,74 @@ struct DictationOrchestratorTests {
         #expect(mockLLM.lastCommonTerms == ["LLM", "PyTorch"])
     }
 
+    @Test("unsupported apps fall back to global rewrite variables without leaking previous app state")
+    @MainActor func unsupportedAppsFallBackToGlobalRewriteVariables() async throws {
+        let mockLLM = MockLocalLLMRuntimeManager()
+        mockLLM.postProcessResult = .success("Normalized output")
+
+        var useSupportedApp = true
+        let supportedApp = try #require(
+            NSWorkspace.shared.runningApplications.first {
+                guard let bundleIdentifier = $0.bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                    return false
+                }
+                return !bundleIdentifier.isEmpty
+            }
+        )
+        let supportedBundleIdentifier = try #require(supportedApp.bundleIdentifier)
+
+        let sut = makeSUT(
+            asrFinishResult: .success(
+                ASRFinishResponse(text: "raw transcript", language: "en")
+            ),
+            localLLMRuntimeManager: mockLLM,
+            postProcessingMode: .llm,
+            llmPostProcessingPrompt: "Global instructions",
+            globalCommonTerms: "LLM\nPyTorch",
+            frontmostApplicationProvider: {
+                useSupportedApp ? supportedApp : nil
+            }
+        )
+
+        _ = AppBehaviorSettings.addCustomApp(
+            bundleIdentifier: supportedBundleIdentifier,
+            displayName: supportedApp.localizedName ?? supportedBundleIdentifier,
+            settings: sut.settings
+        )
+        AppBehaviorSettings.saveOverride(
+            AppBehaviorOverride(
+                llmPostProcessingPrompt: "App instructions",
+                commonTerms: "wandb"
+            ),
+            for: supportedBundleIdentifier,
+            settings: sut.settings
+        )
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let firstFinished = await waitUntil(timeoutNanoseconds: 4_000_000_000) {
+            mockLLM.postProcessCallCount == 1 && sut.appState.dictationState == .idle
+        }
+        #expect(firstFinished)
+        #expect(mockLLM.lastPrompt == "App instructions")
+        #expect(mockLLM.lastCommonTerms == ["LLM", "PyTorch", "wandb"])
+
+        useSupportedApp = false
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let secondFinished = await waitUntil(timeoutNanoseconds: 4_000_000_000) {
+            mockLLM.postProcessCallCount == 2 && sut.appState.dictationState == .idle
+        }
+        #expect(secondFinished)
+        #expect(mockLLM.lastPrompt == "Global instructions")
+        #expect(mockLLM.lastCommonTerms == ["LLM", "PyTorch"])
+    }
+
     @Test("LLM mode falls back to raw transcript when local LLM processing fails")
     @MainActor func llmModeFallsBackWhenLocalLLMProcessingFails() async throws {
         let mockLLM = MockLocalLLMRuntimeManager()

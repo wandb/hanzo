@@ -163,8 +163,8 @@ struct AppBehaviorSettingsTests {
         #expect(override.hasOverrides == true)
     }
 
-    @Test("resolvedBehavior uses built-in LLM prompt for built-in apps when no override exists")
-    func resolvedBehaviorUsesBuiltInLLMPromptForBuiltInApps() {
+    @Test("resolvedBehavior uses global instructions for built-in apps when no override exists")
+    func resolvedBehaviorUsesGlobalInstructionsForBuiltInAppsWithoutOverride() {
         withDefaults { defaults in
             AppBehaviorSettings.setGlobalLLMPostProcessingPrompt("Global prompt", defaults: defaults)
 
@@ -173,7 +173,7 @@ struct AppBehaviorSettingsTests {
                 defaults: defaults
             )
 
-            #expect(resolved.llmPostProcessingPrompt == slackBuiltInPrompt)
+            #expect(resolved.llmPostProcessingPrompt == "Global prompt")
         }
     }
 
@@ -197,8 +197,8 @@ struct AppBehaviorSettingsTests {
         }
     }
 
-    @Test("resolvedBehavior falls back to built-in LLM prompt when app override prompt is nil")
-    func resolvedBehaviorFallsBackToBuiltInLLMPrompt() {
+    @Test("resolvedBehavior falls back to global instructions when app override instructions are nil")
+    func resolvedBehaviorFallsBackToGlobalInstructions() {
         withDefaults { defaults in
             AppBehaviorSettings.setGlobalLLMPostProcessingPrompt("Global prompt", defaults: defaults)
             AppBehaviorSettings.saveOverride(
@@ -211,7 +211,7 @@ struct AppBehaviorSettingsTests {
                 for: "com.tinyspeck.slackmacgap",
                 defaults: defaults
             )
-            #expect(resolved.llmPostProcessingPrompt == slackBuiltInPrompt)
+            #expect(resolved.llmPostProcessingPrompt == "Global prompt")
         }
     }
 
@@ -230,6 +230,61 @@ struct AppBehaviorSettingsTests {
                 defaults: defaults
             )
             #expect(resolved.llmPostProcessingPrompt == "Global prompt")
+        }
+    }
+
+    @Test("seeding built-in app instructions creates explicit overrides")
+    func seedingBuiltInAppInstructionsCreatesExplicitOverrides() {
+        withDefaults { defaults in
+            AppBehaviorSettings.seedBuiltInAppInstructionOverridesIfNeeded(defaults: defaults)
+
+            let override = AppBehaviorSettings.override(
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+
+            #expect(override?.llmPostProcessingPrompt == slackBuiltInPrompt)
+        }
+    }
+
+    @Test("seeding built-in app instructions does not overwrite existing overrides")
+    func seedingBuiltInAppInstructionsDoesNotOverwriteExistingOverrides() {
+        withDefaults { defaults in
+            AppBehaviorSettings.saveOverride(
+                AppBehaviorOverride(llmPostProcessingPrompt: "User prompt"),
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+
+            AppBehaviorSettings.seedBuiltInAppInstructionOverridesIfNeeded(defaults: defaults)
+
+            let override = AppBehaviorSettings.override(
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+
+            #expect(override?.llmPostProcessingPrompt == "User prompt")
+        }
+    }
+
+    @Test("seeding built-in app instructions runs only once")
+    func seedingBuiltInAppInstructionsRunsOnlyOnce() {
+        withDefaults { defaults in
+            AppBehaviorSettings.seedBuiltInAppInstructionOverridesIfNeeded(defaults: defaults)
+            AppBehaviorSettings.saveOverride(
+                AppBehaviorOverride(llmPostProcessingPrompt: nil),
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+
+            AppBehaviorSettings.seedBuiltInAppInstructionOverridesIfNeeded(defaults: defaults)
+
+            let override = AppBehaviorSettings.override(
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+
+            #expect(override == nil)
         }
     }
 

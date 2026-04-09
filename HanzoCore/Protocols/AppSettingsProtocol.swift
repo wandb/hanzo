@@ -17,6 +17,7 @@ protocol AppSettingsProtocol: AnyObject {
     var globalLLMPostProcessingPrompt: String { get set }
     var globalCommonTerms: String { get set }
     var customRewritePromptTemplate: String? { get set }
+    var hasSeededBuiltInAppInstructionOverrides: Bool { get set }
     var appBehaviorOverridesData: Data? { get set }
     var appBehaviorCustomAppsData: Data? { get set }
     var localLLMServerExecutableOverridePath: String? { get set }

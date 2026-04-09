@@ -370,15 +370,19 @@ final class DictationOrchestrator {
 
         previousApp = frontmostApplicationProvider()
         activeSessionTargetBundleIdentifier = previousApp?.bundleIdentifier
+        applyEffectiveBehavior(for: activeSessionTargetBundleIdentifier)
         if let activeSessionTargetBundleIdentifier,
            AppBehaviorSettings.isSupported(
-            bundleIdentifier: activeSessionTargetBundleIdentifier,
-            settings: settings
+               bundleIdentifier: activeSessionTargetBundleIdentifier,
+               settings: settings
            ) {
-            applyEffectiveBehavior(for: activeSessionTargetBundleIdentifier)
             logger.info("Resolved app behavior for \(activeSessionTargetBundleIdentifier)")
         } else {
-            appState.activeTargetBundleIdentifier = activeSessionTargetBundleIdentifier
+            if let activeSessionTargetBundleIdentifier {
+                logger.info("Resolved global behavior for unsupported app \(activeSessionTargetBundleIdentifier)")
+            } else {
+                logger.info("Resolved global behavior for unknown target app")
+            }
         }
 
         logger.info("Starting recording session")

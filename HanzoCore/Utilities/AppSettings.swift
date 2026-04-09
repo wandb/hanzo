@@ -200,6 +200,15 @@ final class AppSettings: AppSettingsProtocol {
         }
     }
 
+    var hasSeededBuiltInAppInstructionOverrides: Bool {
+        get {
+            store.bool(forKey: Constants.builtInAppInstructionOverridesSeededKey)
+        }
+        set {
+            store.set(newValue, forKey: Constants.builtInAppInstructionOverridesSeededKey)
+        }
+    }
+
     var appBehaviorOverridesData: Data? {
         get {
             store.data(forKey: Constants.appBehaviorOverridesKey)
