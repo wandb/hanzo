@@ -41,6 +41,12 @@ struct AppBehaviorOverride: Codable, Equatable {
             || llmPostProcessingPrompt != nil
             || commonTerms != nil
     }
+
+    var hasHUDOverrides: Bool {
+        autoSubmitMode != nil
+            || silenceTimeout != nil
+            || postProcessingMode != nil
+    }
 }
 
 struct ResolvedAppBehavior {
@@ -72,7 +78,7 @@ enum AppBehaviorSettings {
         SupportedAppBehavior(bundleIdentifier: "com.googlecode.iterm2", displayName: "iTerm2", isBuiltIn: true),
         SupportedAppBehavior(bundleIdentifier: "dev.warp.Warp-Stable", displayName: "Warp", isBuiltIn: true)
     ]
-    private static let builtInLLMPostProcessingPromptDefaults: [String: String] = [
+    private static let builtInAppInstructionOverrides: [String: String] = [
         "com.tinyspeck.slackmacgap":
             "Polish into a concise Slack message. Preserve existing @mentions, /commands, and #channels. Convert clear spoken forms like \"at <name>\" to @mentions (full names can include a space, for example @John Smith), \"slash <command>\" to /commands, and \"hashtag <channel name>\" to lowercase #channel-name with no spaces.",
         "com.conductor.app":
@@ -302,8 +308,29 @@ enum AppBehaviorSettings {
         settings.globalCommonTerms = terms
     }
 
-    static func builtInDefaultLLMPostProcessingPrompt(for bundleIdentifier: String) -> String? {
-        builtInLLMPostProcessingPromptDefaults[bundleIdentifier]
+    static func seedBuiltInAppInstructionOverridesIfNeeded(defaults: UserDefaults = .standard) {
+        seedBuiltInAppInstructionOverridesIfNeeded(settings: settings(from: defaults))
+    }
+
+    static func seedBuiltInAppInstructionOverridesIfNeeded(settings: AppSettingsProtocol) {
+        guard !settings.hasSeededBuiltInAppInstructionOverrides else {
+            return
+        }
+
+        var overrides = loadOverrides(settings: settings)
+
+        for (bundleIdentifier, instructions) in builtInAppInstructionOverrides {
+            var appOverride = overrides[bundleIdentifier] ?? AppBehaviorOverride()
+            guard appOverride.llmPostProcessingPrompt == nil else {
+                continue
+            }
+
+            appOverride.llmPostProcessingPrompt = instructions
+            overrides[bundleIdentifier] = appOverride
+        }
+
+        saveOverrides(overrides, settings: settings)
+        settings.hasSeededBuiltInAppInstructionOverrides = true
     }
 
     static func loadOverrides(defaults: UserDefaults = .standard) -> [String: AppBehaviorOverride] {
@@ -358,7 +385,7 @@ enum AppBehaviorSettings {
         guard let bundleIdentifier,
               isSupported(bundleIdentifier: bundleIdentifier, settings: settings),
               let appOverride = override(for: bundleIdentifier, settings: settings),
-              appOverride.hasOverrides else {
+              appOverride.hasHUDOverrides else {
             return nil
         }
 
@@ -422,9 +449,7 @@ enum AppBehaviorSettings {
         let resolvedAutoSubmitMode = appOverride?.autoSubmitMode ?? globalAutoSubmitMode
         let resolvedSilenceTimeout = appOverride?.silenceTimeout ?? globalSilenceTimeout
         let resolvedPostProcessing = appOverride?.postProcessingMode ?? globalPostProcessing
-        let resolvedLLMPrompt = appOverride?.llmPostProcessingPrompt
-            ?? builtInDefaultLLMPostProcessingPrompt(for: bundleIdentifier)
-            ?? globalLLMPrompt
+        let resolvedLLMPrompt = appOverride?.llmPostProcessingPrompt ?? globalLLMPrompt
         let resolvedCommonTerms = CommonTerms.merge(
             globalRaw: globalCommonTermsRaw,
             appRaw: appOverride?.commonTerms

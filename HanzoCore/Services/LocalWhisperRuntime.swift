@@ -173,7 +173,11 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
         }
 
         let final = try await transcribe(audioSamples: session.audioSamples, isFinal: true)
-        return ASRFinishResponse(text: final.text, language: final.language)
+        let recoveredFinal = try await recoverShortEmptyFinalIfNeeded(
+            final,
+            audioSamples: session.audioSamples
+        )
+        return ASRFinishResponse(text: recoveredFinal.text, language: recoveredFinal.language)
     }
 
     func abortSession(sessionId: String) async {
@@ -247,12 +251,89 @@ actor LocalWhisperRuntime: LocalWhisperRuntimeClientProtocol {
         min(max(value, 0.0), 1.0)
     }
 
+    static func audioDurationSeconds(sampleCount: Int) -> Double {
+        Double(sampleCount) / Constants.audioSampleRate
+    }
+
+    static func shouldRetryShortFinalTranscription(
+        text: String,
+        audioSampleCount: Int
+    ) -> Bool {
+        guard text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        guard audioSampleCount > 0 else { return false }
+        return audioDurationSeconds(sampleCount: audioSampleCount)
+            <= Constants.localWhisperShortFinalRetryMaxOriginalSeconds
+    }
+
+    static func paddedShortFinalAudioSamples(_ audioSamples: [Float]) -> [Float] {
+        guard !audioSamples.isEmpty else { return [] }
+
+        let minimumSampleCount = Int(
+            Constants.localWhisperShortFinalRetryMinimumSeconds * Constants.audioSampleRate
+        )
+        let preferredPaddingCount = Int(
+            Constants.localWhisperShortFinalRetryPaddingSeconds * Constants.audioSampleRate
+        )
+        let totalPaddingCount = max(
+            preferredPaddingCount * 2,
+            max(0, minimumSampleCount - audioSamples.count)
+        )
+        guard totalPaddingCount > 0 else { return audioSamples }
+
+        let leadingPaddingCount = totalPaddingCount / 2
+        let trailingPaddingCount = totalPaddingCount - leadingPaddingCount
+        return Array(repeating: 0, count: leadingPaddingCount)
+            + audioSamples
+            + Array(repeating: 0, count: trailingPaddingCount)
+    }
+
     private func partialDecodeInput(_ audioSamples: [Float], windowSeconds: Double) -> [Float] {
         let windowSamples = Int(windowSeconds * Constants.audioSampleRate)
         guard windowSamples > 0, audioSamples.count > windowSamples else {
             return audioSamples
         }
         return Array(audioSamples.suffix(windowSamples))
+    }
+
+    private func recoverShortEmptyFinalIfNeeded(
+        _ final: (text: String, language: String),
+        audioSamples: [Float]
+    ) async throws -> (text: String, language: String) {
+        guard Self.shouldRetryShortFinalTranscription(
+            text: final.text,
+            audioSampleCount: audioSamples.count
+        ) else {
+            return final
+        }
+
+        let originalSeconds = Self.audioDurationSeconds(sampleCount: audioSamples.count)
+        let paddedAudioSamples = Self.paddedShortFinalAudioSamples(audioSamples)
+        guard paddedAudioSamples.count > audioSamples.count else {
+            return final
+        }
+
+        logger.warn(
+            "Local Whisper returned empty final for short clip " +
+            "(\(String(format: "%.2f", originalSeconds))s); retrying with silence padding"
+        )
+
+        let retried = try await transcribe(audioSamples: paddedAudioSamples, isFinal: true)
+        let retriedText = retried.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !retriedText.isEmpty else {
+            logger.warn(
+                "Local Whisper short-clip retry remained empty " +
+                "(\(String(format: "%.2f", originalSeconds))s original audio)"
+            )
+            return final
+        }
+
+        logger.info(
+            "Recovered short final transcript after silence-padded retry " +
+            "(\(retriedText.count) chars from \(String(format: "%.2f", originalSeconds))s clip)"
+        )
+        return (retriedText, retried.language)
     }
 
     private func adjustedPartialWindowSeconds(

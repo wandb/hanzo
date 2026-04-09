@@ -161,10 +161,18 @@ struct AppBehaviorSettingsTests {
     func hasOverridesWithOnlyPostProcessingMode() {
         let override = AppBehaviorOverride(postProcessingMode: .off)
         #expect(override.hasOverrides == true)
+        #expect(override.hasHUDOverrides == true)
     }
 
-    @Test("resolvedBehavior uses built-in LLM prompt for built-in apps when no override exists")
-    func resolvedBehaviorUsesBuiltInLLMPromptForBuiltInApps() {
+    @Test("hasHUDOverrides ignores instruction-only overrides")
+    func hasHUDOverridesIgnoresInstructionOnlyOverrides() {
+        let override = AppBehaviorOverride(llmPostProcessingPrompt: "Prompt", commonTerms: "CoreWeave")
+        #expect(override.hasOverrides == true)
+        #expect(override.hasHUDOverrides == false)
+    }
+
+    @Test("resolvedBehavior uses global instructions for built-in apps when no override exists")
+    func resolvedBehaviorUsesGlobalInstructionsForBuiltInAppsWithoutOverride() {
         withDefaults { defaults in
             AppBehaviorSettings.setGlobalLLMPostProcessingPrompt("Global prompt", defaults: defaults)
 
@@ -173,7 +181,7 @@ struct AppBehaviorSettingsTests {
                 defaults: defaults
             )
 
-            #expect(resolved.llmPostProcessingPrompt == slackBuiltInPrompt)
+            #expect(resolved.llmPostProcessingPrompt == "Global prompt")
         }
     }
 
@@ -197,8 +205,8 @@ struct AppBehaviorSettingsTests {
         }
     }
 
-    @Test("resolvedBehavior falls back to built-in LLM prompt when app override prompt is nil")
-    func resolvedBehaviorFallsBackToBuiltInLLMPrompt() {
+    @Test("resolvedBehavior falls back to global instructions when app override instructions are nil")
+    func resolvedBehaviorFallsBackToGlobalInstructions() {
         withDefaults { defaults in
             AppBehaviorSettings.setGlobalLLMPostProcessingPrompt("Global prompt", defaults: defaults)
             AppBehaviorSettings.saveOverride(
@@ -211,7 +219,7 @@ struct AppBehaviorSettingsTests {
                 for: "com.tinyspeck.slackmacgap",
                 defaults: defaults
             )
-            #expect(resolved.llmPostProcessingPrompt == slackBuiltInPrompt)
+            #expect(resolved.llmPostProcessingPrompt == "Global prompt")
         }
     }
 
@@ -230,6 +238,61 @@ struct AppBehaviorSettingsTests {
                 defaults: defaults
             )
             #expect(resolved.llmPostProcessingPrompt == "Global prompt")
+        }
+    }
+
+    @Test("seeding built-in app instructions creates explicit overrides")
+    func seedingBuiltInAppInstructionsCreatesExplicitOverrides() {
+        withDefaults { defaults in
+            AppBehaviorSettings.seedBuiltInAppInstructionOverridesIfNeeded(defaults: defaults)
+
+            let override = AppBehaviorSettings.override(
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+
+            #expect(override?.llmPostProcessingPrompt == slackBuiltInPrompt)
+        }
+    }
+
+    @Test("seeding built-in app instructions does not overwrite existing overrides")
+    func seedingBuiltInAppInstructionsDoesNotOverwriteExistingOverrides() {
+        withDefaults { defaults in
+            AppBehaviorSettings.saveOverride(
+                AppBehaviorOverride(llmPostProcessingPrompt: "User prompt"),
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+
+            AppBehaviorSettings.seedBuiltInAppInstructionOverridesIfNeeded(defaults: defaults)
+
+            let override = AppBehaviorSettings.override(
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+
+            #expect(override?.llmPostProcessingPrompt == "User prompt")
+        }
+    }
+
+    @Test("seeding built-in app instructions runs only once")
+    func seedingBuiltInAppInstructionsRunsOnlyOnce() {
+        withDefaults { defaults in
+            AppBehaviorSettings.seedBuiltInAppInstructionOverridesIfNeeded(defaults: defaults)
+            AppBehaviorSettings.saveOverride(
+                AppBehaviorOverride(llmPostProcessingPrompt: nil),
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+
+            AppBehaviorSettings.seedBuiltInAppInstructionOverridesIfNeeded(defaults: defaults)
+
+            let override = AppBehaviorSettings.override(
+                for: "com.tinyspeck.slackmacgap",
+                defaults: defaults
+            )
+
+            #expect(override == nil)
         }
     }
 
@@ -332,6 +395,39 @@ struct AppBehaviorSettingsTests {
             #expect(
                 AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(
                     for: bundleIdentifier,
+                    defaults: defaults
+                )
+            )
+        }
+    }
+
+    @Test("shouldPersistHUDSettingsToAppOverride is false for supported app with instruction-only override")
+    func shouldPersistHUDSettingsToAppOverrideForInstructionOnlyOverride() {
+        withDefaults { defaults in
+            let bundleIdentifier = "com.tinyspeck.slackmacgap"
+            AppBehaviorSettings.saveOverride(
+                AppBehaviorOverride(llmPostProcessingPrompt: "Slack prompt"),
+                for: bundleIdentifier,
+                defaults: defaults
+            )
+
+            #expect(
+                !AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(
+                    for: bundleIdentifier,
+                    defaults: defaults
+                )
+            )
+        }
+    }
+
+    @Test("seeded built-in instruction overrides do not opt apps into HUD persistence")
+    func seededBuiltInInstructionOverridesDoNotOptIntoHUDPersistence() {
+        withDefaults { defaults in
+            AppBehaviorSettings.seedBuiltInAppInstructionOverridesIfNeeded(defaults: defaults)
+
+            #expect(
+                !AppBehaviorSettings.shouldPersistHUDSettingsToAppOverride(
+                    for: "com.tinyspeck.slackmacgap",
                     defaults: defaults
                 )
             )
