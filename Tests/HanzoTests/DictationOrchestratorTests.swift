@@ -155,6 +155,25 @@ struct DictationOrchestratorTests {
         try await Task.sleep(nanoseconds: settleNanoseconds)
     }
 
+    @MainActor
+    func sendAudioLevels(
+        _ levels: [Float],
+        to sut: SUT,
+        timeoutNanoseconds: UInt64 = 500_000_000
+    ) async -> Bool {
+        sut.mockAudio.simulateLevels(levels)
+        return await waitUntil(timeoutNanoseconds: timeoutNanoseconds) {
+            sut.appState.audioLevels == levels
+        }
+    }
+
+    @MainActor
+    func setSilenceTimeout(_ timeout: Double, for sut: SUT) {
+        sut.settings.globalSilenceTimeout = timeout
+        sut.orchestrator.silenceTimeout = timeout
+        sut.appState.silenceTimeout = timeout
+    }
+
     // MARK: - Initial State
 
     @Test("Initial state is idle")
@@ -473,8 +492,7 @@ struct DictationOrchestratorTests {
     @Test("Silence auto-close is suspended while the hotkey is held")
     @MainActor func silenceAutoCloseIsSuspendedWhileHoldingHotkey() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 0.2
-        sut.appState.silenceTimeout = 0.2
+        setSilenceTimeout(0.2, for: sut)
 
         sut.orchestrator.handleHotkeyDown()
         sut.appState.partialTranscript = "hello"
@@ -494,22 +512,39 @@ struct DictationOrchestratorTests {
     @Test("Silence auto-close resumes after a quick hotkey release")
     @MainActor func silenceAutoCloseResumesAfterQuickRelease() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 0.2
-        sut.appState.silenceTimeout = 0.2
+        setSilenceTimeout(0.2, for: sut)
 
         sut.orchestrator.handleHotkeyDown()
         try await Task.sleep(nanoseconds: 100_000_000)
         sut.orchestrator.handleHotkeyUp()
         sut.appState.partialTranscript = "hello"
 
-        let quietLevels: [Float] = [0.001, 0.0011, 0.001, 0.0011, 0.001, 0.0011, 0.001]
-        for _ in 0..<16 {
-            sut.mockAudio.simulateLevels(quietLevels)
+        let quietLevelSequence: [[Float]] = [
+            [0.001, 0.0011, 0.001, 0.0011, 0.001, 0.0011, 0.001],
+            [0.0011, 0.001, 0.0011, 0.001, 0.0011, 0.001, 0.0011]
+        ]
+        var didArmTimer = false
+        for index in 0..<30 {
+            let delivered = await sendAudioLevels(quietLevelSequence[index % quietLevelSequence.count], to: sut)
+            #expect(delivered)
             try await Task.sleep(nanoseconds: 60_000_000)
+            if sut.mockLogger.infoMessages.contains(where: { $0.contains("Silence timer started") }) {
+                didArmTimer = true
+                break
+            }
         }
+        #expect(didArmTimer)
 
-        let didAutoClose = await waitUntil(timeoutNanoseconds: 500_000_000) {
-            sut.mockAudio.stopCaptureCalled || sut.appState.dictationState != .listening
+        var didAutoClose = false
+        for index in 0..<4 {
+            try await Task.sleep(nanoseconds: 250_000_000)
+            let delivered = await sendAudioLevels(quietLevelSequence[index % quietLevelSequence.count], to: sut)
+            #expect(delivered)
+            try await Task.sleep(nanoseconds: 40_000_000)
+            if sut.mockAudio.stopCaptureCalled || sut.appState.dictationState != .listening {
+                didAutoClose = true
+                break
+            }
         }
 
         #expect(didAutoClose)
@@ -803,7 +838,7 @@ struct DictationOrchestratorTests {
         let sut = makeSUT(
             asrChunkResult: .success(ASRChunkResponse(text: "[BLANK_AUDIO]", language: "en"))
         )
-        sut.orchestrator.silenceTimeout = 0.2
+        setSilenceTimeout(0.2, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -1713,7 +1748,7 @@ struct DictationOrchestratorTests {
     @Test("Silence auto-close triggers after timeout")
     @MainActor func silenceAutoCloseTriggersStop() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 0.2
+        setSilenceTimeout(0.2, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 100_000_000)
 
@@ -1725,13 +1760,36 @@ struct DictationOrchestratorTests {
         sut.appState.partialTranscript = "hello world"
 
         // Simulate silence repeatedly — well past the 200ms timeout
-        let silentLevels: [Float] = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]
-        for _ in 0..<10 {
-            sut.mockAudio.simulateLevels(silentLevels)
+        let silentLevelSequence: [[Float]] = [
+            [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001],
+            [0.00105, 0.00105, 0.00105, 0.00105, 0.00105, 0.00105, 0.00105]
+        ]
+        var didArmTimer = false
+        for index in 0..<20 {
+            let delivered = await sendAudioLevels(silentLevelSequence[index % silentLevelSequence.count], to: sut)
+            #expect(delivered)
             try await Task.sleep(nanoseconds: 100_000_000)
+            if sut.mockLogger.infoMessages.contains(where: { $0.contains("Silence timer started") }) {
+                didArmTimer = true
+                break
+            }
+        }
+        #expect(didArmTimer)
+
+        var didAutoClose = false
+        for index in 0..<4 {
+            try await Task.sleep(nanoseconds: 300_000_000)
+            let delivered = await sendAudioLevels(silentLevelSequence[index % silentLevelSequence.count], to: sut)
+            #expect(delivered)
+            try await Task.sleep(nanoseconds: 40_000_000)
+            if sut.appState.dictationState != .listening {
+                didAutoClose = true
+                break
+            }
         }
 
         // Should have triggered stopRecording (forging or idle)
+        #expect(didAutoClose)
         #expect(sut.appState.dictationState != .listening)
         #expect(sut.mockAudio.stopCaptureCalled == true)
     }
@@ -1739,7 +1797,7 @@ struct DictationOrchestratorTests {
     @Test("Silence auto-close waits for sustained quiet before arming the countdown")
     @MainActor func silenceAutoCloseWaitsForSustainedQuietBeforeArming() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 0.5
+        setSilenceTimeout(0.5, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -1770,7 +1828,7 @@ struct DictationOrchestratorTests {
     @Test("Silence auto-close triggers despite steady ambient noise")
     @MainActor func silenceAutoCloseTriggersWithAmbientNoise() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 0.2
+        setSilenceTimeout(0.2, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -1796,7 +1854,7 @@ struct DictationOrchestratorTests {
     @Test("Silence auto-close still triggers when quiet baseline is high relative to speech peak")
     @MainActor func silenceAutoCloseTriggersWithHighRelativeBaseline() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 0.2
+        setSilenceTimeout(0.2, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -1822,7 +1880,7 @@ struct DictationOrchestratorTests {
     @Test("Silence auto-close ignores low-frequency rumble that lacks speech-band energy")
     @MainActor func silenceAutoCloseIgnoresLowFrequencyRumble() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 0.2
+        setSilenceTimeout(0.2, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -1847,7 +1905,7 @@ struct DictationOrchestratorTests {
     @Test("Silence auto-close is not excessively delayed by ambient jitter")
     @MainActor func silenceAutoCloseIsNotDelayedByAmbientJitter() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 0.2
+        setSilenceTimeout(0.2, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -1877,7 +1935,7 @@ struct DictationOrchestratorTests {
     @Test("Silence auto-close ignores borderline ambient bumps")
     @MainActor func silenceAutoCloseIgnoresBorderlineAmbientBumps() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 0.2
+        setSilenceTimeout(0.2, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -1907,7 +1965,7 @@ struct DictationOrchestratorTests {
     @Test("Silence auto-close does not trigger before speech")
     @MainActor func silenceAutoCloseWaitsForSpeech() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 0.2
+        setSilenceTimeout(0.2, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -1925,7 +1983,7 @@ struct DictationOrchestratorTests {
     @Test("Silence timer resets when speech resumes")
     @MainActor func silenceAutoCloseResetsOnSpeech() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 1.0
+        setSilenceTimeout(1.0, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -1954,7 +2012,7 @@ struct DictationOrchestratorTests {
     @Test("Transcript growth during quiet does not indefinitely delay silence auto-close")
     @MainActor func silenceAutoCloseNotBlockedByTranscriptGrowthDuringQuiet() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 0.25
+        setSilenceTimeout(0.25, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -1998,7 +2056,7 @@ struct DictationOrchestratorTests {
             ASRChunkResponse(text: "hello", language: "en")
         }
 
-        sut.orchestrator.silenceTimeout = 0.3
+        setSilenceTimeout(0.3, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -2038,7 +2096,7 @@ struct DictationOrchestratorTests {
             ASRChunkResponse(text: "hello", language: "en")
         }
 
-        sut.orchestrator.silenceTimeout = 0.3
+        setSilenceTimeout(0.3, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -2079,7 +2137,7 @@ struct DictationOrchestratorTests {
             ASRChunkResponse(text: "hello", language: "en")
         }
 
-        sut.orchestrator.silenceTimeout = 0.35
+        setSilenceTimeout(0.35, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -2136,7 +2194,7 @@ struct DictationOrchestratorTests {
         sut.mockASR.sendChunkHandler = { _, _ in
             ASRChunkResponse(text: "hello", language: "en")
         }
-        sut.orchestrator.silenceTimeout = 0.25
+        setSilenceTimeout(0.25, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -2178,7 +2236,7 @@ struct DictationOrchestratorTests {
         sut.mockASR.sendChunkHandler = { _, _ in
             ASRChunkResponse(text: "hello", language: "en")
         }
-        sut.orchestrator.silenceTimeout = 0.25
+        setSilenceTimeout(0.25, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -2222,7 +2280,7 @@ struct DictationOrchestratorTests {
         movingSUT.mockASR.sendChunkHandler = { _, _ in
             ASRChunkResponse(text: "hello", language: "en")
         }
-        movingSUT.orchestrator.silenceTimeout = 0.25
+        setSilenceTimeout(0.25, for: movingSUT)
         movingSUT.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -2255,7 +2313,7 @@ struct DictationOrchestratorTests {
         steadySUT.mockASR.sendChunkHandler = { _, _ in
             ASRChunkResponse(text: "hello", language: "en")
         }
-        steadySUT.orchestrator.silenceTimeout = 0.25
+        setSilenceTimeout(0.25, for: steadySUT)
         steadySUT.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -2284,7 +2342,7 @@ struct DictationOrchestratorTests {
     @Test("Silence auto-close stays within the configured motion linger bound")
     @MainActor func silenceAutoCloseStaysWithinMotionLingerBound() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 0.25
+        setSilenceTimeout(0.25, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -2321,7 +2379,7 @@ struct DictationOrchestratorTests {
     @Test("Silence auto-close does not trigger with audio but no transcription")
     @MainActor func silenceAutoCloseWaitsForTranscription() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 0.2
+        setSilenceTimeout(0.2, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
@@ -2343,7 +2401,7 @@ struct DictationOrchestratorTests {
     @Test("Silence auto-close disabled when timeout is 0")
     @MainActor func silenceAutoCloseDisabledWhenZero() async throws {
         let sut = makeSUT()
-        sut.orchestrator.silenceTimeout = 0.0
+        setSilenceTimeout(0.0, for: sut)
         sut.orchestrator.toggle()
         try await Task.sleep(nanoseconds: 50_000_000)
 
