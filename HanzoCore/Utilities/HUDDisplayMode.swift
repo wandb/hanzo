@@ -2,12 +2,15 @@ import AppKit
 
 enum HUDDisplayMode: String, CaseIterable {
     case full
+    case standard
     case compact
 
     var displayName: String {
         switch self {
         case .full:
             return "Full"
+        case .standard:
+            return "Standard"
         case .compact:
             return "Compact"
         }
@@ -16,9 +19,11 @@ enum HUDDisplayMode: String, CaseIterable {
 
 enum HUDLayout {
     static let fullPanelWidth: CGFloat = 480
+    static let standardPanelWidth: CGFloat = 200
     static let compactPanelWidth: CGFloat = 120
     static let fallbackMaxHeight: CGFloat = 760
     static let fullInitialPanelHeight: CGFloat = 60
+    static let standardInitialPanelHeight: CGFloat = 114
     static let compactInitialPanelHeight: CGFloat = 94
     static let cornerRadius: CGFloat = 22
 
@@ -39,6 +44,8 @@ enum HUDLayout {
         switch displayMode {
         case .full:
             return fullPanelWidth
+        case .standard:
+            return standardPanelWidth
         case .compact:
             return compactPanelWidth
         }
@@ -48,6 +55,8 @@ enum HUDLayout {
         switch displayMode {
         case .full:
             return NSSize(width: fullPanelWidth, height: fullInitialPanelHeight)
+        case .standard:
+            return NSSize(width: standardPanelWidth, height: standardInitialPanelHeight)
         case .compact:
             return NSSize(width: compactPanelWidth, height: compactInitialPanelHeight)
         }

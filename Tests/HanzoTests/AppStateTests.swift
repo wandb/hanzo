@@ -129,4 +129,35 @@ struct AppStateTests {
             #expect(state.hudDisplayMode == .compact)
         }
     }
+
+    @Test("hudDisplayMode loads standard mode")
+    func hudDisplayModeStandard() {
+        withSettings { settings in
+            settings.hudDisplayMode = .standard
+
+            let state = AppState(settings: settings)
+            #expect(state.hudDisplayMode == .standard)
+        }
+    }
+
+    // MARK: - HUDLayout
+
+    @Test("HUDLayout returns correct panel width for standard mode")
+    func hudLayoutStandardWidth() {
+        let width = HUDLayout.panelWidth(for: .standard, dictationState: .listening, hasErrorMessage: false)
+        #expect(width == HUDLayout.standardPanelWidth)
+    }
+
+    @Test("HUDLayout returns correct initial size for standard mode")
+    func hudLayoutStandardInitialSize() {
+        let size = HUDLayout.initialPanelSize(for: .standard)
+        #expect(size.width == HUDLayout.standardPanelWidth)
+        #expect(size.height == HUDLayout.standardInitialPanelHeight)
+    }
+
+    @Test("HUDLayout forces full width in error state for standard mode")
+    func hudLayoutStandardErrorWidth() {
+        let width = HUDLayout.panelWidth(for: .standard, dictationState: .error, hasErrorMessage: true)
+        #expect(width == HUDLayout.fullPanelWidth)
+    }
 }

@@ -11,6 +11,8 @@ struct TranscriptPopover: View {
             switch appState.hudDisplayMode {
             case .full:
                 fullContent
+            case .standard:
+                standardContent
             case .compact:
                 compactContent
             }
@@ -60,6 +62,28 @@ struct TranscriptPopover: View {
         .padding(.top, appState.partialTranscript.isEmpty ? 16 : 24)
         .padding(.horizontal, 24)
         .padding(.bottom, 16)
+    }
+
+    private var standardContent: some View {
+        VStack(alignment: .center, spacing: 4) {
+            if let errorMessage {
+                errorMessageView(errorMessage)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if isRecordingVisible {
+                AudioWaveformView(appState: appState)
+                    .frame(maxWidth: .infinity, alignment: .center)
+
+                StatusFooterView(
+                    appState: appState,
+                    settings: settings,
+                    onSettingsChanged: onSettingsChanged
+                )
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+        }
+        .padding(.top, errorMessage == nil ? 12 : 16)
+        .padding(.horizontal, errorMessage == nil ? 12 : 24)
+        .padding(.bottom, errorMessage == nil ? 8 : 16)
     }
 
     private var compactContent: some View {

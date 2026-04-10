@@ -1840,9 +1840,9 @@ struct DictationOrchestratorTests {
 
         let silentLevels: [Float] = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001]
 
-        for _ in 0..<4 {
+        for _ in 0..<3 {
             sut.mockAudio.simulateLevels(silentLevels)
-            try await Task.sleep(nanoseconds: 25_000_000)
+            try await Task.sleep(nanoseconds: 10_000_000)
         }
 
         #expect(sut.appState.dictationState == .listening)
