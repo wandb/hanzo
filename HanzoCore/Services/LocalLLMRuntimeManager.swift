@@ -656,7 +656,7 @@ actor LocalLLMRuntimeManager: LocalLLMRuntimeManagerProtocol {
         )
 
         let systemPrompt = "/no_think\n" + prompt
-        let userMessage = transcript
+        let userMessage = "<transcript>\n\(transcript)\n</transcript>"
         let maxTokens = rewriteMaxTokens(
             transcript: transcript,
             systemPrompt: systemPrompt,
