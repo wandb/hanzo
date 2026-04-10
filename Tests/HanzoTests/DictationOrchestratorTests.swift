@@ -1612,6 +1612,39 @@ struct DictationOrchestratorTests {
         #expect(sut.mockText.insertedTexts.first == rawTranscript)
     }
 
+    @Test("LLM mode falls back to raw transcript when rewrite diverges from input")
+    @MainActor func llmModeFallsBackWhenRewriteDiverges() async throws {
+        let mockLLM = MockLocalLLMRuntimeManager()
+        mockLLM.postProcessResult = .success(
+            "Preheat oven to 350 degrees. Mix flour, butter, sugar, and chocolate chips in a large bowl."
+        )
+        let rawTranscript = "We should discuss the quarterly revenue targets and hiring plan for next month."
+
+        let sut = makeSUT(
+            asrFinishResult: .success(
+                ASRFinishResponse(text: rawTranscript, language: "en")
+            ),
+            localLLMRuntimeManager: mockLLM,
+            postProcessingMode: .llm,
+            llmPostProcessingPrompt: "Make this concise.",
+            frontmostApplicationProvider: { NSRunningApplication.current }
+        )
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle()
+
+        let inserted = await waitUntil(timeoutNanoseconds: 4_000_000_000) {
+            sut.mockText.insertedTexts.count == 1
+        }
+        #expect(inserted)
+        #expect(sut.mockText.insertedTexts.first == rawTranscript)
+        #expect(mockLLM.postProcessCallCount == 1)
+        #expect(
+            sut.mockLogger.warnMessages.contains(where: { $0.contains("Rewrite diverged") })
+        )
+    }
+
     @Test("Cancelling a listening LLM session cools the local LLM runtime")
     @MainActor func cancellingListeningLLMSessionCoolsRuntime() async throws {
         let mockLLM = MockLocalLLMRuntimeManager()
