@@ -989,6 +989,12 @@ final class DictationOrchestrator {
                 logger.info(
                     "Local LLM post-processing finished in \(String(format: "%.2f", duration))s (changed: \(changed))"
                 )
+                if rewriteDiverged(input: sanitizedRawText, output: rewrittenSanitized) {
+                    logger.warn(
+                        "Rewrite diverged from transcript; falling back to filtered transcript"
+                    )
+                    return sanitizedRawText
+                }
                 return rewrittenSanitized
             case .failure(let error):
                 let duration = Date().timeIntervalSince(start)
@@ -1004,6 +1010,26 @@ final class DictationOrchestrator {
                 return sanitizedRawText
             }
         }
+    }
+
+    private static let rewriteDivergenceThreshold = 0.2
+    private static let rewriteDivergenceMinWords = 5
+
+    private func rewriteDiverged(input: String, output: String) -> Bool {
+        let inputWords = Self.normalizedWords(input)
+        guard inputWords.count >= Self.rewriteDivergenceMinWords else { return false }
+        let outputWords = Self.normalizedWords(output)
+        let overlap = Double(inputWords.intersection(outputWords).count) / Double(inputWords.count)
+        return overlap < Self.rewriteDivergenceThreshold
+    }
+
+    private static func normalizedWords(_ text: String) -> Set<String> {
+        Set(
+            text.lowercased()
+                .split(whereSeparator: \.isWhitespace)
+                .map { $0.trimmingCharacters(in: .punctuationCharacters) }
+                .filter { !$0.isEmpty }
+        )
     }
 
     private func filterTranscriptText(
