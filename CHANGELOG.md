@@ -2,6 +2,12 @@
 
 All notable changes to Hanzo are documented in this file.
 
+## [1.4.0] - 2026-04-14
+
+- Add new HUD "standard" display mode (#75) @adamwdraper
+- Harden LLM rewrite prompt to ensure transcription (#74) @adamwdraper
+- Ensure even short audio clips get transcribed fully (#73) @adamwdraper
+
 ## [1.3.0] - 2026-04-08
 
 - Refine text insertion fallbacks (#72) @adamwdraper
@@ -32,5 +38,4 @@ All notable changes to Hanzo are documented in this file.
 - Continued local-first dictation defaults, with local Whisper transcription and local rewrite enabled by default.
 - Expanded app-specific rewrite controls, including global defaults plus per-app instruction overrides and vocabulary.
 - Kept Sparkle-based direct-download updates as the supported release path for signed macOS builds.
-
 
