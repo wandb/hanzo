@@ -19,6 +19,7 @@ struct SettingsView: View {
     @State private var launchAtLogin: Bool
     @State private var appearanceMode: AppearanceMode
     @State private var hudDisplayMode: HUDDisplayMode
+    @State private var muteSystemAudioDuringDictation: Bool
     @State private var globalAutoSubmitMode: AutoSubmitMode
     @State private var globalSilenceTimeout: Double
     @State private var transcriptPostProcessingMode: TranscriptPostProcessingMode
@@ -88,6 +89,7 @@ struct SettingsView: View {
         _launchAtLogin = State(initialValue: SMAppService.mainApp.status == .enabled)
         _appearanceMode = State(initialValue: settings.appearanceMode)
         _hudDisplayMode = State(initialValue: settings.hudDisplayMode)
+        _muteSystemAudioDuringDictation = State(initialValue: settings.muteSystemAudioDuringDictation)
         _globalAutoSubmitMode = State(initialValue: settings.globalAutoSubmitMode)
         _globalSilenceTimeout = State(initialValue: settings.globalSilenceTimeout)
         _transcriptPostProcessingMode = State(initialValue: settings.globalTranscriptPostProcessingMode)
@@ -400,6 +402,28 @@ struct SettingsView: View {
                     LoggingService.shared.warn("Launch-at-login failed: \(error)")
                     launchAtLogin = SMAppService.mainApp.status == .enabled
                 }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Mute system audio while dictating")
+                        .font(.system(.body, design: .rounded))
+                    Spacer()
+                    generalTrailingControl {
+                        Toggle("", isOn: $muteSystemAudioDuringDictation)
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .labelsHidden()
+                            .accessibilityLabel("Mute system audio while dictating")
+                    }
+                }
+
+                Text("Silences other apps' audio output while the HUD is listening.")
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            .onChange(of: muteSystemAudioDuringDictation) {
+                settings.muteSystemAudioDuringDictation = muteSystemAudioDuringDictation
             }
 
             Divider()

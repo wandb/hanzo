@@ -3,6 +3,7 @@ import Foundation
 protocol AppSettingsProtocol: AnyObject {
     var appearanceMode: AppearanceMode { get set }
     var hudDisplayMode: HUDDisplayMode { get set }
+    var muteSystemAudioDuringDictation: Bool { get set }
     var asrProvider: ASRProvider { get set }
     var serverEndpoint: String { get set }
     var customServerPassword: String { get set }

@@ -33,6 +33,18 @@ final class AppSettings: AppSettingsProtocol {
         }
     }
 
+    var muteSystemAudioDuringDictation: Bool {
+        get {
+            if store.object(forKey: Constants.muteSystemAudioDuringDictationKey) == nil {
+                return Constants.defaultMuteSystemAudioDuringDictation
+            }
+            return store.bool(forKey: Constants.muteSystemAudioDuringDictationKey)
+        }
+        set {
+            store.set(newValue, forKey: Constants.muteSystemAudioDuringDictationKey)
+        }
+    }
+
     var asrProvider: ASRProvider {
         get {
             if let raw = store.string(forKey: Constants.asrProviderKey) {
