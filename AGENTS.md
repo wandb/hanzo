@@ -50,7 +50,6 @@ Package split into two targets: `HanzoCore` (library) and `HanzoApp` (executable
 - HotKey (global hotkeys) — SPM
 - WhisperKit (local ASR runtime/client) — SPM
 - Sparkle (app updates) — SPM
-- KeychainAccess (secure storage) — XcodeGen only
 
 ## Tests
 

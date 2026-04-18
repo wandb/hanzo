@@ -1,67 +1,23 @@
 import SwiftUI
 import Carbon
-import ServiceManagement
 import AppKit
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
     var appState: AppState
-    private let settings: AppSettingsProtocol
+    let settings: AppSettingsProtocol
     var onSave: (() -> Void)?
     var onHotkeyChanged: (() -> Void)?
     var onClose: (() -> Void)?
 
-    @State private var asrProvider: ASRProvider
-    @State private var serverEndpoint: String
-    @State private var serverPassword: String
-    @State private var hotkeyCode: UInt32
-    @State private var hotkeyModifiers: UInt32
-    @State private var launchAtLogin: Bool
-    @State private var appearanceMode: AppearanceMode
-    @State private var hudDisplayMode: HUDDisplayMode
-    @State private var globalAutoSubmitMode: AutoSubmitMode
-    @State private var globalSilenceTimeout: Double
-    @State private var transcriptPostProcessingMode: TranscriptPostProcessingMode
-    @State private var llmPostProcessingPrompt: String
-    @State private var globalCommonTerms: String
-    @State private var rewritePromptTemplate: String
-    @State private var rewritePromptTemplateValidationError: String?
-    @State private var localLLMContextSize: Int
-    @State private var appBehaviorOverrides: [String: AppBehaviorOverride]
-    @State private var supportedApps: [SupportedAppBehavior]
-    @State private var usageStats: UsageStatsSnapshot = UsageStatsStore.current()
+    @State private var form: SettingsFormState
     @State private var selectedSection: SettingsSection = .general
-    @State private var rewriteTemplateValidationTask: Task<Void, Never>?
 
-    @State private var isRecordingHotkey = false
-    @FocusState private var focusedField: Field?
     private let silenceTimeoutOptions: [Double] = [0, 1, 2, 3, 5]
     private let segmentedInputWidth: CGFloat = 220
     private let menuInputWidth: CGFloat = 180
-    private let postProcessingHelpText = "Automatically edits transcribed text using your local model. Per-app instructions and common terms override the global template variables."
-    private let instructionsHelpText = "Global auto edit instructions inserted into the system template as {{instructions}}. Used when an app does not define its own instructions."
-    private let commonTermsHelpText = "Preferred vocabulary for rewrite. One term per line. Injected only when your template includes {{common_terms}}."
-    private let appCommonTermsHelpText = "Per-app terms are merged after global terms. One term per line."
-    private let rewriteTemplateHelpText = "System prompt template used to guide the local auto edit model. The transcript is sent separately as the user message."
-    private let localLLMContextHelpText = "Maximum context window for local auto edit inference. If the app is using too much memory, try lowering this setting."
-    private let silenceTimeoutHelpText = "Stop recording after this much silence. Off disables it."
-    private let autoSubmitHelpText = "Press Enter or Cmd+Enter automatically after insert."
-    private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
-    }
-    private var appBuild: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unknown"
-    }
-    private var releaseNotesEntries: [ReleaseNotesEntry] {
-        ReleaseNotesProvider.loadEntries()
-    }
-    private var rawChangelog: String? {
-        ReleaseNotesProvider.loadChangelog()
-    }
 
-    private enum Field { case endpoint, serverPassword }
-
-    private enum SettingsSection: Hashable {
+    enum SettingsSection: Hashable {
         case general
         case transcription
         case app(String) // bundleIdentifier
@@ -79,132 +35,23 @@ struct SettingsView: View {
         self.onSave = onSave
         self.onHotkeyChanged = onHotkeyChanged
         self.onClose = onClose
-
-        _asrProvider = State(initialValue: settings.asrProvider)
-        _serverEndpoint = State(initialValue: settings.serverEndpoint)
-        _serverPassword = State(initialValue: settings.customServerPassword)
-        _hotkeyCode = State(initialValue: settings.hotkeyCode)
-        _hotkeyModifiers = State(initialValue: settings.hotkeyModifiers)
-        _launchAtLogin = State(initialValue: SMAppService.mainApp.status == .enabled)
-        _appearanceMode = State(initialValue: settings.appearanceMode)
-        _hudDisplayMode = State(initialValue: settings.hudDisplayMode)
-        _globalAutoSubmitMode = State(initialValue: settings.globalAutoSubmitMode)
-        _globalSilenceTimeout = State(initialValue: settings.globalSilenceTimeout)
-        _transcriptPostProcessingMode = State(initialValue: settings.globalTranscriptPostProcessingMode)
-        _llmPostProcessingPrompt = State(initialValue: settings.globalLLMPostProcessingPrompt)
-        _globalCommonTerms = State(initialValue: settings.globalCommonTerms)
-
-        let activeRewriteTemplate = TranscriptRewritePrompt.activeTemplate(settings: settings)
-        _rewritePromptTemplate = State(initialValue: activeRewriteTemplate)
-        _rewritePromptTemplateValidationError = State(
-            initialValue: TranscriptRewritePrompt.validateTemplate(activeRewriteTemplate)
-        )
-
-        _localLLMContextSize = State(initialValue: settings.localLLMContextSize)
-        _appBehaviorOverrides = State(initialValue: AppBehaviorSettings.loadOverrides(settings: settings))
-        _supportedApps = State(initialValue: AppBehaviorSettings.supportedApps(settings: settings))
+        _form = State(initialValue: SettingsFormState(settings: settings))
     }
 
     var body: some View {
         HStack(spacing: 0) {
-            // Sidebar
-            VStack(alignment: .leading, spacing: 0) {
-                sidebarButton(label: "General", icon: "gearshape", section: .general)
-
-                Divider()
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 12)
-
-                sidebarButton(label: "Transcription", icon: "waveform", section: .transcription)
-
-                Divider()
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 12)
-
-                Text("APPS")
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 4)
-
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(supportedApps) { app in
-                            appSidebarButton(for: app)
-                        }
-                    }
-                }
-
-                Divider()
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 12)
-
-                Button {
-                    presentAppPickerForCustomBehavior()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 11, weight: .medium))
-                        Text("Add New App")
-                            .font(.system(.caption, design: .rounded, weight: .medium))
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .padding(.bottom, 8)
-            }
-            .frame(width: 160)
-            .padding(.top, 12)
-
+            sidebar
             Divider()
-
-            // Content
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Spacer()
-                    Button(action: {
-                        onClose?()
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 16))
-                            .foregroundStyle(.primary.opacity(0.3))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Close settings")
-                }
-                .padding(.bottom, 4)
-
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        switch selectedSection {
-                        case .general:
-                            generalContent
-                        case .transcription:
-                            transcriptionContent
-                        case .app(let bundleIdentifier):
-                            if let app = supportedApps.first(where: { $0.bundleIdentifier == bundleIdentifier }) {
-                                appBehaviorContent(for: app)
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-            .padding(.bottom, 16)
+            content
         }
         .frame(width: 680, height: 520)
         .hudBackground(colorScheme: appState.preferredColorScheme)
-        .background(isRecordingHotkey ? HotkeyRecorderView(onKeyCombo: { keyCode, modifiers in
-            hotkeyCode = keyCode
-            hotkeyModifiers = modifiers
-            isRecordingHotkey = false
+        .background(form.isRecordingHotkey ? HotkeyRecorderView(onKeyCombo: { keyCode, modifiers in
+            form.hotkeyCode = keyCode
+            form.hotkeyModifiers = modifiers
+            form.isRecordingHotkey = false
             saveHotkey()
-        }) .frame(width: 0, height: 0) : nil)
+        }).frame(width: 0, height: 0) : nil)
         .onAppear {
             refreshUsageStats()
         }
@@ -214,11 +61,119 @@ struct SettingsView: View {
             }
         }
         .onDisappear {
-            rewriteTemplateValidationTask?.cancel()
+            form.rewriteTemplateValidationTask?.cancel()
         }
     }
 
     // MARK: - Sidebar
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sidebarButton(label: "General", icon: "gearshape", section: .general)
+
+            Divider()
+                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+
+            sidebarButton(label: "Transcription", icon: "waveform", section: .transcription)
+
+            Divider()
+                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+
+            Text("APPS")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundStyle(.tertiary)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(form.supportedApps) { app in
+                        appSidebarButton(for: app)
+                    }
+                }
+            }
+
+            Divider()
+                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+
+            Button {
+                presentAppPickerForCustomBehavior()
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .medium))
+                    Text("Add New App")
+                        .font(.system(.caption, design: .rounded, weight: .medium))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .padding(.bottom, 8)
+        }
+        .frame(width: 160)
+        .padding(.top, 12)
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Spacer()
+                Button(action: { onClose?() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.primary.opacity(0.3))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close settings")
+            }
+            .padding(.bottom, 4)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    switch selectedSection {
+                    case .general:
+                        GeneralPaneView(
+                            form: form,
+                            appState: appState,
+                            settings: settings,
+                            menuInputWidth: menuInputWidth
+                        )
+                    case .transcription:
+                        TranscriptionPaneView(
+                            form: form,
+                            appState: appState,
+                            settings: settings,
+                            silenceTimeoutOptions: silenceTimeoutOptions,
+                            segmentedInputWidth: segmentedInputWidth,
+                            menuInputWidth: menuInputWidth,
+                            onSave: onSave
+                        )
+                    case .app(let bundleIdentifier):
+                        if let app = form.supportedApps.first(where: { $0.bundleIdentifier == bundleIdentifier }) {
+                            AppBehaviorPaneView(
+                                app: app,
+                                form: form,
+                                settings: settings,
+                                silenceTimeoutOptions: silenceTimeoutOptions,
+                                menuInputWidth: menuInputWidth,
+                                onSave: onSave,
+                                onRemoved: { selectedSection = .general }
+                            )
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 12)
+        .padding(.bottom, 16)
+    }
 
     private func sidebarButton(label: String, icon: String, section: SettingsSection) -> some View {
         Button {
@@ -284,696 +239,16 @@ struct SettingsView: View {
         return nil
     }
 
-    // MARK: - General
+    // MARK: - Actions
 
-    private func generalTrailingControl<Control: View>(@ViewBuilder _ control: () -> Control) -> some View {
-        control()
-            .frame(width: menuInputWidth, alignment: .trailing)
+    private func saveHotkey() {
+        settings.hotkeyCode = form.hotkeyCode
+        settings.hotkeyModifiers = form.hotkeyModifiers
+        onHotkeyChanged?()
     }
 
-    private var generalContent: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            usageStatsContent
-
-            settingsSectionHeader(
-                "General",
-                subtitle: "Control startup behavior, appearance, HUD presentation, and hotkey capture."
-            )
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("Hotkey")
-                        .font(.system(.body, design: .rounded))
-                    Spacer()
-
-                    generalTrailingControl {
-                        Button {
-                            isRecordingHotkey.toggle()
-                        } label: {
-                            if isRecordingHotkey {
-                                Text("Press a key combo...")
-                                    .font(.system(.body, design: .rounded))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(.blue.opacity(0.2))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                            } else {
-                                Text(HotkeyService.displayString(keyCode: hotkeyCode, modifiers: hotkeyModifiers))
-                                    .font(.system(.body, design: .rounded, weight: .medium))
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(.primary.opacity(0.08))
-                                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(isRecordingHotkey ? "Cancel hotkey recording" : "Set hotkey")
-                    }
-                }
-
-                Text("Tap to start or stop. Hold to dictate, then release to stop.")
-                    .font(.system(.caption, design: .rounded))
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack {
-                Text("Style")
-                    .font(.system(.body, design: .rounded))
-                Spacer()
-                generalTrailingControl {
-                    Picker("", selection: $hudDisplayMode) {
-                        ForEach(HUDDisplayMode.allCases, id: \.self) { mode in
-                            Text(mode.displayName).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityLabel("Style")
-                }
-            }
-            .onChange(of: hudDisplayMode) {
-                settings.hudDisplayMode = hudDisplayMode
-                appState.hudDisplayMode = hudDisplayMode
-            }
-
-            HStack {
-                Text("Appearance")
-                    .font(.system(.body, design: .rounded))
-                Spacer()
-                generalTrailingControl {
-                    Picker("", selection: $appearanceMode) {
-                        Text("System").tag(AppearanceMode.system)
-                        Text("Light").tag(AppearanceMode.light)
-                        Text("Dark").tag(AppearanceMode.dark)
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityLabel("Appearance")
-                }
-            }
-            .onChange(of: appearanceMode) {
-                settings.appearanceMode = appearanceMode
-                appState.appearanceMode = appearanceMode
-            }
-
-            HStack {
-                Text("Open at startup")
-                    .font(.system(.body, design: .rounded))
-                Spacer()
-                generalTrailingControl {
-                    Toggle("", isOn: $launchAtLogin)
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .labelsHidden()
-                        .accessibilityLabel("Open at startup")
-                }
-            }
-            .onChange(of: launchAtLogin) {
-                do {
-                    if launchAtLogin {
-                        try SMAppService.mainApp.register()
-                        settings.launchAtLoginDisabledByUser = false
-                    } else {
-                        try SMAppService.mainApp.unregister()
-                        settings.launchAtLoginDisabledByUser = true
-                    }
-                } catch {
-                    LoggingService.shared.warn("Launch-at-login failed: \(error)")
-                    launchAtLogin = SMAppService.mainApp.status == .enabled
-                }
-            }
-
-            Divider()
-
-            Text("Version \(appVersion) | Build \(appBuild)")
-                .font(.system(.body, design: .rounded, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            Divider()
-
-            ReleaseNotesSectionView(
-                title: "What's New",
-                subtitle: "Bundled release notes for this installed build.",
-                changelog: rawChangelog,
-                entries: releaseNotesEntries
-            )
-        }
-    }
-
-    private var usageStatsContent: some View {
-        HStack(spacing: 10) {
-            usageStatCard(
-                value: usageStats.wordsAllTime.formatted(),
-                label: "Words transcribed"
-            )
-            usageStatCard(
-                value: minutesDictatedDisplay,
-                label: "Minutes dictated"
-            )
-            usageStatCard(
-                value: usageStats.averageWordsPerMinute.formatted(),
-                label: "Words per min"
-            )
-            usageStatCard(
-                value: usageStats.autoSubmitsAllTime.formatted(),
-                label: "Auto submits"
-            )
-        }
-    }
-
-    private func usageStatCard(value: String, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(value)
-                .font(.system(.title3, design: .rounded, weight: .semibold))
-            Text(label)
-                .font(.system(.caption, design: .rounded))
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(.primary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-
-    private var minutesDictatedDisplay: String {
-        let minutes = usageStats.minutesDictatedAllTime
-        guard minutes > 0 else { return "0" }
-        if minutes < 10 {
-            return minutes.formatted(.number.precision(.fractionLength(1)))
-        }
-        return Int(minutes.rounded()).formatted()
-    }
-
-    // MARK: - Transcription
-
-    private var transcriptionContent: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            settingsSectionHeader(
-                "Transcription",
-                subtitle: "Choose your provider and configure dictation auto edit defaults."
-            )
-
-            HStack {
-                Text("Provider")
-                    .font(.system(.body, design: .rounded))
-                Spacer()
-                Picker("", selection: $asrProvider) {
-                    ForEach(ASRProvider.allCases, id: \.rawValue) { provider in
-                        Text(provider.displayName).tag(provider)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .frame(width: segmentedInputWidth, alignment: .trailing)
-                .onChange(of: asrProvider) {
-                    appState.asrProvider = asrProvider
-                    saveTranscriptionSettings()
-                }
-            }
-
-            if asrProvider == .server {
-                TextField("Custom server endpoint", text: $serverEndpoint)
-                    .textFieldStyle(.plain)
-                    .font(.system(.body, design: .rounded))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.primary.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .focused($focusedField, equals: .endpoint)
-                    .onChange(of: serverEndpoint) { saveTranscriptionSettings() }
-
-                SecureField("Server password", text: $serverPassword)
-                    .textFieldStyle(.plain)
-                    .font(.system(.body, design: .rounded))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.primary.opacity(0.08))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .focused($focusedField, equals: .serverPassword)
-                    .onChange(of: serverPassword) { saveTranscriptionSettings() }
-            }
-
-            appBehaviorDefaultsContent
-        }
-    }
-
-    // MARK: - App Behavior Defaults
-
-    private var appBehaviorDefaultsContent: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            HStack(alignment: .top) {
-                settingLabel("Silence timeout", helpText: silenceTimeoutHelpText)
-                Spacer()
-                Picker("", selection: $globalSilenceTimeout) {
-                    ForEach(silenceTimeoutOptions, id: \.self) { timeout in
-                        Text(silenceTimeoutLabel(timeout)).tag(timeout)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(width: menuInputWidth, alignment: .trailing)
-            }
-            .onChange(of: globalSilenceTimeout) {
-                AppBehaviorSettings.setGlobalSilenceTimeout(globalSilenceTimeout, settings: settings)
-                if appState.activeTargetBundleIdentifier == nil {
-                    appState.silenceTimeout = globalSilenceTimeout
-                }
-                onSave?()
-            }
-
-            HStack(alignment: .top) {
-                settingLabel("Submit after insert", helpText: autoSubmitHelpText)
-                Spacer()
-                Picker("", selection: $globalAutoSubmitMode) {
-                    ForEach(AutoSubmitMode.allCases, id: \.self) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(width: menuInputWidth, alignment: .trailing)
-            }
-            .onChange(of: globalAutoSubmitMode) {
-                AppBehaviorSettings.setGlobalAutoSubmitMode(globalAutoSubmitMode, settings: settings)
-                if appState.activeTargetBundleIdentifier == nil {
-                    appState.autoSubmitMode = globalAutoSubmitMode
-                }
-                onSave?()
-            }
-
-            Divider()
-
-            settingsSectionHeader(
-                "Auto edit",
-                subtitle: postProcessingHelpText
-            )
-
-            HStack(alignment: .top) {
-                settingLabel("Enabled", helpText: nil)
-                Spacer()
-                HStack(spacing: 8) {
-                    Text(transcriptPostProcessingMode == .llm ? "On" : "Off")
-                        .font(.system(.caption, design: .rounded))
-                        .foregroundStyle(.secondary)
-                    Toggle("", isOn: llmPostProcessingEnabledBinding)
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .labelsHidden()
-                }
-            }
-            .onChange(of: transcriptPostProcessingMode) {
-                AppBehaviorSettings.setGlobalPostProcessingMode(
-                    transcriptPostProcessingMode,
-                    settings: settings
-                )
-                onSave?()
-            }
-
-            if transcriptPostProcessingMode == .llm {
-                VStack(alignment: .leading, spacing: 6) {
-                    settingLabel("Template", helpText: rewriteTemplateHelpText)
-
-                    TextEditor(text: $rewritePromptTemplate)
-                        .font(.system(.callout, design: .monospaced))
-                        .scrollContentBackground(.hidden)
-                        .frame(height: 160)
-                        .padding(8)
-                        .background(.primary.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .frame(maxWidth: .infinity)
-                        .accessibilityLabel("Template")
-                        .onChange(of: rewritePromptTemplate) {
-                            scheduleRewriteTemplateValidation()
-                        }
-
-                    Text("Placeholders: {{instructions}}, {{target_app}}, {{common_terms}}, {{#instructions}}...{{/instructions}}, {{#target_app}}...{{/target_app}}, {{#common_terms}}...{{/common_terms}}")
-                        .font(.system(.caption, design: .rounded))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    if shouldShowCommonTermsTemplateWarning {
-                        Text("This custom template does not include {{common_terms}}, so Common terms will be ignored.")
-                            .font(.system(.caption, design: .rounded))
-                            .foregroundStyle(.orange)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    if let rewritePromptTemplateValidationError {
-                        Text(rewritePromptTemplateValidationError)
-                            .font(.system(.caption, design: .rounded))
-                            .foregroundStyle(.red)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        Text("Template is valid.")
-                            .font(.system(.caption, design: .rounded))
-                            .foregroundStyle(.green)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
-                    HStack {
-                        Spacer()
-                        Button("Reset template") {
-                            resetRewritePromptTemplate()
-                        }
-                        .font(.system(.caption, design: .rounded))
-                        .buttonStyle(.borderless)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    settingLabel("Instructions", helpText: instructionsHelpText)
-                    TextEditor(text: $llmPostProcessingPrompt)
-                        .font(.system(.body, design: .rounded))
-                        .scrollContentBackground(.hidden)
-                        .frame(height: 80)
-                        .padding(8)
-                        .background(.primary.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .frame(maxWidth: .infinity)
-                        .accessibilityLabel("Instructions")
-                }
-                .onChange(of: llmPostProcessingPrompt) {
-                    AppBehaviorSettings.setGlobalLLMPostProcessingPrompt(
-                        llmPostProcessingPrompt,
-                        settings: settings
-                    )
-                    onSave?()
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    settingLabel("Common terms", helpText: commonTermsHelpText)
-                    TextEditor(text: $globalCommonTerms)
-                        .font(.system(.body, design: .rounded))
-                        .scrollContentBackground(.hidden)
-                        .frame(height: 100)
-                        .padding(8)
-                        .background(.primary.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .frame(maxWidth: .infinity)
-                        .accessibilityLabel("Common terms")
-                }
-                .onChange(of: globalCommonTerms) {
-                    AppBehaviorSettings.setGlobalCommonTerms(globalCommonTerms, settings: settings)
-                    onSave?()
-                }
-            }
-
-            if asrProvider == .local {
-                HStack(alignment: .top) {
-                    settingLabel("Context", helpText: localLLMContextHelpText)
-                    Spacer()
-                    Picker("", selection: $localLLMContextSize) {
-                        ForEach(Constants.supportedLocalLLMContextSizes, id: \.self) { size in
-                            Text("\(size) tokens").tag(size)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .frame(width: menuInputWidth, alignment: .trailing)
-                }
-                .onChange(of: localLLMContextSize) {
-                    saveTranscriptionSettings()
-                }
-            }
-        }
-    }
-
-    private func appBehaviorContent(for app: SupportedAppBehavior) -> some View {
-        VStack(alignment: .leading, spacing: 24) {
-            settingsSectionHeader(
-                app.displayName,
-                subtitle: "Configure app-specific transcription and auto edit behavior."
-            )
-
-            settingsSectionHeader(
-                "Transcription",
-                subtitle: "Override global transcription behavior for this app."
-            )
-
-            HStack(alignment: .top) {
-                settingLabel("Silence timeout", helpText: silenceTimeoutHelpText)
-                Spacer()
-                Picker("", selection: silenceTimeoutBinding(for: app)) {
-                    Text("Default").tag(nil as Double?)
-                    ForEach(silenceTimeoutOptions, id: \.self) { timeout in
-                        Text(silenceTimeoutLabel(timeout)).tag(Optional(timeout))
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(width: menuInputWidth, alignment: .trailing)
-            }
-
-            HStack(alignment: .top) {
-                settingLabel("Submit after insert", helpText: autoSubmitHelpText)
-                Spacer()
-                Picker("", selection: autoSubmitBinding(for: app)) {
-                    Text("Default").tag(nil as AutoSubmitMode?)
-                    ForEach(AutoSubmitMode.allCases, id: \.self) { mode in
-                        Text(mode.displayName).tag(Optional(mode))
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(width: menuInputWidth, alignment: .trailing)
-            }
-
-            Divider()
-
-            settingsSectionHeader(
-                "Auto edit",
-                subtitle: "App instructions and common terms override the global template variables for this app."
-            )
-
-            HStack(alignment: .top) {
-                settingLabel("Override", helpText: "Default follows the global setting. On and Off override for this app.")
-                Spacer()
-                Picker("", selection: postProcessingModeBinding(for: app)) {
-                    Text("Default").tag(nil as TranscriptPostProcessingMode?)
-                    Text("On").tag(Optional(TranscriptPostProcessingMode.llm))
-                    Text("Off").tag(Optional(TranscriptPostProcessingMode.off))
-                }
-                .pickerStyle(.menu)
-                .frame(width: menuInputWidth, alignment: .trailing)
-            }
-
-            if resolvedPostProcessingMode(for: app) == .llm {
-                VStack(alignment: .leading, spacing: 6) {
-                    settingLabel("Instructions", helpText: appInstructionsHelpText(for: app))
-                    TextEditor(text: llmPromptBinding(for: app))
-                        .font(.system(.body, design: .rounded))
-                        .scrollContentBackground(.hidden)
-                        .frame(height: 80)
-                        .padding(8)
-                        .background(.primary.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .frame(maxWidth: .infinity)
-                        .accessibilityLabel("Instructions for \(app.displayName)")
-
-                    if appBehaviorOverrides[app.bundleIdentifier]?.llmPostProcessingPrompt != nil {
-                        HStack {
-                            Spacer()
-                            Button("Reset to default") {
-                                var appOverride = appBehaviorOverrides[app.bundleIdentifier] ?? AppBehaviorOverride()
-                                appOverride.llmPostProcessingPrompt = nil
-                                persistOverride(appOverride, for: app.bundleIdentifier)
-                            }
-                            .font(.system(.caption, design: .rounded))
-                            .buttonStyle(.borderless)
-                        }
-                    }
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    settingLabel("Common terms", helpText: appCommonTermsHelpText)
-                    TextEditor(text: appCommonTermsBinding(for: app))
-                        .font(.system(.body, design: .rounded))
-                        .scrollContentBackground(.hidden)
-                        .frame(height: 100)
-                        .padding(8)
-                        .background(.primary.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .frame(maxWidth: .infinity)
-                        .accessibilityLabel("Common terms for \(app.displayName)")
-                }
-            }
-
-            if !app.isBuiltIn {
-                HStack {
-                    Spacer()
-                    Button("Remove App") {
-                        removeCustomApp(app)
-                        selectedSection = .general
-                    }
-                    .font(.system(.caption, design: .rounded))
-                    .foregroundStyle(.red)
-                    .buttonStyle(.borderless)
-                }
-            }
-        }
-    }
-
-    private func settingsSectionHeader(_ title: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.system(.title3, design: .rounded, weight: .semibold))
-            Text(subtitle)
-                .font(.system(.subheadline, design: .rounded))
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    @ViewBuilder
-    private func settingLabel(_ title: String, helpText: String?) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.system(.body, design: .rounded))
-            if let helpText {
-                Text(helpText)
-                    .font(.system(.caption, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private func resolvedPostProcessingMode(for app: SupportedAppBehavior) -> TranscriptPostProcessingMode {
-        appBehaviorOverrides[app.bundleIdentifier]?.postProcessingMode ?? transcriptPostProcessingMode
-    }
-
-    private func autoSubmitBinding(for app: SupportedAppBehavior) -> Binding<AutoSubmitMode?> {
-        Binding {
-            appBehaviorOverrides[app.bundleIdentifier]?.autoSubmitMode
-        } set: { newValue in
-            var appOverride = appBehaviorOverrides[app.bundleIdentifier] ?? AppBehaviorOverride()
-            appOverride.autoSubmitMode = newValue
-            persistOverride(appOverride, for: app.bundleIdentifier)
-        }
-    }
-
-    private func silenceTimeoutBinding(for app: SupportedAppBehavior) -> Binding<Double?> {
-        Binding {
-            appBehaviorOverrides[app.bundleIdentifier]?.silenceTimeout
-        } set: { newValue in
-            var appOverride = appBehaviorOverrides[app.bundleIdentifier] ?? AppBehaviorOverride()
-            appOverride.silenceTimeout = newValue
-            persistOverride(appOverride, for: app.bundleIdentifier)
-        }
-    }
-
-    private func postProcessingModeBinding(for app: SupportedAppBehavior) -> Binding<TranscriptPostProcessingMode?> {
-        Binding {
-            appBehaviorOverrides[app.bundleIdentifier]?.postProcessingMode
-        } set: { newValue in
-            var appOverride = appBehaviorOverrides[app.bundleIdentifier] ?? AppBehaviorOverride()
-            appOverride.postProcessingMode = newValue
-            persistOverride(appOverride, for: app.bundleIdentifier)
-        }
-    }
-
-    private func llmPromptBinding(for app: SupportedAppBehavior) -> Binding<String> {
-        Binding {
-            resolvedLLMPrompt(for: app)
-        } set: { newValue in
-            var appOverride = appBehaviorOverrides[app.bundleIdentifier] ?? AppBehaviorOverride()
-            appOverride.llmPostProcessingPrompt = newValue
-            persistOverride(appOverride, for: app.bundleIdentifier)
-        }
-    }
-
-    private func appCommonTermsBinding(for app: SupportedAppBehavior) -> Binding<String> {
-        Binding {
-            appBehaviorOverrides[app.bundleIdentifier]?.commonTerms ?? ""
-        } set: { newValue in
-            var appOverride = appBehaviorOverrides[app.bundleIdentifier] ?? AppBehaviorOverride()
-            if newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                appOverride.commonTerms = nil
-            } else {
-                appOverride.commonTerms = newValue
-            }
-            persistOverride(appOverride, for: app.bundleIdentifier)
-        }
-    }
-
-    private func resolvedLLMPrompt(for app: SupportedAppBehavior) -> String {
-        if let appPrompt = appBehaviorOverrides[app.bundleIdentifier]?.llmPostProcessingPrompt {
-            return appPrompt
-        }
-        return llmPostProcessingPrompt
-    }
-
-    private func appInstructionsHelpText(for _: SupportedAppBehavior) -> String {
-        "App instructions override the global instructions variable. If not set, this app uses the global value."
-    }
-
-    private func silenceTimeoutLabel(_ timeout: Double) -> String {
-        if timeout == 0 {
-            return "Off"
-        }
-
-        if timeout.truncatingRemainder(dividingBy: 1) == 0 {
-            return "\(Int(timeout))s"
-        }
-
-        return "\(timeout)s"
-    }
-
-    private var llmPostProcessingEnabledBinding: Binding<Bool> {
-        Binding {
-            transcriptPostProcessingMode == .llm
-        } set: { isEnabled in
-            transcriptPostProcessingMode = isEnabled ? .llm : .off
-        }
-    }
-
-    private var shouldShowCommonTermsTemplateWarning: Bool {
-        let normalizedCurrentTemplate = rewritePromptTemplate.replacingOccurrences(of: "\r\n", with: "\n")
-        let normalizedDefaultTemplate = TranscriptRewritePrompt.defaultTemplate().replacingOccurrences(
-            of: "\r\n",
-            with: "\n"
-        )
-        let isCustomTemplate = normalizedCurrentTemplate != normalizedDefaultTemplate
-            || TranscriptRewritePrompt.customTemplate(settings: settings) != nil
-
-        guard isCustomTemplate else { return false }
-        return !TranscriptRewritePrompt.templateIncludesCommonTermsPlaceholder(rewritePromptTemplate)
-    }
-
-    private func scheduleRewriteTemplateValidation() {
-        rewriteTemplateValidationTask?.cancel()
-
-        rewriteTemplateValidationTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            guard !Task.isCancelled else { return }
-            validateAndPersistRewriteTemplate()
-        }
-    }
-
-    private func validateAndPersistRewriteTemplate() {
-        rewritePromptTemplateValidationError = TranscriptRewritePrompt.validateTemplate(rewritePromptTemplate)
-
-        guard rewritePromptTemplateValidationError == nil else {
-            return
-        }
-
-        TranscriptRewritePrompt.setCustomTemplate(rewritePromptTemplate, settings: settings)
-        onSave?()
-    }
-
-    private func resetRewritePromptTemplate() {
-        rewriteTemplateValidationTask?.cancel()
-        rewritePromptTemplate = TranscriptRewritePrompt.defaultTemplate()
-        rewritePromptTemplateValidationError = nil
-        TranscriptRewritePrompt.setCustomTemplate(nil, settings: settings)
-        onSave?()
-    }
-
-    private func persistOverride(_ appOverride: AppBehaviorOverride, for bundleIdentifier: String) {
-        if appOverride.hasOverrides {
-            appBehaviorOverrides[bundleIdentifier] = appOverride
-            AppBehaviorSettings.saveOverride(appOverride, for: bundleIdentifier, settings: settings)
-        } else {
-            appBehaviorOverrides.removeValue(forKey: bundleIdentifier)
-            AppBehaviorSettings.saveOverride(nil, for: bundleIdentifier, settings: settings)
-        }
-
-        onSave?()
+    private func refreshUsageStats() {
+        form.usageStats = UsageStatsStore.current()
     }
 
     @MainActor
@@ -1028,7 +303,7 @@ struct SettingsView: View {
             displayName: appName,
             settings: settings
         )
-        supportedApps = AppBehaviorSettings.supportedApps(settings: settings)
+        form.supportedApps = AppBehaviorSettings.supportedApps(settings: settings)
 
         switch result {
         case .added, .updated:
@@ -1041,38 +316,6 @@ struct SettingsView: View {
             break
         }
     }
-
-    private func removeCustomApp(_ app: SupportedAppBehavior) {
-        guard !app.isBuiltIn else { return }
-
-        _ = AppBehaviorSettings.removeCustomApp(
-            bundleIdentifier: app.bundleIdentifier,
-            settings: settings
-        )
-        appBehaviorOverrides.removeValue(forKey: app.bundleIdentifier)
-        supportedApps = AppBehaviorSettings.supportedApps(settings: settings)
-        onSave?()
-    }
-
-    private func saveTranscriptionSettings() {
-        settings.asrProvider = asrProvider
-        settings.serverEndpoint = serverEndpoint
-        settings.customServerPassword = serverPassword
-        settings.localLLMContextSize = localLLMContextSize
-        appState.asrProvider = asrProvider
-        onSave?()
-    }
-
-    private func saveHotkey() {
-        settings.hotkeyCode = hotkeyCode
-        settings.hotkeyModifiers = hotkeyModifiers
-        onHotkeyChanged?()
-    }
-
-    private func refreshUsageStats() {
-        usageStats = UsageStatsStore.current()
-    }
-
 }
 
 // MARK: - Hotkey Recorder

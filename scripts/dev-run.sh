@@ -1,6 +1,31 @@
 #!/bin/bash
 set -euo pipefail
 
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'USAGE'
+scripts/dev-run.sh — build and launch Hanzo Dev.app from source
+
+Usage:
+  ./scripts/dev-run.sh [FLAGS]
+
+Flags:
+  --reset-models       Clear downloaded models before building
+  --reset-permissions  Reset Microphone and Accessibility TCC permissions
+  --reset-settings     Clear app UserDefaults (onboarding + preferences)
+  --no-launch          Build and assemble the .app bundle without launching
+  -h, --help           Show this help
+
+Environment:
+  HANZO_DEV_BUNDLE_IDENTIFIER  Override dev bundle identifier (default: com.hanzo.app.dev)
+  HANZO_DEV_APP_NAME           Override display name (default: Hanzo Dev)
+  HANZO_DEV_APP_ROOT           Override .app install path
+  HANZO_LLAMA_SERVER_PATH      Optional path to llama-server or its parent dir
+  HANZO_LLAMA_RELEASE_TAG      Optional llama.cpp release tag override
+  HANZO_LLAMA_RELEASE_SHA256   Required when overriding HANZO_LLAMA_RELEASE_TAG
+USAGE
+    exit 0
+fi
+
 die() {
     echo "Error: $*" >&2
     exit 1

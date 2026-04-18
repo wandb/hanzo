@@ -13,9 +13,6 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle.git
     from: "2.6.4"
-  KeychainAccess:
-    url: https://github.com/kishikawakatsumi/KeychainAccess
-    from: "4.2.2"
 
 targets:
   Hanzo:
@@ -39,4 +36,3 @@ targets:
     dependencies:
       - package: HotKey
       - package: Sparkle
-      - package: KeychainAccess

@@ -1,6 +1,31 @@
 #!/bin/bash
 set -euo pipefail
 
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'USAGE'
+scripts/configure-notarytool-profile.sh — store a notarytool keychain profile for Hanzo using an App Store Connect API key
+
+Usage:
+  ./scripts/configure-notarytool-profile.sh [FLAGS]
+
+Flags:
+  --profile <value>       Keychain profile name (default: hanzo-notary)
+  --key-id <value>        App Store Connect API key ID
+  --issuer <value>        App Store Connect API issuer ID
+  --key-file <path>       Path to AuthKey_<KEY_ID>.p8
+  --key-b64-file <path>   File containing base64-encoded AuthKey_<KEY_ID>.p8
+  -h, --help              Show this help
+
+Environment:
+  HANZO_NOTARY_PROFILE        Default profile name
+  NOTARY_API_KEY_ID           Default API key ID
+  NOTARY_API_ISSUER_ID        Default issuer ID
+  NOTARY_API_PRIVATE_KEY_B64  Base64-encoded API private key contents used when
+                              --key-file/--key-b64-file are omitted
+USAGE
+    exit 0
+fi
+
 die() {
     echo "Error: $*" >&2
     exit 1

@@ -12,6 +12,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install SwiftFormat
+        run: brew install swiftformat
+
+      - name: Lint Swift formatting
+        run: swiftformat --lint .
+
       - name: Build
         run: |
           run_with_retry() {

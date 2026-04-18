@@ -3,12 +3,17 @@ import AppKit
 
 final class HotkeyService {
     private let settings: AppSettingsProtocol
+    private let logger: LoggingServiceProtocol
     private var hotKey: HotKey?
     var onKeyDown: (() -> Void)?
     var onKeyUp: (() -> Void)?
 
-    init(settings: AppSettingsProtocol = AppSettings.live) {
+    init(
+        settings: AppSettingsProtocol = AppSettings.live,
+        logger: LoggingServiceProtocol = LoggingService.shared
+    ) {
         self.settings = settings
+        self.logger = logger
     }
 
     func register() {
@@ -22,12 +27,12 @@ final class HotkeyService {
         hotKey?.keyUpHandler = { [weak self] in
             self?.onKeyUp?()
         }
-        LoggingService.shared.info("Hotkey registered: keyCode=\(carbonKeyCode), modifiers=\(carbonModifiers)")
+        logger.info("Hotkey registered: keyCode=\(carbonKeyCode), modifiers=\(carbonModifiers)")
     }
 
     func unregister() {
         hotKey = nil
-        LoggingService.shared.info("Hotkey unregistered")
+        logger.info("Hotkey unregistered")
     }
 
     func reregister() {

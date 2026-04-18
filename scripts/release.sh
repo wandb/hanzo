@@ -1,6 +1,33 @@
 #!/bin/bash
 set -euo pipefail
 
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'USAGE'
+scripts/release.sh — build signed/notarized release artifacts for Hanzo
+
+Usage:
+  ./scripts/release.sh [FLAGS]
+
+Flags:
+  --version <value>         Override CFBundleShortVersionString (default: Info.plist value)
+  --build-number <value>    Override CFBundleVersion (default: Info.plist value)
+  --output-dir <path>       Output directory (default: ./dist)
+  --sign-identity <value>   Developer ID Application identity
+  --notary-profile <value>  notarytool keychain profile name
+  --skip-notarize           Build and sign artifacts, but do not notarize
+  --unsigned                Build unsigned artifacts (disables notarization)
+  -h, --help                Show this help
+
+Environment:
+  HANZO_SIGN_IDENTITY        Default signing identity
+  HANZO_NOTARY_PROFILE       Default notarytool keychain profile
+  HANZO_LLAMA_SERVER_PATH    Optional path to llama-server or its parent dir
+  HANZO_LLAMA_RELEASE_TAG    Optional llama.cpp release tag override
+  HANZO_LLAMA_RELEASE_SHA256 Required when overriding HANZO_LLAMA_RELEASE_TAG
+USAGE
+    exit 0
+fi
+
 die() {
     echo "Error: $*" >&2
     exit 1

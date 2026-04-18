@@ -6,9 +6,14 @@ final class AudioCaptureService: AudioCaptureProtocol {
     private let engine = AVAudioEngine()
     private var converter: AVAudioConverter?
     private var isCapturing = false
+    private let logger: LoggingServiceProtocol
 
     var onAudioChunk: ((Data) -> Void)?
     var onAudioLevels: (([Float]) -> Void)?
+
+    init(logger: LoggingServiceProtocol = LoggingService.shared) {
+        self.logger = logger
+    }
 
     // FFT setup for frequency analysis (pre-allocated, reused per buffer)
     private let fftLog2n: vDSP_Length = 10 // 2^10 = 1024 point FFT
@@ -60,7 +65,7 @@ final class AudioCaptureService: AudioCaptureProtocol {
         engine.prepare()
         try engine.start()
         isCapturing = true
-        LoggingService.shared.info("Audio capture started (input: \(inputFormat.sampleRate)Hz \(inputFormat.channelCount)ch, target: \(targetFormat.sampleRate)Hz \(targetFormat.channelCount)ch)")
+        logger.info("Audio capture started (input: \(inputFormat.sampleRate)Hz \(inputFormat.channelCount)ch, target: \(targetFormat.sampleRate)Hz \(targetFormat.channelCount)ch)")
     }
 
     func stopCapture() {
@@ -69,7 +74,7 @@ final class AudioCaptureService: AudioCaptureProtocol {
         engine.stop()
         converter = nil
         isCapturing = false
-        LoggingService.shared.info("Audio capture stopped")
+        logger.info("Audio capture stopped")
     }
 
     private func computeFrequencyBands(_ samples: UnsafePointer<Float>) {
@@ -152,7 +157,7 @@ final class AudioCaptureService: AudioCaptureProtocol {
         }
 
         if let error = error {
-            LoggingService.shared.warn("Audio conversion error: \(error)")
+            logger.warn("Audio conversion error: \(error)")
             return
         }
 

@@ -1,6 +1,29 @@
 #!/bin/bash
 set -euo pipefail
 
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'USAGE'
+scripts/build-sparkle-appcast-site.sh — build a GitHub Pages site with a Sparkle appcast from GitHub Releases
+
+Usage:
+  ./scripts/build-sparkle-appcast-site.sh [FLAGS]
+
+Flags:
+  --repo <owner/name>      GitHub repository to read releases from
+  --site-url <url>         Public GitHub Pages base URL
+  --output-dir <path>      Output directory (default: ./dist/sparkle-site)
+  --release-limit <count>  Number of published releases to mirror (default: 6)
+  --ed-key-file <path>     Sparkle private EdDSA key file
+  --link-url <url>         Product or release page URL shown by Sparkle
+  -h, --help               Show this help
+
+Environment:
+  GH_TOKEN                GitHub token used by gh CLI
+  SPARKLE_PRIVATE_ED_KEY  Sparkle private EdDSA key contents used if --ed-key-file is omitted
+USAGE
+    exit 0
+fi
+
 die() {
     echo "Error: $*" >&2
     exit 1

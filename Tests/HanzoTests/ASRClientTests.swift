@@ -263,7 +263,9 @@ struct ASRClientTests {
 
         let sut = makeSUT()
         _ = try await sut.sendChunk(sessionId: "sess-1", pcmData: Data([0x01]))
-        let components = URLComponents(url: capturedRequest!.url!, resolvingAgainstBaseURL: false)
+        let request = try #require(capturedRequest)
+        let url = try #require(request.url)
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let sessionParam = components?.queryItems?.first(where: { $0.name == "session_id" })
         #expect(sessionParam?.value == "sess-1")
     }
@@ -380,7 +382,9 @@ struct ASRClientTests {
 
         let sut = makeSUT()
         _ = try await sut.finishStream(sessionId: "fin-42")
-        let components = URLComponents(url: capturedRequest!.url!, resolvingAgainstBaseURL: false)
+        let request = try #require(capturedRequest)
+        let url = try #require(request.url)
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let sessionParam = components?.queryItems?.first(where: { $0.name == "session_id" })
         #expect(sessionParam?.value == "fin-42")
     }
