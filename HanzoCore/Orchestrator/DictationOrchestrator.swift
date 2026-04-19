@@ -11,6 +11,7 @@ final class DictationOrchestrator {
     private let recentDictationStore: RecentDictationStoreProtocol
     private let permissionService: PermissionServiceProtocol
     private let runtimeCoordinator: RuntimeCoordinator
+    private let systemAudioControl: SystemAudioControlProtocol
     private let logger: LoggingServiceProtocol
     private let frontmostApplicationProvider: () -> NSRunningApplication?
     private let workspaceFrontmostApplicationProvider: () -> NSRunningApplication?
@@ -50,6 +51,7 @@ final class DictationOrchestrator {
         permissionService: PermissionServiceProtocol,
         localRuntimeManager: LocalASRRuntimeManagerProtocol = LocalASRRuntimeManager(),
         localLLMRuntimeManager: LocalLLMRuntimeManagerProtocol,
+        systemAudioControl: SystemAudioControlProtocol = SystemAudioService(),
         logger: LoggingServiceProtocol,
         settings: AppSettingsProtocol,
         clock: ClockProtocol = SystemClock(),
@@ -71,6 +73,7 @@ final class DictationOrchestrator {
             localLLMRuntimeManager: localLLMRuntimeManager,
             logger: logger
         )
+        self.systemAudioControl = systemAudioControl
         self.logger = logger
         self.frontmostApplicationProvider = frontmostApplicationProvider
         self.workspaceFrontmostApplicationProvider = workspaceFrontmostApplicationProvider
@@ -210,6 +213,7 @@ final class DictationOrchestrator {
         hotkeyController.clear()
         let sid = sessionId
         audioService.stopCapture()
+        systemAudioControl.restoreDefaultOutput()
         audioStreamer.cancelCurrentEpoch()
         sessionId = nil
         runtimeCoordinator.abortLocalASRSessionIfNeeded(sessionId: sid, asrClient: asrClient)
@@ -251,6 +255,7 @@ final class DictationOrchestrator {
     }
 
     func shutdownAndWait(timeoutSeconds: TimeInterval = 3.0) {
+        systemAudioControl.restoreDefaultOutput()
         let semaphore = DispatchSemaphore(value: 0)
         Task {
             await runtimeCoordinator.stopAllRuntimesForShutdown()
@@ -304,6 +309,9 @@ final class DictationOrchestrator {
         appState.dictationState = .listening
         appState.partialTranscript = ""
         appState.isPopoverPresented = true
+        if settings.muteSystemAudioDuringDictation {
+            systemAudioControl.muteDefaultOutput()
+        }
         recordingStartTime = Date()
         audioStreamer.startNewEpoch()
         silenceDetector.resetForNewSession()
@@ -318,6 +326,7 @@ final class DictationOrchestrator {
                 try audioService.startCapture()
             } catch {
                 logger.error("Failed to start recording: \(error)")
+                systemAudioControl.restoreDefaultOutput()
                 await MainActor.run {
                     hotkeyController.clear()
                     appState.dictationState = .error
@@ -335,6 +344,7 @@ final class DictationOrchestrator {
         logger.info("Stopping recording")
         let recordingEndedAt = Date()
         audioService.stopCapture()
+        systemAudioControl.restoreDefaultOutput()
         appState.dictationState = .forging
         let (recordingEpoch, inFlightChunkTask) = audioStreamer.beginStopping()
 
@@ -581,6 +591,7 @@ final class DictationOrchestrator {
 
     private func reset() {
         hotkeyController.clear()
+        systemAudioControl.restoreDefaultOutput()
         appState.dictationState = .idle
         appState.errorMessage = nil
         appState.partialTranscript = ""

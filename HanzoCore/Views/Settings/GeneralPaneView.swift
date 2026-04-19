@@ -126,6 +126,28 @@ struct GeneralPaneView: View {
                 }
             }
 
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Mute system audio while dictating")
+                        .font(.system(.body, design: .rounded))
+                    Spacer()
+                    trailingControl {
+                        Toggle("", isOn: $form.muteSystemAudioDuringDictation)
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .labelsHidden()
+                            .accessibilityLabel("Mute system audio while dictating")
+                    }
+                }
+
+                Text("Silences other apps' audio output while the HUD is listening.")
+                    .font(.system(.caption, design: .rounded))
+                    .foregroundStyle(.secondary)
+            }
+            .onChange(of: form.muteSystemAudioDuringDictation) {
+                settings.muteSystemAudioDuringDictation = form.muteSystemAudioDuringDictation
+            }
+
             Divider()
 
             Text("Version \(appVersion) | Build \(appBuild)")

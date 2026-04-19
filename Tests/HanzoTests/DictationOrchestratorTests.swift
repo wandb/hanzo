@@ -42,6 +42,7 @@ struct DictationOrchestratorTests {
         let mockLocalRuntime: MockLocalASRRuntimeManager
         let mockLLM: MockLocalLLMRuntimeManager
         let mockRecentDictations: MockRecentDictationStore
+        let mockSystemAudio: MockSystemAudioControl
         /// Non-nil only when `makeSUT` was given a `clock:` override. Tests
         /// that opt into `TestClock` can `advance(by:)` directly; default
         /// tests continue to use `SystemClock` and ignore this field.
@@ -100,6 +101,7 @@ struct DictationOrchestratorTests {
         mockPerms.hasMicrophonePermission = micPermission
         mockPerms.hasAccessibilityPermission = accessibilityPermission
         let mockLogger = MockLogger()
+        let mockSystemAudio = MockSystemAudioControl()
         let mockRecentDictations = MockRecentDictationStore()
         mockRecentDictations.entries = recentHistoryEntries
         appState.isOnboardingComplete = onboardingComplete
@@ -116,6 +118,7 @@ struct DictationOrchestratorTests {
             permissionService: mockPerms,
             localRuntimeManager: localRuntimeManager,
             localLLMRuntimeManager: localLLMRuntimeManager,
+            systemAudioControl: mockSystemAudio,
             logger: mockLogger,
             settings: settings,
             clock: resolvedClock,
@@ -135,6 +138,7 @@ struct DictationOrchestratorTests {
             mockLocalRuntime: localRuntimeManager,
             mockLLM: localLLMRuntimeManager,
             mockRecentDictations: mockRecentDictations,
+            mockSystemAudio: mockSystemAudio,
             testClock: testClock
         )
     }
@@ -429,6 +433,7 @@ struct DictationOrchestratorTests {
             recentDictationStore: mockRecentDictations,
             permissionService: mockPerms,
             localLLMRuntimeManager: MockLocalLLMRuntimeManager(),
+            systemAudioControl: MockSystemAudioControl(),
             logger: mockLogger,
             settings: settings,
             frontmostApplicationProvider: { nil }
@@ -621,6 +626,7 @@ struct DictationOrchestratorTests {
             recentDictationStore: mockRecentDictations,
             permissionService: mockPerms,
             localLLMRuntimeManager: MockLocalLLMRuntimeManager(),
+            systemAudioControl: MockSystemAudioControl(),
             logger: mockLogger,
             settings: settings,
             frontmostApplicationProvider: { NSRunningApplication.current }
@@ -1195,6 +1201,7 @@ struct DictationOrchestratorTests {
             recentDictationStore: mockRecentDictations,
             permissionService: mockPerms,
             localLLMRuntimeManager: MockLocalLLMRuntimeManager(),
+            systemAudioControl: MockSystemAudioControl(),
             logger: mockLogger,
             settings: settings,
             frontmostApplicationProvider: { nil }
@@ -2463,5 +2470,73 @@ struct DictationOrchestratorTests {
 
         // Should still be listening — feature disabled
         #expect(sut.appState.dictationState == .listening)
+    }
+
+    // MARK: - System audio muting
+
+    @Test("Mute called on listening when setting is enabled")
+    @MainActor func systemAudioMutedOnListening() async throws {
+        let sut = makeSUT()
+        sut.settings.muteSystemAudioDuringDictation = true
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(sut.appState.dictationState == .listening)
+        #expect(sut.mockSystemAudio.muteCallCount == 1)
+        #expect(sut.mockSystemAudio.restoreCallCount == 0)
+    }
+
+    @Test("Mute not called when setting is disabled")
+    @MainActor func systemAudioNotMutedWhenSettingDisabled() async throws {
+        let sut = makeSUT()
+        sut.settings.muteSystemAudioDuringDictation = false
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(sut.appState.dictationState == .listening)
+        #expect(sut.mockSystemAudio.muteCallCount == 0)
+    }
+
+    @Test("Restore called on normal stop")
+    @MainActor func systemAudioRestoredOnStop() async throws {
+        let sut = makeSUT()
+        sut.settings.muteSystemAudioDuringDictation = true
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.toggle() // listening -> forging
+
+        #expect(sut.mockSystemAudio.muteCallCount == 1)
+        #expect(sut.mockSystemAudio.restoreCallCount >= 1)
+    }
+
+    @Test("Restore called on cancel")
+    @MainActor func systemAudioRestoredOnCancel() async throws {
+        let sut = makeSUT()
+        sut.settings.muteSystemAudioDuringDictation = true
+
+        sut.orchestrator.toggle()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        sut.orchestrator.cancel()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(sut.mockSystemAudio.muteCallCount == 1)
+        #expect(sut.mockSystemAudio.restoreCallCount >= 1)
+    }
+
+    @Test("Restore called on ASR start failure")
+    @MainActor func systemAudioRestoredOnStartFailure() async throws {
+        struct TestError: Error {}
+        let sut = makeSUT(asrStartResult: .failure(TestError()))
+        sut.settings.muteSystemAudioDuringDictation = true
+
+        sut.orchestrator.toggle()
+        let settled = await waitUntil(timeoutNanoseconds: 1_000_000_000) {
+            sut.appState.dictationState == .error
+        }
+        #expect(settled)
+        #expect(sut.mockSystemAudio.restoreCallCount >= 1)
     }
 }

@@ -15,6 +15,7 @@ final class SettingsFormState {
     var launchAtLogin: Bool
     var appearanceMode: AppearanceMode
     var hudDisplayMode: HUDDisplayMode
+    var muteSystemAudioDuringDictation: Bool
     var globalAutoSubmitMode: AutoSubmitMode
     var globalSilenceTimeout: Double
     var transcriptPostProcessingMode: TranscriptPostProcessingMode
@@ -38,6 +39,7 @@ final class SettingsFormState {
         self.launchAtLogin = SMAppService.mainApp.status == .enabled
         self.appearanceMode = settings.appearanceMode
         self.hudDisplayMode = settings.hudDisplayMode
+        self.muteSystemAudioDuringDictation = settings.muteSystemAudioDuringDictation
         self.globalAutoSubmitMode = settings.globalAutoSubmitMode
         self.globalSilenceTimeout = settings.globalSilenceTimeout
         self.transcriptPostProcessingMode = settings.globalTranscriptPostProcessingMode
