@@ -2480,9 +2480,9 @@ struct DictationOrchestratorTests {
         sut.settings.muteSystemAudioDuringDictation = true
 
         sut.orchestrator.toggle()
-        try await Task.sleep(nanoseconds: 50_000_000)
+        let listening = await waitUntil { sut.appState.dictationState == .listening }
 
-        #expect(sut.appState.dictationState == .listening)
+        #expect(listening)
         #expect(sut.mockSystemAudio.muteCallCount == 1)
         #expect(sut.mockSystemAudio.restoreCallCount == 0)
     }
@@ -2493,9 +2493,9 @@ struct DictationOrchestratorTests {
         sut.settings.muteSystemAudioDuringDictation = false
 
         sut.orchestrator.toggle()
-        try await Task.sleep(nanoseconds: 50_000_000)
+        let listening = await waitUntil { sut.appState.dictationState == .listening }
 
-        #expect(sut.appState.dictationState == .listening)
+        #expect(listening)
         #expect(sut.mockSystemAudio.muteCallCount == 0)
     }
 
@@ -2505,11 +2505,12 @@ struct DictationOrchestratorTests {
         sut.settings.muteSystemAudioDuringDictation = true
 
         sut.orchestrator.toggle()
-        try await Task.sleep(nanoseconds: 50_000_000)
+        _ = await waitUntil { sut.appState.dictationState == .listening }
         sut.orchestrator.toggle() // listening -> forging
+        let restored = await waitUntil { sut.mockSystemAudio.restoreCallCount >= 1 }
 
         #expect(sut.mockSystemAudio.muteCallCount == 1)
-        #expect(sut.mockSystemAudio.restoreCallCount >= 1)
+        #expect(restored)
     }
 
     @Test("Restore called on cancel")
@@ -2518,12 +2519,12 @@ struct DictationOrchestratorTests {
         sut.settings.muteSystemAudioDuringDictation = true
 
         sut.orchestrator.toggle()
-        try await Task.sleep(nanoseconds: 50_000_000)
+        _ = await waitUntil { sut.appState.dictationState == .listening }
         sut.orchestrator.cancel()
-        try await Task.sleep(nanoseconds: 50_000_000)
+        let restored = await waitUntil { sut.mockSystemAudio.restoreCallCount >= 1 }
 
         #expect(sut.mockSystemAudio.muteCallCount == 1)
-        #expect(sut.mockSystemAudio.restoreCallCount >= 1)
+        #expect(restored)
     }
 
     @Test("Restore called on ASR start failure")

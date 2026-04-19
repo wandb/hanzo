@@ -249,6 +249,7 @@ final class DictationOrchestrator {
     }
 
     func shutdown() {
+        systemAudioControl.restoreDefaultOutput()
         Task {
             await runtimeCoordinator.stopAllRuntimesForShutdown()
         }
