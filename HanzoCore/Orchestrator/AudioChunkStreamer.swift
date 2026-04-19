@@ -54,12 +54,10 @@ final class AudioChunkStreamer {
     /// Marks the streamer as stopping and returns the epoch + any in-flight task
     /// so the caller can await chunk completion before sending the trailing buffer.
     func beginStopping() -> (epoch: Int, inFlightTask: Task<Void, Never>?) {
-        var recordingEpoch = 0
         bufferQueue.sync {
             isStoppingRecording = true
-            recordingEpoch = currentRecordingEpoch
+            return (currentRecordingEpoch, chunkSendTask)
         }
-        return (recordingEpoch, chunkSendTask)
     }
 
     func drainBuffer() -> Data {
@@ -78,13 +76,16 @@ final class AudioChunkStreamer {
     }
 
     func cancelCurrentEpoch() {
-        chunkSendTask?.cancel()
-        bufferQueue.sync {
+        let taskToCancel: Task<Void, Never>? = bufferQueue.sync {
+            let task = chunkSendTask
+            chunkSendTask = nil
             audioBuffer.removeAll()
             isChunkSendInFlight = false
             isStoppingRecording = false
             lastCancelledRecordingEpoch = max(lastCancelledRecordingEpoch, currentRecordingEpoch)
+            return task
         }
+        taskToCancel?.cancel()
     }
 
     func cancellationRequested(for recordingEpoch: Int) -> Bool {
@@ -111,8 +112,11 @@ final class AudioChunkStreamer {
 
         guard shouldSend, let sid else { return }
 
-        chunkSendTask = Task { [weak self] in
+        let task: Task<Void, Never> = Task { [weak self] in
             await self?.sendChunkAndContinue(sessionId: sid, pcmData: chunkToSend)
+        }
+        bufferQueue.sync {
+            chunkSendTask = task
         }
     }
 

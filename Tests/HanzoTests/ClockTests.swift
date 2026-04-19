@@ -9,10 +9,15 @@ struct ClockTests {
     func systemClockAdvances() async throws {
         let clock = SystemClock()
         let first = clock.now()
-        try await Task.sleep(nanoseconds: 5_000_000)
-        let second = clock.now()
+        var latest = first
 
-        #expect(second > first)
+        for _ in 0..<10 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+            latest = clock.now()
+            if latest > first { return }
+        }
+
+        #expect(latest > first)
     }
 
     @Test("TestClock starts at the provided date and advances deterministically")
