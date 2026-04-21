@@ -8,7 +8,11 @@ struct AXValueInsertionContext: Equatable {
 }
 
 final class TextInsertionService: TextInsertionProtocol {
-    private let logger = LoggingService.shared
+    private let logger: LoggingServiceProtocol
+
+    init(logger: LoggingServiceProtocol = LoggingService.shared) {
+        self.logger = logger
+    }
 
     func insertText(_ text: String) async -> TextInsertionResult {
         guard !text.isEmpty else { return .inserted }

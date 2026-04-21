@@ -1,6 +1,33 @@
 #!/bin/bash
 set -euo pipefail
 
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'USAGE'
+scripts/changelog.sh — manage Hanzo release notes in CHANGELOG.md
+
+Usage:
+  ./scripts/changelog.sh extract --version <x.y.z> --output <path>
+  ./scripts/changelog.sh prepare --version <x.y.z> [--date <YYYY-MM-DD>] [--body-file <path>] [--repo <owner/name>]
+
+Commands:
+  extract   Write the changelog body for a version to an output file.
+  prepare   Insert or replace a changelog entry using the current GitHub draft release body.
+
+Flags:
+  --version <x.y.z>     Release version to extract or prepare
+  --output <path>       Output file for extract
+  --date <YYYY-MM-DD>   Heading date for prepare (default: today)
+  --body-file <path>    Use a local markdown file instead of the GitHub draft release body
+  --repo <owner/name>   Override the GitHub repository used for draft release lookup
+  -h, --help            Show this help
+
+Notes:
+  - prepare updates CHANGELOG.md in place.
+  - prepare requires gh authentication unless --body-file is provided.
+USAGE
+    exit 0
+fi
+
 die() {
     echo "Error: $*" >&2
     exit 1

@@ -1,9 +1,22 @@
 import Darwin
 import Foundation
 
+// Shared by the download continuation (setters) and the non-isolated onCancel
+// handler (reader). NSLock makes the @unchecked Sendable genuinely safe.
 private final class DownloadTaskState: @unchecked Sendable {
-    var task: URLSessionDownloadTask?
-    var progressTask: Task<Void, Never>?
+    private let lock = NSLock()
+    private var _task: URLSessionDownloadTask?
+    private var _progressTask: Task<Void, Never>?
+
+    var task: URLSessionDownloadTask? {
+        get { lock.withLock { _task } }
+        set { lock.withLock { _task = newValue } }
+    }
+
+    var progressTask: Task<Void, Never>? {
+        get { lock.withLock { _progressTask } }
+        set { lock.withLock { _progressTask = newValue } }
+    }
 }
 
 enum LocalLLMRuntimeError: Error, LocalizedError {

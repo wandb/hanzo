@@ -106,7 +106,9 @@ enum Constants {
     static let appearanceModeKey = "appearanceMode"
     static let defaultAppearanceMode: AppearanceMode = .system
     static let hudDisplayModeKey = "hudDisplayMode"
-    static let defaultHUDDisplayMode: HUDDisplayMode = .full
+    static let defaultHUDDisplayMode: HUDDisplayMode = .standard
+    static let muteSystemAudioDuringDictationKey = "muteSystemAudioDuringDictation"
+    static let defaultMuteSystemAudioDuringDictation = true
 
     // Silence auto-close
     static let silenceTimeoutKey = "silenceTimeout"

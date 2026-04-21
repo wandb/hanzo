@@ -1,5 +1,8 @@
 import Foundation
 
+// Sendable is unchecked because `fileHandle` is mutable but every read/write is
+// serialized through `queue`. Keep info/warn/error synchronous so they can be
+// called from sync contexts (audio tap callbacks, HotKey handlers, deinit).
 final class LoggingService: LoggingServiceProtocol, @unchecked Sendable {
     static let shared = LoggingService()
 

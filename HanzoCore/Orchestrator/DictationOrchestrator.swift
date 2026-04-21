@@ -4,21 +4,14 @@ import SwiftUI
 
 @Observable
 final class DictationOrchestrator {
-    private enum HotkeySessionControl {
-        case inactive
-        case pendingStartPress
-        case tap
-        case hold
-    }
-
     private let appState: AppState
     private let settings: AppSettingsProtocol
     private var audioService: AudioCaptureProtocol
     private let textInsertion: TextInsertionProtocol
     private let recentDictationStore: RecentDictationStoreProtocol
     private let permissionService: PermissionServiceProtocol
-    private let localRuntimeManager: LocalASRRuntimeManagerProtocol
-    private let localLLMRuntimeManager: LocalLLMRuntimeManagerProtocol
+    private let runtimeCoordinator: RuntimeCoordinator
+    private let systemAudioControl: SystemAudioControlProtocol
     private let logger: LoggingServiceProtocol
     private let frontmostApplicationProvider: () -> NSRunningApplication?
     private let workspaceFrontmostApplicationProvider: () -> NSRunningApplication?
@@ -26,13 +19,7 @@ final class DictationOrchestrator {
     private var asrClient: ASRClientProtocol
     private let isASRClientInjected: Bool
     private var sessionId: String?
-    private var audioBuffer = Data()
-    private let bufferQueue = DispatchQueue(label: "com.hanzo.audiobuffer")
-    private var chunkSendTask: Task<Void, Never>?
-    private var isChunkSendInFlight = false
-    private var isStoppingRecording = false
-    private var currentRecordingEpoch = 0
-    private var lastCancelledRecordingEpoch = 0
+    private let audioStreamer: AudioChunkStreamer
     private var previousApp: NSRunningApplication?
     private var activeSessionTargetBundleIdentifier: String?
     private var recordingStartTime: Date?
@@ -42,33 +29,18 @@ final class DictationOrchestrator {
     private var transcriptPostProcessingMode: TranscriptPostProcessingMode
     private var llmPostProcessingPrompt: String
     private var commonTerms: [String]
-    private let llmRuntimeControlQueue = DispatchQueue(label: "com.hanzo.llm-runtime-control")
-    private var llmRuntimeDesired = false
-    private var llmRuntimeGeneration = 0
 
     // Auto-submit
     var autoSubmitMode: AutoSubmitMode
 
-    // Silence auto-close
-    var silenceTimeout: Double
-    private var silenceStartTime: Date?
-    private var peakSpeechLevel: Float = 0
-    private var ambientNoiseLevel: Float = Constants.silenceAbsoluteFloor
-    private var lastSilenceEvaluationAt: Date?
-    private var silenceCandidateStartTime: Date?
-    private var lastObservedPartialTranscript: String = ""
-    private var lastTranscriptContentUpdateAt: Date?
-    private var lastTranscriptActivityAt: Date?
-    private var lastTranscriptPacketAt: Date?
-    private var transcriptPacketIntervalEWMA: TimeInterval?
-    private var transcriptActiveSeconds: TimeInterval = 0
-    private var hasObservedMeaningfulTranscript = false
-    private var previousAudioLevels: [Float]?
-    private var recentAudioMotionSamples: [(timestamp: Date, motion: Float)] = []
-    private var hotkeySessionControl: HotkeySessionControl = .inactive
-    private var isHotkeyPressed = false
-    private var hotkeySessionGeneration = 0
-    private var hotkeyHoldActivationTask: Task<Void, Never>?
+    // Silence auto-close — delegates state and timing to SilenceDetector.
+    var silenceTimeout: Double {
+        get { silenceDetector.silenceTimeout }
+        set { silenceDetector.silenceTimeout = newValue }
+    }
+    private let silenceDetector: SilenceDetector
+    private let hotkeyController: HotkeySessionController
+    private let clock: ClockProtocol
 
     init(
         appState: AppState,
@@ -76,11 +48,13 @@ final class DictationOrchestrator {
         audioService: AudioCaptureProtocol = AudioCaptureService(),
         textInsertion: TextInsertionProtocol = TextInsertionService(),
         recentDictationStore: RecentDictationStoreProtocol = RecentDictationStore(),
-        permissionService: PermissionServiceProtocol = PermissionService.shared,
+        permissionService: PermissionServiceProtocol,
         localRuntimeManager: LocalASRRuntimeManagerProtocol = LocalASRRuntimeManager(),
-        localLLMRuntimeManager: LocalLLMRuntimeManagerProtocol = LocalLLMRuntimeManager.shared,
-        logger: LoggingServiceProtocol = LoggingService.shared,
-        settings: AppSettingsProtocol = AppSettings.live,
+        localLLMRuntimeManager: LocalLLMRuntimeManagerProtocol,
+        systemAudioControl: SystemAudioControlProtocol = SystemAudioService(),
+        logger: LoggingServiceProtocol,
+        settings: AppSettingsProtocol,
+        clock: ClockProtocol = SystemClock(),
         frontmostApplicationProvider: @escaping () -> NSRunningApplication? = {
             NSWorkspace.shared.frontmostApplication
         },
@@ -94,14 +68,22 @@ final class DictationOrchestrator {
         self.textInsertion = textInsertion
         self.recentDictationStore = recentDictationStore
         self.permissionService = permissionService
-        self.localRuntimeManager = localRuntimeManager
-        self.localLLMRuntimeManager = localLLMRuntimeManager
+        self.runtimeCoordinator = RuntimeCoordinator(
+            localASRRuntimeManager: localRuntimeManager,
+            localLLMRuntimeManager: localLLMRuntimeManager,
+            logger: logger
+        )
+        self.systemAudioControl = systemAudioControl
         self.logger = logger
         self.frontmostApplicationProvider = frontmostApplicationProvider
         self.workspaceFrontmostApplicationProvider = workspaceFrontmostApplicationProvider
+        self.clock = clock
+        self.hotkeyController = HotkeySessionController(logger: logger)
+        self.audioStreamer = AudioChunkStreamer(logger: logger, clock: clock)
+        self.silenceDetector = SilenceDetector(logger: logger, clock: clock)
 
         self.autoSubmitMode = AppBehaviorSettings.globalAutoSubmitMode(settings: settings)
-        self.silenceTimeout = AppBehaviorSettings.globalSilenceTimeout(settings: settings)
+        self.silenceDetector.silenceTimeout = AppBehaviorSettings.globalSilenceTimeout(settings: settings)
         let initialASRProvider = DictationOrchestrator.currentASRProvider(settings: settings)
 
         if let asrClient = asrClient {
@@ -119,12 +101,12 @@ final class DictationOrchestrator {
         self.commonTerms = CommonTerms.parse(AppBehaviorSettings.globalCommonTerms(settings: settings))
 
         appState.autoSubmitMode = self.autoSubmitMode
-        appState.silenceTimeout = self.silenceTimeout
+        appState.silenceTimeout = self.silenceDetector.silenceTimeout
         appState.asrProvider = self.configuredASRProvider
         appState.recentDictations = recentDictationStore.load()
 
         self.audioService.onAudioChunk = { [weak self] data in
-            self?.handleAudioChunk(data)
+            self?.audioStreamer.enqueueChunk(data)
         }
 
         self.audioService.onAudioLevels = { [weak self] levels in
@@ -132,14 +114,18 @@ final class DictationOrchestrator {
                 withAnimation(.easeOut(duration: 0.15)) {
                     self?.appState.audioLevels = levels
                 }
-                self?.evaluateSilence(levels: levels)
+                self?.silenceDetector.evaluate(levels: levels)
             }
         }
+
+        self.hotkeyController.delegate = self
+        self.audioStreamer.delegate = self
+        self.silenceDetector.delegate = self
 
         let hasRequiredPermissions = permissionService.hasMicrophonePermission
             && permissionService.hasAccessibilityPermission
         if hasRequiredPermissions {
-            prewarmConfiguredRuntimes(asrProvider: configuredASRProvider)
+            runtimeCoordinator.prewarmLocalASRIfNeeded(provider: configuredASRProvider)
         }
     }
 
@@ -177,16 +163,16 @@ final class DictationOrchestrator {
             || shouldRestartLocalLLMRuntimeForContextChange {
             Task {
                 if shouldRestartLocalRuntime {
-                    await localRuntimeManager.stop()
+                    await runtimeCoordinator.stopLocalASRRuntime()
                 }
 
                 if shouldStopLocalLLMRuntime || shouldRestartLocalLLMRuntimeForContextChange {
-                    coolLocalLLMRuntimeAfterSession(reason: "settings change")
+                    runtimeCoordinator.coolLLMRuntime(reason: "settings change")
                 }
 
                 if shouldWarmLocalRuntime {
                     do {
-                        try await localRuntimeManager.prepareModel()
+                        try await runtimeCoordinator.prepareLocalASRModel()
                         logger.info("Local Whisper runtime warmed after settings change")
                     } catch {
                         logger.warn("Failed to warm local Whisper runtime after settings change: \(error)")
@@ -198,61 +184,12 @@ final class DictationOrchestrator {
 
     @MainActor
     func handleHotkeyDown() {
-        guard !isHotkeyPressed else { return }
-        isHotkeyPressed = true
-
-        switch appState.dictationState {
-        case .idle:
-            guard startRecordingIfAllowed() else {
-                isHotkeyPressed = false
-                return
-            }
-            hotkeySessionGeneration += 1
-            hotkeySessionControl = .pendingStartPress
-            appState.showsHoldIndicator = true
-            scheduleHotkeyHoldActivation(for: hotkeySessionGeneration)
-        case .listening:
-            let control = hotkeySessionControl
-            clearHotkeyInteractionState()
-            if control == .tap || control == .inactive {
-                stopRecording()
-            }
-        case .forging:
-            pendingRestartAfterForging = true
-            logger.info("Toggle received during forging; queued restart")
-            clearHotkeyInteractionState()
-        case .error:
-            clearHotkeyInteractionState()
-            reset()
-        }
+        hotkeyController.handleKeyDown()
     }
 
     @MainActor
     func handleHotkeyUp() {
-        guard isHotkeyPressed else { return }
-        isHotkeyPressed = false
-
-        switch hotkeySessionControl {
-        case .pendingStartPress:
-            cancelHotkeyHoldActivationTask()
-            appState.showsHoldIndicator = false
-            if appState.dictationState == .listening {
-                hotkeySessionControl = .tap
-                resetSilenceEvaluationWindow()
-            } else {
-                hotkeySessionControl = .inactive
-            }
-        case .hold:
-            cancelHotkeyHoldActivationTask()
-            hotkeySessionControl = .inactive
-            if appState.dictationState == .listening {
-                stopRecording()
-            }
-        case .tap, .inactive:
-            cancelHotkeyHoldActivationTask()
-            hotkeySessionControl = .inactive
-            appState.showsHoldIndicator = false
-        }
+        hotkeyController.handleKeyUp()
     }
 
     func toggle() {
@@ -260,7 +197,7 @@ final class DictationOrchestrator {
         case .idle:
             _ = startRecordingIfAllowed()
         case .listening:
-            clearHotkeyInteractionState()
+            hotkeyController.clear()
             stopRecording()
         case .forging:
             // Queue a restart so rapid double-taps don't get dropped.
@@ -273,38 +210,20 @@ final class DictationOrchestrator {
 
     func cancel() {
         logger.info("Recording cancelled")
-        clearHotkeyInteractionState()
+        hotkeyController.clear()
         let sid = sessionId
-        chunkSendTask?.cancel()
         audioService.stopCapture()
-        bufferQueue.sync {
-            audioBuffer.removeAll()
-            isChunkSendInFlight = false
-            isStoppingRecording = false
-            lastCancelledRecordingEpoch = max(lastCancelledRecordingEpoch, currentRecordingEpoch)
-        }
+        systemAudioControl.restoreDefaultOutput()
+        audioStreamer.cancelCurrentEpoch()
         sessionId = nil
-        abortLocalSessionIfNeeded(sid)
+        runtimeCoordinator.abortLocalASRSessionIfNeeded(sessionId: sid, asrClient: asrClient)
         previousApp = nil
         activeSessionTargetBundleIdentifier = nil
         pendingRestartAfterForging = false
-        silenceStartTime = nil
-        silenceCandidateStartTime = nil
-        peakSpeechLevel = 0
-        ambientNoiseLevel = Constants.silenceAbsoluteFloor
-        lastSilenceEvaluationAt = nil
-        lastObservedPartialTranscript = ""
-        lastTranscriptContentUpdateAt = nil
-        lastTranscriptActivityAt = nil
-        lastTranscriptPacketAt = nil
-        transcriptPacketIntervalEWMA = nil
-        transcriptActiveSeconds = 0
-        hasObservedMeaningfulTranscript = false
-        previousAudioLevels = nil
-        recentAudioMotionSamples.removeAll()
+        silenceDetector.resetForNewSession()
         recordingStartTime = nil
         applyEffectiveBehavior(for: nil)
-        coolLocalLLMRuntimeAfterSession(reason: "recording cancellation")
+        runtimeCoordinator.coolLLMRuntime(reason: "recording cancellation")
 
         Task { @MainActor in
             appState.dictationState = .idle
@@ -330,15 +249,17 @@ final class DictationOrchestrator {
     }
 
     func shutdown() {
+        systemAudioControl.restoreDefaultOutput()
         Task {
-            await stopRuntimesForShutdown()
+            await runtimeCoordinator.stopAllRuntimesForShutdown()
         }
     }
 
     func shutdownAndWait(timeoutSeconds: TimeInterval = 3.0) {
+        systemAudioControl.restoreDefaultOutput()
         let semaphore = DispatchSemaphore(value: 0)
         Task {
-            await stopRuntimesForShutdown()
+            await runtimeCoordinator.stopAllRuntimesForShutdown()
             semaphore.signal()
         }
 
@@ -389,28 +310,15 @@ final class DictationOrchestrator {
         appState.dictationState = .listening
         appState.partialTranscript = ""
         appState.isPopoverPresented = true
-        recordingStartTime = Date()
-        bufferQueue.sync {
-            audioBuffer.removeAll()
-            isChunkSendInFlight = false
-            isStoppingRecording = false
-            currentRecordingEpoch += 1
+        if settings.muteSystemAudioDuringDictation {
+            systemAudioControl.muteDefaultOutput()
         }
-        silenceStartTime = nil
-        silenceCandidateStartTime = nil
-        peakSpeechLevel = 0
-        ambientNoiseLevel = Constants.silenceAbsoluteFloor
-        lastSilenceEvaluationAt = nil
-        lastObservedPartialTranscript = ""
-        lastTranscriptContentUpdateAt = nil
-        lastTranscriptActivityAt = nil
-        lastTranscriptPacketAt = nil
-        transcriptPacketIntervalEWMA = nil
-        transcriptActiveSeconds = 0
-        hasObservedMeaningfulTranscript = false
-        previousAudioLevels = nil
-        recentAudioMotionSamples.removeAll()
-        warmLocalLLMRuntimeForActiveSessionIfNeeded()
+        recordingStartTime = Date()
+        audioStreamer.startNewEpoch()
+        silenceDetector.resetForNewSession()
+        if transcriptPostProcessingMode == .llm {
+            runtimeCoordinator.warmLLMRuntime(reason: "active session")
+        }
 
         Task {
             do {
@@ -419,58 +327,41 @@ final class DictationOrchestrator {
                 try audioService.startCapture()
             } catch {
                 logger.error("Failed to start recording: \(error)")
+                systemAudioControl.restoreDefaultOutput()
                 await MainActor.run {
-                    clearHotkeyInteractionState()
+                    hotkeyController.clear()
                     appState.dictationState = .error
                     appState.errorMessage = error.localizedDescription
                     // Keep HUD visible so the error state is discoverable.
                     appState.isPopoverPresented = true
                 }
                 recordingStartTime = nil
-                coolLocalLLMRuntimeAfterSession(reason: "recording start failure")
+                runtimeCoordinator.coolLLMRuntime(reason: "recording start failure")
             }
         }
-    }
-
-    private func stopRuntimesForShutdown() async {
-        await localRuntimeManager.stop()
-        await localLLMRuntimeManager.stop()
     }
 
     private func stopRecording() {
         logger.info("Stopping recording")
         let recordingEndedAt = Date()
         audioService.stopCapture()
+        systemAudioControl.restoreDefaultOutput()
         appState.dictationState = .forging
-        var recordingEpoch = 0
-        bufferQueue.sync {
-            isStoppingRecording = true
-            recordingEpoch = currentRecordingEpoch
-        }
-        let inFlightChunkTask = chunkSendTask
+        let (recordingEpoch, inFlightChunkTask) = audioStreamer.beginStopping()
 
         Task {
-            defer {
-                bufferQueue.sync {
-                    isChunkSendInFlight = false
-                    isStoppingRecording = false
-                }
-            }
+            defer { audioStreamer.completeStopping() }
 
             if let inFlightChunkTask {
                 await inFlightChunkTask.value
             }
 
-            if cancellationRequested(for: recordingEpoch) {
+            if audioStreamer.cancellationRequested(for: recordingEpoch) {
                 logger.info("Stop sequence aborted due to cancellation request")
                 return
             }
 
-            let remainingBuffer: Data = bufferQueue.sync {
-                let data = audioBuffer
-                audioBuffer.removeAll()
-                return data
-            }
+            let remainingBuffer: Data = audioStreamer.drainBuffer()
 
             do {
                 // Send any remaining buffered audio
@@ -478,18 +369,18 @@ final class DictationOrchestrator {
                     let trailingResponse = try await asrClient.sendChunk(sessionId: sid, pcmData: remainingBuffer)
                     await MainActor.run {
                         guard self.sessionId == sid else { return }
-                        applyIncomingPartialTranscript(trailingResponse.text, at: Date())
+                        applyIncomingPartialTranscript(trailingResponse.text, at: clock.now())
                     }
                 }
 
                 // Finish the stream
-                if cancellationRequested(for: recordingEpoch) {
+                if audioStreamer.cancellationRequested(for: recordingEpoch) {
                     logger.info("Skipping stream finish due to cancellation request")
                     return
                 }
 
                 guard let sid = sessionId else {
-                    if cancellationRequested(for: recordingEpoch) {
+                    if audioStreamer.cancellationRequested(for: recordingEpoch) {
                         logger.info("No active session during cancellation; stop ignored")
                         return
                     }
@@ -497,7 +388,7 @@ final class DictationOrchestrator {
                 }
                 let finalResponse = try await asrClient.finishStream(sessionId: sid)
 
-                if cancellationRequested(for: recordingEpoch) {
+                if audioStreamer.cancellationRequested(for: recordingEpoch) {
                     logger.info("Discarding final transcript due to cancellation request")
                     return
                 }
@@ -598,7 +489,7 @@ final class DictationOrchestrator {
                 )
 
                 await MainActor.run {
-                    clearHotkeyInteractionState()
+                    hotkeyController.clear()
                     appState.dictationState = .idle
                     appState.partialTranscript = ""
                     appState.audioLevels = []
@@ -607,18 +498,18 @@ final class DictationOrchestrator {
                     applyEffectiveBehavior(for: nil)
                 }
                 if !pendingRestartAfterForging {
-                    coolLocalLLMRuntimeAfterSession(reason: "recording completion")
+                    runtimeCoordinator.coolLLMRuntime(reason: "recording completion")
                 }
             } catch {
-                if cancellationRequested(for: recordingEpoch) {
+                if audioStreamer.cancellationRequested(for: recordingEpoch) {
                     logger.info("Ignoring transcription failure after cancellation request")
                     return
                 }
                 logger.error("Transcription failed: \(error)")
                 let failedSessionId = sessionId
-                abortLocalSessionIfNeeded(failedSessionId)
+                runtimeCoordinator.abortLocalASRSessionIfNeeded(sessionId: failedSessionId, asrClient: asrClient)
                 await MainActor.run {
-                    clearHotkeyInteractionState()
+                    hotkeyController.clear()
                     appState.dictationState = .error
                     appState.errorMessage = error.localizedDescription
                 }
@@ -629,7 +520,7 @@ final class DictationOrchestrator {
                 await MainActor.run {
                     applyEffectiveBehavior(for: nil)
                 }
-                coolLocalLLMRuntimeAfterSession(reason: "recording failure")
+                runtimeCoordinator.coolLLMRuntime(reason: "recording failure")
             }
 
             if pendingRestartAfterForging {
@@ -641,14 +532,6 @@ final class DictationOrchestrator {
                 }
             }
         }
-    }
-
-    private func handleAudioChunk(_ data: Data) {
-        bufferQueue.sync {
-            audioBuffer.append(data)
-        }
-
-        maybeStartChunkSendIfNeeded()
     }
 
     @MainActor
@@ -708,7 +591,8 @@ final class DictationOrchestrator {
     }
 
     private func reset() {
-        clearHotkeyInteractionState()
+        hotkeyController.clear()
+        systemAudioControl.restoreDefaultOutput()
         appState.dictationState = .idle
         appState.errorMessage = nil
         appState.partialTranscript = ""
@@ -716,96 +600,11 @@ final class DictationOrchestrator {
         appState.isPopoverPresented = false
         appState.activeTargetBundleIdentifier = nil
         pendingRestartAfterForging = false
-        silenceStartTime = nil
-        silenceCandidateStartTime = nil
-        peakSpeechLevel = 0
-        ambientNoiseLevel = Constants.silenceAbsoluteFloor
-        lastSilenceEvaluationAt = nil
-        lastObservedPartialTranscript = ""
-        lastTranscriptContentUpdateAt = nil
-        lastTranscriptActivityAt = nil
-        lastTranscriptPacketAt = nil
-        transcriptPacketIntervalEWMA = nil
-        transcriptActiveSeconds = 0
-        hasObservedMeaningfulTranscript = false
-        previousAudioLevels = nil
-        recentAudioMotionSamples.removeAll()
+        silenceDetector.resetForNewSession()
         activeSessionTargetBundleIdentifier = nil
         recordingStartTime = nil
         applyEffectiveBehavior(for: nil)
-        coolLocalLLMRuntimeAfterSession(reason: "reset")
-    }
-
-    private func cancellationRequested(for recordingEpoch: Int) -> Bool {
-        bufferQueue.sync { lastCancelledRecordingEpoch >= recordingEpoch }
-    }
-
-    private func maybeStartChunkSendIfNeeded() {
-        var shouldSend = false
-        var chunkToSend = Data()
-        var sid: String?
-
-        bufferQueue.sync {
-            guard !isStoppingRecording else { return }
-            guard !isChunkSendInFlight else { return }
-            guard audioBuffer.count >= Constants.chunkAccumulationBytes else { return }
-            guard let currentSessionId = sessionId else { return }
-
-            chunkToSend = audioBuffer
-            audioBuffer.removeAll()
-            sid = currentSessionId
-            isChunkSendInFlight = true
-            shouldSend = true
-        }
-
-        guard shouldSend, let sid else { return }
-
-        chunkSendTask = Task { [weak self] in
-            await self?.sendChunkAndContinue(sessionId: sid, pcmData: chunkToSend)
-        }
-    }
-
-    private func sendChunkAndContinue(sessionId sid: String, pcmData: Data) async {
-        do {
-            let sentAt = Date()
-            let response = try await asrClient.sendChunk(sessionId: sid, pcmData: pcmData)
-            let roundTripSeconds = Date().timeIntervalSince(sentAt)
-            if roundTripSeconds > 1.0 {
-                let bufferedSeconds = Double(pcmData.count) / (Constants.audioSampleRate * Double(MemoryLayout<Float>.size))
-                logger.warn(
-                    "Chunk round-trip slow (\(String(format: "%.2f", roundTripSeconds))s) " +
-                    "for \(String(format: "%.2f", bufferedSeconds))s audio"
-                )
-            }
-            await MainActor.run {
-                guard self.sessionId == sid else { return }
-                guard appState.dictationState == .listening else { return }
-                applyIncomingPartialTranscript(response.text, at: Date())
-            }
-        } catch {
-            if !Task.isCancelled {
-                logger.warn("Chunk send failed: \(error)")
-            }
-        }
-
-        bufferQueue.sync {
-            isChunkSendInFlight = false
-        }
-
-        if !Task.isCancelled {
-            maybeStartChunkSendIfNeeded()
-        }
-    }
-
-    private func abortLocalSessionIfNeeded(_ sessionId: String?) {
-        guard let sessionId,
-              let localClient = asrClient as? LocalWhisperASRClient else {
-            return
-        }
-
-        Task {
-            await localClient.abortStream(sessionId: sessionId)
-        }
+        runtimeCoordinator.coolLLMRuntime(reason: "reset")
     }
 
     private static func currentASRProvider(settings: AppSettingsProtocol) -> ASRProvider {
@@ -838,117 +637,6 @@ final class DictationOrchestrator {
         appState.autoSubmitMode = resolved.autoSubmitMode
         appState.silenceTimeout = resolved.silenceTimeout
         appState.activeTargetBundleIdentifier = targetBundleIdentifier
-    }
-
-    private func prewarmConfiguredRuntimes(asrProvider: ASRProvider) {
-        guard asrProvider == .local else {
-            return
-        }
-
-        Task {
-            if asrProvider == .local {
-                do {
-                    try await localRuntimeManager.prepareModel()
-                    logger.info("Local Whisper runtime prewarmed at launch")
-                } catch {
-                    logger.warn("Failed to prewarm local Whisper runtime at launch: \(error)")
-                }
-            }
-        }
-    }
-
-    private func warmLocalLLMRuntimeForActiveSessionIfNeeded() {
-        guard transcriptPostProcessingMode == .llm else { return }
-        updateLocalLLMRuntime(
-            desiredRunning: true,
-            reason: "active session"
-        )
-    }
-
-    private func coolLocalLLMRuntimeAfterSession(reason: String) {
-        updateLocalLLMRuntime(
-            desiredRunning: false,
-            reason: reason
-        )
-    }
-
-    private func updateLocalLLMRuntime(
-        desiredRunning: Bool,
-        reason: String
-    ) {
-        logger.info(
-            desiredRunning
-                ? "Requesting local LLM runtime warmup for \(reason)"
-                : "Requesting local LLM runtime cooldown for \(reason)"
-        )
-
-        let generation = llmRuntimeControlQueue.sync {
-            llmRuntimeDesired = desiredRunning
-            llmRuntimeGeneration += 1
-            return llmRuntimeGeneration
-        }
-
-        Task { [weak self] in
-            await self?.syncLocalLLMRuntime(
-                desiredRunning: desiredRunning,
-                generation: generation,
-                reason: reason
-            )
-        }
-    }
-
-    private func syncLocalLLMRuntime(
-        desiredRunning: Bool,
-        generation: Int,
-        reason: String
-    ) async {
-        guard isCurrentLocalLLMRuntimeRequest(
-            generation: generation,
-            desiredRunning: desiredRunning
-        ) else {
-            return
-        }
-
-        if desiredRunning {
-            do {
-                try await localLLMRuntimeManager.prepareModel()
-                if isCurrentLocalLLMRuntimeRequest(
-                    generation: generation,
-                    desiredRunning: desiredRunning
-                ) {
-                    logger.info("Local LLM runtime warmed for \(reason)")
-                    return
-                }
-
-                if !isLocalLLMRuntimeDesired() {
-                    await localLLMRuntimeManager.stop()
-                }
-            } catch {
-                if isCurrentLocalLLMRuntimeRequest(
-                    generation: generation,
-                    desiredRunning: desiredRunning
-                ) {
-                    logger.warn("Failed to warm local LLM runtime for \(reason): \(error)")
-                }
-            }
-            return
-        }
-
-        logger.info("Cooling local LLM runtime after \(reason)")
-        await localLLMRuntimeManager.stop()
-    }
-
-    private func isCurrentLocalLLMRuntimeRequest(
-        generation: Int,
-        desiredRunning: Bool
-    ) -> Bool {
-        llmRuntimeControlQueue.sync {
-            llmRuntimeGeneration == generation && llmRuntimeDesired == desiredRunning
-        }
-    }
-
-    private func isLocalLLMRuntimeDesired() -> Bool {
-        llmRuntimeControlQueue.sync { llmRuntimeDesired }
     }
 
     private func postProcessFinalTranscript(
@@ -1079,7 +767,7 @@ final class DictationOrchestrator {
         return await withTaskGroup(of: LLMPostProcessResult.self) { group in
             group.addTask { [self] in
                 do {
-                    let rewritten = try await self.localLLMRuntimeManager.postProcess(
+                    let rewritten = try await self.runtimeCoordinator.localLLMPostProcess(
                         text: text,
                         prompt: prompt,
                         targetApp: targetAppName,
@@ -1131,11 +819,11 @@ final class DictationOrchestrator {
         let dictatedSeconds: TimeInterval
         if words == 0 {
             dictatedSeconds = 0
-        } else if lastTranscriptPacketAt == nil {
+        } else if !silenceDetector.hasSeenTranscriptPacket {
             // Fallback for providers/environments where only final text is emitted.
             dictatedSeconds = sessionSeconds
         } else {
-            let transcriptDrivenSeconds = estimatedTranscriptActiveSeconds(until: recordingEndedAt)
+            let transcriptDrivenSeconds = silenceDetector.estimatedTranscriptActiveSeconds(until: recordingEndedAt)
             dictatedSeconds = min(sessionSeconds, max(0, transcriptDrivenSeconds))
         }
         let autoSubmitCount = autoSubmitTriggered ? 1 : 0
@@ -1148,298 +836,13 @@ final class DictationOrchestrator {
         recordingStartTime = nil
     }
 
-    private func estimatedTranscriptActiveSeconds(until recordingEndedAt: Date) -> TimeInterval {
-        var seconds = transcriptActiveSeconds
-
-        if let lastTranscriptPacketAt {
-            let tailSeconds = max(0, recordingEndedAt.timeIntervalSince(lastTranscriptPacketAt))
-            let tailCapBase = transcriptPacketIntervalEWMA ?? 0.5
-            let tailCap = max(0.25, min(3.0, tailCapBase * 1.5))
-            seconds += min(tailSeconds, tailCap)
-        }
-
-        return seconds
-    }
-
-    // MARK: - Silence Detection
-
-    private enum SilenceState: String {
-        case strongSpeech
-        case activeContinuation
-        case candidateSilence
-    }
-
-    private struct SilenceMetrics {
-        let signalLevel: Float
-        let speechBandDominance: Float
-        let rawThreshold: Float
-        let ambientThreshold: Float
-        let threshold: Float
-        let speechActivityThreshold: Float
-        let continuationThreshold: Float
-        let audioMotion: Float
-        let motionThreshold: Float
-        let silenceState: SilenceState
-    }
-
-    private func evaluateSilence(levels: [Float]) {
-        guard silenceTimeout > 0 else { return }
-        let now = Date()
-
-        guard appState.dictationState == .listening else {
-            resetSilenceEvaluationWindow()
-            return
-        }
-
-        guard !appState.showsHoldIndicator else {
-            resetSilenceEvaluationWindow()
-            return
-        }
-
-        if appState.partialTranscript != lastObservedPartialTranscript {
-            lastObservedPartialTranscript = appState.partialTranscript
-            if !appState.partialTranscript.isEmpty {
-                lastTranscriptContentUpdateAt = now
-                if lastTranscriptActivityAt == nil {
-                    lastTranscriptActivityAt = now
-                }
-            }
-        }
-
-        let averageLevel = silenceSignalLevel(for: levels)
-        let elapsedSinceLastEvaluation: TimeInterval
-        if let lastEvaluation = lastSilenceEvaluationAt {
-            let elapsed = max(0, now.timeIntervalSince(lastEvaluation))
-            elapsedSinceLastEvaluation = elapsed
-            let decayBase = Double(Constants.silencePeakDecayPerSecond)
-            let decayedPeak = peakSpeechLevel * Float(pow(decayBase, elapsed))
-            peakSpeechLevel = max(decayedPeak, averageLevel)
-        } else {
-            elapsedSinceLastEvaluation = 0
-            peakSpeechLevel = max(peakSpeechLevel, averageLevel)
-        }
-        lastSilenceEvaluationAt = now
-
-        let transcriptGrace = max(
-            Constants.silenceTranscriptActivityGraceMinimumSeconds,
-            silenceTimeout * Constants.silenceTranscriptActivityGraceMultiplier
-        )
-        let clampedTranscriptGrace = min(
-            transcriptGrace,
-            Constants.silenceTranscriptActivityGraceMaximumSeconds
-        )
-        let transcriptRecentlyUpdated = lastTranscriptContentUpdateAt
-            .map { now.timeIntervalSince($0) < clampedTranscriptGrace } ?? false
-        let shouldRelaxAmbientSampleCap = !appState.partialTranscript.isEmpty && !transcriptRecentlyUpdated
-        let currentAudioMotion = currentAudioMotion(for: levels)
-
-        var ambientSampleCap = max(
-            Constants.silenceAbsoluteFloor * 2,
-            peakSpeechLevel * Constants.silenceAmbientTrackingPeakFraction
-        )
-        if shouldRelaxAmbientSampleCap {
-            ambientSampleCap = max(
-                ambientSampleCap,
-                peakSpeechLevel * Constants.silenceAmbientTrackingRelaxedPeakFraction
-            )
-        }
-        if averageLevel <= ambientSampleCap {
-            let riseAlpha = exponentialSmoothingAlpha(
-                ratePerSecond: Constants.silenceAmbientTrackingRisePerSecond,
-                elapsed: elapsedSinceLastEvaluation
-            )
-            let fallAlpha = exponentialSmoothingAlpha(
-                ratePerSecond: Constants.silenceAmbientTrackingFallPerSecond,
-                elapsed: elapsedSinceLastEvaluation
-            )
-            let alpha: Float
-            if averageLevel > ambientNoiseLevel {
-                if currentAudioMotion >= Constants.silenceMotionAbsoluteFloor {
-                    alpha = 0
-                } else {
-                    alpha = shouldRelaxAmbientSampleCap ? max(riseAlpha, fallAlpha) : riseAlpha
-                }
-            } else {
-                alpha = fallAlpha
-            }
-            ambientNoiseLevel += (averageLevel - ambientNoiseLevel) * alpha
-        }
-        ambientNoiseLevel = max(Constants.silenceAbsoluteFloor, ambientNoiseLevel)
-
-        let rawThreshold = max(
-            peakSpeechLevel * Constants.silenceRelativeThreshold,
-            Constants.silenceAbsoluteFloor
-        )
-        let ambientThreshold = max(
-            ambientNoiseLevel * Constants.silenceAmbientThresholdMultiplier,
-            ambientNoiseLevel + Constants.silenceAmbientThresholdOffset
-        )
-        let threshold = max(
-            rawThreshold,
-            ambientThreshold
-        )
-        let speechActivityThreshold = max(
-            threshold * Constants.silenceSpeechActivityThresholdMultiplier,
-            threshold + Constants.silenceSpeechActivityThresholdOffset
-        )
-        let continuationThreshold = max(
-            Constants.silenceAbsoluteFloor
-                * Constants.silenceTranscriptContinuationMinimumLevelMultiplier,
-            ambientNoiseLevel + Constants.silenceTranscriptContinuationThresholdOffset,
-            threshold * Constants.silenceTranscriptContinuationThresholdMultiplier
-        )
-        let speechBandDominance = speechBandDominance(
-            for: levels,
-            signalLevel: averageLevel
-        )
-        let audioMotion = noteAudioMotion(currentAudioMotion, levels: levels, at: now)
-        let motionThreshold = max(
-            Constants.silenceMotionAbsoluteFloor,
-            continuationThreshold * Constants.silenceMotionThresholdMultiplier
-        )
-        let silenceState = classifySilenceState(
-            signalLevel: averageLevel,
-            ambientLevel: ambientNoiseLevel,
-            threshold: threshold,
-            speechActivityThreshold: speechActivityThreshold,
-            continuationThreshold: continuationThreshold,
-            recentAudioMotion: audioMotion,
-            motionThreshold: motionThreshold
-        )
-        let metrics = SilenceMetrics(
-            signalLevel: averageLevel,
-            speechBandDominance: speechBandDominance,
-            rawThreshold: rawThreshold,
-            ambientThreshold: ambientThreshold,
-            threshold: threshold,
-            speechActivityThreshold: speechActivityThreshold,
-            continuationThreshold: continuationThreshold,
-            audioMotion: audioMotion,
-            motionThreshold: motionThreshold,
-            silenceState: silenceState
-        )
-
-        switch silenceState {
-        case .strongSpeech:
-            clearSilenceTimer(
-                reason: "strong speech",
-                now: now,
-                metrics: metrics
-            )
-            return
-        case .activeContinuation:
-            clearSilenceTimer(
-                reason: "continuation audio",
-                now: now,
-                metrics: metrics
-            )
-            return
-        case .candidateSilence:
-            break
-        }
-
-        // Audio is below threshold — only start timer after meaningful transcript
-        // content has appeared. Leading non-speech ASR markers are ignored.
-        guard !appState.partialTranscript.isEmpty else {
-            silenceCandidateStartTime = nil
-            return
-        }
-
-        if transcriptRecentlyUpdated && silenceStartTime == nil {
-            silenceCandidateStartTime = nil
-            return
-        }
-
-        if silenceStartTime == nil {
-            let silenceArmDelay = silenceTimerArmDelay()
-            if let silenceCandidateStartTime {
-                guard now.timeIntervalSince(silenceCandidateStartTime) >= silenceArmDelay else {
-                    return
-                }
-            } else {
-                silenceCandidateStartTime = now
-                return
-            }
-            silenceCandidateStartTime = nil
-            silenceStartTime = now
-            logSilenceEvent(
-                "Silence timer started",
-                now: now,
-                metrics: metrics
-            )
-        }
-
-        if let start = silenceStartTime,
-           now.timeIntervalSince(start) >= silenceTimeout {
-            logSilenceEvent(
-                "Silence auto-close after \(silenceTimeout)s",
-                now: now,
-                metrics: metrics
-            )
-            silenceStartTime = nil
-            stopRecording()
-        }
-    }
-
-    private func exponentialSmoothingAlpha(ratePerSecond: Float, elapsed: TimeInterval) -> Float {
-        guard elapsed > 0 else { return 0 }
-        let clampedRate = min(max(ratePerSecond, 0), 1)
-        guard clampedRate < 1 else { return 1 }
-        return 1 - Float(pow(Double(1 - clampedRate), elapsed))
-    }
-
     private func applyIncomingPartialTranscript(_ incomingText: String, at now: Date) {
-        let previousPartial = appState.partialTranscript
-        let transcriptStaleness = lastTranscriptContentUpdateAt
-            .map { now.timeIntervalSince($0) } ?? .greatestFiniteMagnitude
-        let sanitizedIncomingText: String
-        if TranscriptArtifactFilter.shouldRunFullFiltering(incomingText) {
-            let sanitizedIncomingResult = TranscriptArtifactFilter.sanitize(incomingText)
-            if sanitizedIncomingResult.removedMarkerCount > 0 {
-                logger.info(
-                    "Filtered \(sanitizedIncomingResult.removedMarkerCount) non-speech marker(s) from partial transcript packet"
-                )
-            }
-            let trailingPartialStripResult = TranscriptArtifactFilter.stripTrailingStandaloneAnnotations(
-                sanitizedIncomingResult.text
-            )
-            if trailingPartialStripResult.removedAnnotationCount > 0 {
-                logger.info(
-                    "Stripped \(trailingPartialStripResult.removedAnnotationCount) trailing non-speech annotation(s) from partial transcript packet"
-                )
-            }
-            sanitizedIncomingText = trailingPartialStripResult.text
-        } else {
-            sanitizedIncomingText = incomingText.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        if TranscriptArtifactFilter.isOnlyStandaloneAnnotations(sanitizedIncomingText)
-            || TranscriptArtifactFilter.isOnlyStandaloneBracketedAnnotations(sanitizedIncomingText) {
-            logger.info("Suppressing annotation-only partial transcript packet")
-            return
-        }
-        let hasPacketText = !sanitizedIncomingText.isEmpty
-
-        if hasPacketText {
-            noteTranscriptPacketActivity(at: now)
-        } else {
-            return
-        }
-
-        let allowAggressiveRecovery = transcriptStaleness
-            >= Constants.partialTranscriptAggressiveRecoveryAfterSeconds
-        let mergedPartial = PartialTranscriptMerger.merge(
-            previous: previousPartial,
-            incoming: sanitizedIncomingText,
-            allowAggressiveRecovery: allowAggressiveRecovery
-        )
-
-        guard mergedPartial != previousPartial else { return }
-        appState.partialTranscript = mergedPartial
-        lastTranscriptContentUpdateAt = now
-        lastObservedPartialTranscript = mergedPartial
-        if !mergedPartial.isEmpty {
-            hasObservedMeaningfulTranscript = true
+        if let merged = silenceDetector.applyIncomingPartialTranscript(
+            incomingText,
+            at: now,
+            previousPartial: appState.partialTranscript
+        ) {
+            appState.partialTranscript = merged
         }
     }
 
@@ -1447,240 +850,62 @@ final class DictationOrchestrator {
         TranscriptArtifactFilter.containsOnlyKnownMarkers(text)
     }
 
-    private func speechBandDominance(for levels: [Float], signalLevel: Float) -> Float {
-        guard !levels.isEmpty else { return 0 }
-        let broadbandLevel = levels.reduce(0, +) / Float(levels.count)
-        guard broadbandLevel > 0 else { return 0 }
-        return signalLevel / broadbandLevel
+}
+
+// MARK: - AudioChunkStreamerDelegate
+
+extension DictationOrchestrator: AudioChunkStreamerDelegate {
+    var currentSessionId: String? { sessionId }
+
+    func audioChunkStreamerSendChunk(
+        sessionId: String,
+        pcmData: Data
+    ) async throws -> ASRChunkResponse {
+        try await asrClient.sendChunk(sessionId: sessionId, pcmData: pcmData)
     }
 
-    private func classifySilenceState(
-        signalLevel: Float,
-        ambientLevel: Float,
-        threshold: Float,
-        speechActivityThreshold: Float,
-        continuationThreshold: Float,
-        recentAudioMotion: Float,
-        motionThreshold: Float
-    ) -> SilenceState {
-        if signalLevel >= speechActivityThreshold {
-            return .strongSpeech
-        }
+    func audioChunkStreamerDidReceivePartialTranscript(_ text: String, at now: Date) {
+        applyIncomingPartialTranscript(text, at: now)
+    }
+}
 
-        let motionQualifiedSignalFloor = max(
-            continuationThreshold,
-            ambientLevel + Constants.silenceMotionContinuationSignalOffset,
-            threshold * Constants.silenceMotionContinuationThresholdMinimumFraction
-        )
+// MARK: - HotkeySessionControllerDelegate
 
-        if signalLevel >= continuationThreshold
-            && signalLevel >= motionQualifiedSignalFloor
-            && (
-                signalLevel >= threshold
-                    || recentAudioMotion >= motionThreshold
-            ) {
-            return .activeContinuation
-        }
+extension DictationOrchestrator: HotkeySessionControllerDelegate {
+    var currentDictationState: DictationState { appState.dictationState }
 
-        return .candidateSilence
+    func hotkeyControllerStartRecording() -> Bool {
+        startRecordingIfAllowed()
     }
 
-    private func noteTranscriptPacketActivity(at now: Date) {
-        if let lastTranscriptPacketAt {
-            let observedInterval = max(0, now.timeIntervalSince(lastTranscriptPacketAt))
-            if observedInterval > 0 {
-                let priorPacketIntervalEWMA = transcriptPacketIntervalEWMA
-                if let existingEWMA = transcriptPacketIntervalEWMA {
-                    let alpha = Constants.silenceTranscriptPacketIntervalEWMASmoothing
-                    transcriptPacketIntervalEWMA =
-                        existingEWMA + (observedInterval - existingEWMA) * alpha
-                } else {
-                    transcriptPacketIntervalEWMA = observedInterval
-                }
-
-                let activityCapBase = priorPacketIntervalEWMA ?? observedInterval
-                let activityCap = max(0.25, min(8.0, activityCapBase * 3.0))
-                transcriptActiveSeconds += min(observedInterval, activityCap)
-            }
-        } else {
-            transcriptActiveSeconds += 0.25
-        }
-        lastTranscriptPacketAt = now
-        lastTranscriptActivityAt = now
+    func hotkeyControllerStopRecording() {
+        stopRecording()
     }
 
-    private func clearSilenceTimer(reason: String, now: Date, metrics: SilenceMetrics) {
-        silenceCandidateStartTime = nil
-        guard silenceStartTime != nil else { return }
-        silenceStartTime = nil
-        logSilenceEvent(
-            "Silence timer cleared by \(reason)",
-            now: now,
-            metrics: metrics
-        )
+    func hotkeyControllerResetSilenceWindow() {
+        silenceDetector.resetEvaluationWindow()
     }
 
-    @MainActor
-    private func scheduleHotkeyHoldActivation(for generation: Int) {
-        cancelHotkeyHoldActivationTask()
-        let thresholdNanoseconds = UInt64(Constants.hotkeyHoldThresholdSeconds * 1_000_000_000)
-        hotkeyHoldActivationTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: thresholdNanoseconds)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                self?.promoteHotkeyPressToHoldIfNeeded(generation: generation)
-            }
-        }
+    func hotkeyControllerQueueRestartAfterForging() {
+        pendingRestartAfterForging = true
     }
 
-    @MainActor
-    private func promoteHotkeyPressToHoldIfNeeded(generation: Int) {
-        guard hotkeySessionGeneration == generation else { return }
-        guard isHotkeyPressed else { return }
-        guard hotkeySessionControl == .pendingStartPress else { return }
-        guard appState.dictationState == .listening else { return }
-
-        hotkeySessionControl = .hold
-        appState.showsHoldIndicator = true
+    func hotkeyControllerResetFromError() {
+        reset()
     }
 
-    private func cancelHotkeyHoldActivationTask() {
-        hotkeyHoldActivationTask?.cancel()
-        hotkeyHoldActivationTask = nil
+    func hotkeyControllerSetShowsHoldIndicator(_ visible: Bool) {
+        appState.showsHoldIndicator = visible
     }
+}
 
-    private func clearHotkeyInteractionState() {
-        cancelHotkeyHoldActivationTask()
-        hotkeySessionControl = .inactive
-        isHotkeyPressed = false
-        appState.showsHoldIndicator = false
-    }
+// MARK: - SilenceDetectorDelegate
 
-    private func resetSilenceEvaluationWindow() {
-        silenceStartTime = nil
-        silenceCandidateStartTime = nil
-        lastSilenceEvaluationAt = nil
-        previousAudioLevels = nil
-        recentAudioMotionSamples.removeAll()
-    }
+extension DictationOrchestrator: SilenceDetectorDelegate {
+    var currentShowsHoldIndicator: Bool { appState.showsHoldIndicator }
+    var currentPartialTranscript: String { appState.partialTranscript }
 
-    private func logSilenceEvent(_ event: String, now: Date, metrics: SilenceMetrics) {
-        logger.info(
-            "\(event) " +
-            "(avg \(formattedSilenceValue(metrics.signalLevel)), " +
-            "peak \(formattedSilenceValue(peakSpeechLevel)), " +
-            "ambient \(formattedSilenceValue(ambientNoiseLevel)), " +
-            "rawThreshold \(formattedSilenceValue(metrics.rawThreshold)), " +
-            "ambientThreshold \(formattedSilenceValue(metrics.ambientThreshold)), " +
-            "threshold \(formattedSilenceValue(metrics.threshold)), " +
-            "continuationThreshold \(formattedSilenceValue(metrics.continuationThreshold)), " +
-            "activityThreshold \(formattedSilenceValue(metrics.speechActivityThreshold)), " +
-            "audioMotion \(formattedSilenceValue(metrics.audioMotion)), " +
-            "motionThreshold \(formattedSilenceValue(metrics.motionThreshold)), " +
-            "silenceState \(metrics.silenceState.rawValue), " +
-            "speechBandDominance \(formattedSilenceValue(metrics.speechBandDominance)), " +
-            "transcriptContentAge \(formattedSilenceAge(lastTranscriptContentUpdateAt, now: now)), " +
-            "transcriptActivityAge \(formattedSilenceAge(lastTranscriptActivityAt, now: now)), " +
-            "packetInterval \(formattedSilenceInterval(transcriptPacketIntervalEWMA))"
-        )
-    }
-
-    private func formattedSilenceValue(_ value: Float) -> String {
-        String(format: "%.4f", value)
-    }
-
-    private func formattedSilenceAge(_ date: Date?, now: Date) -> String {
-        guard let date else { return "n/a" }
-        return String(format: "%.2fs", now.timeIntervalSince(date))
-    }
-
-    private func formattedSilenceInterval(_ interval: TimeInterval?) -> String {
-        guard let interval else { return "n/a" }
-        return String(format: "%.2fs", interval)
-    }
-
-    private func silenceTimerArmDelay() -> TimeInterval {
-        let scaledDelay = silenceTimeout * Constants.silenceTimerArmDelayTimeoutFraction
-        return min(
-            max(scaledDelay, Constants.silenceTimerArmDelayMinimumSeconds),
-            Constants.silenceTimerArmDelayMaximumSeconds
-        )
-    }
-
-    private func noteAudioMotion(_ motion: Float, levels: [Float], at now: Date) -> Float {
-        previousAudioLevels = levels
-        recentAudioMotionSamples.append((timestamp: now, motion: motion))
-        return recentAudioMotion(now: now)
-    }
-
-    private func currentAudioMotion(for levels: [Float]) -> Float {
-        guard let previousAudioLevels,
-              previousAudioLevels.count == levels.count else {
-            return 0
-        }
-        return audioMotion(for: levels, previousLevels: previousAudioLevels)
-    }
-
-    private func recentAudioMotion(now: Date) -> Float {
-        let windowStart = now.addingTimeInterval(-Constants.silenceMotionWindowSeconds)
-        recentAudioMotionSamples.removeAll { $0.timestamp < windowStart }
-        guard !recentAudioMotionSamples.isEmpty else { return 0 }
-
-        let sum = recentAudioMotionSamples.reduce(Float.zero) { partialResult, sample in
-            partialResult + sample.motion
-        }
-        return sum / Float(recentAudioMotionSamples.count)
-    }
-
-    private func audioMotion(for levels: [Float], previousLevels: [Float]) -> Float {
-        guard levels.count == previousLevels.count else { return 0 }
-
-        let weights = Constants.silenceSpeechBandWeights
-        guard levels.count == weights.count else {
-            assertionFailure(
-                "audioMotion: levels.count (\(levels.count)) != silenceSpeechBandWeights.count (\(weights.count)); falling back to unweighted delta mean."
-            )
-            logger.warn(
-                "audioMotion band-count mismatch: levels.count=\(levels.count), weights.count=\(weights.count); falling back to unweighted delta mean."
-            )
-            let deltas = zip(levels, previousLevels).map { abs($0 - $1) }
-            guard !deltas.isEmpty else { return 0 }
-            return deltas.reduce(0, +) / Float(deltas.count)
-        }
-
-        let weightTotal = weights.reduce(0, +)
-        guard weightTotal > 0 else { return 0 }
-
-        var weightedDeltaSum: Float = 0
-        for ((level, previousLevel), weight) in zip(zip(levels, previousLevels), weights) {
-            weightedDeltaSum += abs(level - previousLevel) * weight
-        }
-        return weightedDeltaSum / weightTotal
-    }
-
-    private func silenceSignalLevel(for levels: [Float]) -> Float {
-        guard !levels.isEmpty else { return 0 }
-
-        let weights = Constants.silenceSpeechBandWeights
-        guard levels.count == weights.count else {
-            assertionFailure(
-                "silenceSignalLevel: levels.count (\(levels.count)) != silenceSpeechBandWeights.count (\(weights.count)); falling back to unweighted mean."
-            )
-            logger.warn(
-                "silenceSignalLevel band-count mismatch: levels.count=\(levels.count), weights.count=\(weights.count); falling back to unweighted mean."
-            )
-            return levels.reduce(0, +) / Float(levels.count)
-        }
-
-        let weightTotal = weights.reduce(0, +)
-        guard weightTotal > 0 else {
-            return levels.reduce(0, +) / Float(levels.count)
-        }
-
-        var weightedSum: Float = 0
-        for (level, weight) in zip(levels, weights) {
-            weightedSum += level * weight
-        }
-        return weightedSum / weightTotal
+    func silenceDetectorDidRequestStopRecording(_ detector: SilenceDetector) {
+        stopRecording()
     }
 }

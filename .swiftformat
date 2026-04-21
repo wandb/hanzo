@@ -1,0 +1,52 @@
+# SwiftFormat config — see https://github.com/nicklockwood/SwiftFormat
+# Run `swiftformat .` to auto-fix, `swiftformat --lint .` to check.
+#
+# Initial rollout: most style rules disabled so existing code passes lint
+# without a bulk reformat. Rules left enabled either catch real issues or
+# enforce cheap invariants going forward. Tighten over time.
+
+--swiftversion 6.0
+
+# Existing code uses no-space ranges (e.g. `0..<10`, `200..<300`).
+--ranges no-space
+
+# Exclude generated and vendored code
+--exclude .build
+--exclude build
+--exclude dist
+--exclude LocalASRHelper
+--exclude reference
+
+# Disabled — high-churn style rules. Revisit after a scheduled bulk reformat.
+--disable wrap
+--disable wrapAttributes
+--disable wrapArguments
+--disable wrapMultilineStatementBraces
+--disable indent
+--disable sortImports
+--disable redundantReturn
+--disable trailingCommas
+--disable andOperator
+--disable unusedArguments
+--disable conditionalAssignment
+--disable blankLinesBetweenScopes
+--disable blankLinesAtStartOfScope
+--disable blankLinesAtEndOfScope
+--disable wrapFunctionBodies
+--disable wrapPropertyBodies
+--disable redundantThrows
+--disable redundantOptionalBinding
+--disable redundantType
+--disable redundantAsync
+--disable redundantViewBuilder
+--disable redundantVariable
+--disable redundantParens
+--disable redundantBreak
+--disable redundantSelf
+--disable docComments
+--disable preferKeyPath
+--disable hoistTry
+--disable hoistPatternLet
+--disable opaqueGenericParameters
+--disable modifierOrder
+--disable consecutiveSpaces

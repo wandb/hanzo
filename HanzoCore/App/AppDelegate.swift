@@ -38,9 +38,15 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let appSettings: AppSettingsProtocol
     let appState: AppState
-    private lazy var orchestrator = DictationOrchestrator(appState: appState, settings: appSettings)
-    private lazy var hotkeyService = HotkeyService(settings: appSettings)
     private let logger = LoggingService.shared
+    private lazy var orchestrator = DictationOrchestrator(
+        appState: appState,
+        permissionService: PermissionService.shared,
+        localLLMRuntimeManager: LocalLLMRuntimeManager.shared,
+        logger: logger,
+        settings: appSettings
+    )
+    private lazy var hotkeyService = HotkeyService(settings: appSettings, logger: logger)
 
     public override init() {
         let settingsStore = UserDefaultsAppSettingsStore(defaults: .standard)

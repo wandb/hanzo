@@ -332,9 +332,9 @@ enum TranscriptRewritePrompt {
         let sectionPattern = #"\{\{#(\w+)\}\}(.*?)\{\{/\1\}\}"#
         while let regex = try? NSRegularExpression(pattern: sectionPattern, options: .dotMatchesLineSeparators),
               let match = regex.firstMatch(in: result, range: NSRange(result.startIndex..., in: result)) {
-            let keyRange = Range(match.range(at: 1), in: result)!
-            let bodyRange = Range(match.range(at: 2), in: result)!
-            let fullRange = Range(match.range, in: result)!
+            guard let keyRange = Range(match.range(at: 1), in: result),
+                  let bodyRange = Range(match.range(at: 2), in: result),
+                  let fullRange = Range(match.range, in: result) else { break }
             let key = String(result[keyRange])
             let body = String(result[bodyRange])
 

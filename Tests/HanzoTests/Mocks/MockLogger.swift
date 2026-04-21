@@ -1,7 +1,7 @@
 @testable import HanzoCore
 import Foundation
 
-final class MockLogger: LoggingServiceProtocol {
+final class MockLogger: LoggingServiceProtocol, @unchecked Sendable {
     private let lock = NSLock()
     private var _infoMessages: [String] = []
     private var _warnMessages: [String] = []

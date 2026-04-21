@@ -1,6 +1,37 @@
 #!/bin/bash
 set -euo pipefail
 
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    cat <<'USAGE'
+scripts/version.sh — manage Hanzo app version metadata in HanzoCore/Info.plist
+
+Usage:
+  ./scripts/version.sh show
+  ./scripts/version.sh set [--version <x.y.z>] [--build-number <n>]
+  ./scripts/version.sh bump-build
+  ./scripts/version.sh bump-patch
+  ./scripts/version.sh bump-minor
+  ./scripts/version.sh bump-major
+
+Commands:
+  show         Print current CFBundleShortVersionString and CFBundleVersion
+  set          Set version and/or build number (unspecified values preserved)
+  bump-build   Increment CFBundleVersion only
+  bump-patch   Bump patch component of semver and increment CFBundleVersion
+  bump-minor   Bump minor component of semver and increment CFBundleVersion
+  bump-major   Bump major component of semver and increment CFBundleVersion
+
+Flags:
+  --version <x.y.z>     New semantic version (set)
+  --build-number <n>    New build number (set)
+  -h, --help            Show this help
+
+Notes:
+  - Semantic version commands expect version format x.y.z.
+USAGE
+    exit 0
+fi
+
 die() {
     echo "Error: $*" >&2
     exit 1
