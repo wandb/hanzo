@@ -2,6 +2,11 @@
 
 All notable changes to Hanzo are documented in this file.
 
+## [1.5.0] - 2026-04-21
+
+- Add setting to Mute system audio output during dictation (#77) @adamwdraper
+- Internal code-health refactor by Opus 4.7 to improve app reliability, code quality, and test coverage (#77) @adamwdraper
+
 ## [1.4.0] - 2026-04-14
 
 - Add new HUD "standard" display mode (#75) @adamwdraper
